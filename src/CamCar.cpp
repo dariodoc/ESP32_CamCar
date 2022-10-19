@@ -36,7 +36,7 @@
 
 const int psramLimit = 10000;
 
-const static int builtinPin = 2;
+const static int builtinLedPin = 2;
 
 const static int lightPin = 13;
 static bool enableLight = false;
@@ -88,8 +88,6 @@ AsyncWebSocket wsCamera("/Camera");
 AsyncWebSocket wsCarInput("/CarInput");
 static int cameraClientId = 0;
 
-// static unsigned long previousMillis = 0;
-
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void handleRSSI(AsyncWebServerRequest *request)
@@ -120,14 +118,14 @@ void ledIndicator(int blinkTimes, int delayTimeMS)
   unsigned long currentMillis = millis();
   for (int i = 0; i < blinkTimes; i++)
   {
-    digitalWrite(builtinPin, HIGH); // LED ON
+    digitalWrite(builtinLedPin, HIGH); // LED ON
     previousMillis = currentMillis;
     while (currentMillis - previousMillis <= delayTimeMS)
     {
       toneToPlay(buzzerPin, buzzerChannel, NOTE_G5, 1);
       currentMillis = millis();
     }
-    digitalWrite(builtinPin, LOW); // LED OFF
+    digitalWrite(builtinLedPin, LOW); // LED OFF
     previousMillis = currentMillis;
     while (currentMillis - previousMillis <= delayTimeMS)
     {
@@ -140,11 +138,11 @@ void ledIndicator(int state)
 {
   if (state == HIGH)
   {
-    digitalWrite(builtinPin, HIGH); // LED ON
+    digitalWrite(builtinLedPin, HIGH); // LED ON
   }
   if (state == LOW)
   {
-    digitalWrite(builtinPin, LOW); // LED OFF
+    digitalWrite(builtinLedPin, LOW); // LED OFF
   }
 }
 
@@ -813,8 +811,8 @@ void setupCamera()
 
 void setupPinModes()
 {
-  pinMode(builtinPin, OUTPUT);
-  digitalWrite(builtinPin, LOW); // LED OFF
+  pinMode(builtinLedPin, OUTPUT);
+  digitalWrite(builtinLedPin, LOW); // LED OFF
 
   // turn off buzzer, just in case ;P
   ledcDetachPin(buzzerPin);
