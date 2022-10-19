@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <link rel="stylesheet" type="text/css" href="style.css">
+</head>
+
+<body class="noselect" align="center" style="background-color:white">
+  <table id="mainTable" style="width:345px;margin:auto;table-layout:fixed" CELLSPACING=10>
+    <tr>
+      <img id="cameraImage" src="" style="width:345px;height:250px"></td>
+    </tr>
+    <tr>
+      <td class="button" ontouchstart='sendButtonInput("MoveCar","5")' ontouchend='sendButtonInput("MoveCar","0")'><span
+          class="arrows">&#8679;</span></td>
+      <td class="button" ontouchstart='sendButtonInput("MoveCar","1")' ontouchend='sendButtonInput("MoveCar","0")'><span
+          class="arrows">&#8679;</span></td>
+      <td class="button" ontouchstart='sendButtonInput("MoveCar","6")' ontouchend='sendButtonInput("MoveCar","0")'><span
+          class="arrows">&#8679;</span></td>
+    </tr>
+    <tr>
+      <td class="button" ontouchstart='sendButtonInput("MoveCar","3")' ontouchend='sendButtonInput("MoveCar","0")'><span
+          class="arrows">&#8678;</span></td>
+      <td class="button" ontouchstart='sendButtonInput("ObstacleAvoidance","1")'></td>
+      <td class="button" ontouchstart='sendButtonInput("MoveCar","4")' ontouchend='sendButtonInput("MoveCar","0")'><span
+          class="arrows">&#8680;</span></td>
+    </tr>
+    <tr>
+      <td class="button" ontouchstart='sendButtonInput("MoveCar","7")' ontouchend='sendButtonInput("MoveCar","0")'><span
+          class="arrows">&#8681;</span></td>
+      <td class="button" ontouchstart='sendButtonInput("MoveCar","2")' ontouchend='sendButtonInput("MoveCar","0")'><span
+          class="arrows">&#8681;</span></td>
+      <td class="button" ontouchstart='sendButtonInput("MoveCar","8")' ontouchend='sendButtonInput("MoveCar","0")'><span
+          class="arrows">&#8681;</span></td>
+    </tr>
+
+    <tr />
+    <tr>
+      <td style="text-align:left"><b>RSSI:</b></td>
+      <td><span id="RSSI"></span></td>
+    </tr>
+    <tr>
+      <td style="text-align:left"><b>Speed:</b></td>
+      <td colspan=2>
+        <div class="slidecontainer">
+          <input type="range" min="200" max="255" value="255" class="slider" id="Speed"
+            oninput='sendButtonInput("Speed",value)'>
+        </div>
+      </td>
+    </tr>
+    <tr>
+      <td style="text-align:left"><b>Pan:</b></td>
+      <td colspan=2>
+        <div class="slidecontainer">
+          <input type="range" min="0" max="180" value="100" class="slider" id="Pan"
+            oninput='sendButtonInput("Pan",value)'>
+        </div>
+      </td>
+    </tr>
+    <tr>
+      <td style="text-align:left"><b>Tilt:</b></td>
+      <td colspan=2>
+        <div class="slidecontainer">
+          <input type="range" min="0" max="180" value="90" class="slider" id="Tilt"
+            oninput='sendButtonInput("Tilt",value)'>
+        </div>
+      </td>
+    </tr>
+    <tr>
+      <td class="button" ontouchstart='sendButtonInput("Light","1")'><span class="arrows">&#8678;</span></td>
+      <td class="button" ontouchstart='sendButtonInput("CenterServos","1"); centerValues();'><span
+          class="arrows">&#8681;</span></td>
+      <td class="button" ontouchstart='sendButtonInput("InitMelody","1")'><span class="arrows">&#8680;</span></td>
+    </tr>
+
+  </table>
+
+  <script>
+
+    setInterval(function () {
+      // Call a function repetatively with 2 Second interval
+      getData();
+    }, 1000); //1000mSeconds update rate
+
+    function getData() {
+      var xhttp = new XMLHttpRequest();
+      xhttp.onreadystatechange = function () {
+        if (this.readyState == 4 && this.status == 200) {
+          document.getElementById("RSSI").innerHTML =
+            this.responseText;
+        }
+      };
+      xhttp.open("GET", "readRSSI", true);
+      xhttp.send();
+    }
+
+
+
+
+
+
+    var webSocketCameraUrl = "ws:\/\/" + window.location.hostname + "/Camera";
+    var webSocketCarInputUrl = "ws:\/\/" + window.location.hostname + "/CarInput";
+    var websocketCamera;
+    var websocketCarInput;
+
+    function initCameraWebSocket() {
+      websocketCamera = new WebSocket(webSocketCameraUrl);
+      websocketCamera.binaryType = 'blob';
+      websocketCamera.onopen = function (event) { };
+      websocketCamera.onclose = function (event) { setTimeout(initCameraWebSocket, 2000); };
+      websocketCamera.onmessage = function (event) {
+        var imageId = document.getElementById("cameraImage");
+        imageId.src = URL.createObjectURL(event.data);
+      };
+    }
+
+    function initCarInputWebSocket() {
+      websocketCarInput = new WebSocket(webSocketCarInputUrl);
+      websocketCarInput.onopen = function (event) {
+        sendButtonInput("Speed", document.getElementById("Speed").value);
+        sendButtonInput("Pan", document.getElementById("Pan").value);
+        sendButtonInput("Tilt", document.getElementById("Tilt").value);
+      };
+      websocketCarInput.onclose = function (event) { setTimeout(initCarInputWebSocket, 2000); };
+      websocketCarInput.onmessage = function (event) { };
+    }
+
+    function initWebSocket() {
+      initCameraWebSocket();
+      initCarInputWebSocket();
+    }
+    function sendButtonInput(key, value) {
+      var data = key + "," + value;
+      websocketCarInput.send(data);
+    }
+
+    function centerValues() {
+      document.getElementById("Pan").value = "100"
+      document.getElementById("Tilt").value = "90";
+    }
+
+    window.onload = initWebSocket;
+    document.getElementById("mainTable").addEventListener("touchend", function (event) {
+      event.preventDefault()
+    });      
+  </script>
+</body>
+
+</html>
