@@ -59,7 +59,7 @@ const static int builtinLedPin = 33;
 const static int lightPin = 4;
 static bool enableLight = false;
 
-//const static int buzzerPin = 13;
+// const static int buzzerPin = 13;
 const static int buzzerChannel = 3;
 static bool melodyOn = false;
 
@@ -140,7 +140,7 @@ void ledIndicator(int blinkTimes, int delayTimeMS)
     previousMillis = currentMillis;
     while (currentMillis - previousMillis <= delayTimeMS)
     {
-     // toneToPlay(buzzerPin, buzzerChannel, NOTE_G5, 1);
+      // toneToPlay(buzzerPin, buzzerChannel, NOTE_G5, 1);
       currentMillis = millis();
     }
     digitalWrite(builtinLedPin, HIGH); // LED OFF
@@ -298,7 +298,7 @@ void playMelody(void *parameters)
 #ifdef DEBUG
 // Serial.println( uxTaskGetStackHighWaterMark(nullptr));
 #endif
-   //gameOfThrones(buzzerPin, buzzerChannel);
+  // gameOfThrones(buzzerPin, buzzerChannel);
   melodyOn = false;
   // ledcDetachPin(buzzerPin);
   vTaskDelete(playMelodyTask);
@@ -585,7 +585,7 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server,
     if (melodyOn)
     {
       melodyOn = false;
-      //ledcDetachPin(buzzerPin);
+      // ledcDetachPin(buzzerPin);
       vTaskDelete(playMelodyTask);
     }
 
@@ -673,7 +673,7 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server,
         else
         {
           melodyOn = false;
-          //ledcDetachPin(buzzerPin);
+          // ledcDetachPin(buzzerPin);
           vTaskDelete(playMelodyTask);
 #ifdef DEBUG
           Serial.println("Melody OFF");
@@ -844,7 +844,7 @@ void setupPinModes()
   digitalWrite(builtinLedPin, LOW); // LED OFF
 
   // turn off buzzer, just in case ;P
-  //ledcDetachPin(buzzerPin);
+  // ledcDetachPin(buzzerPin);
 
   panServo.attach(panPin);
   tiltServo.attach(tiltPin);
