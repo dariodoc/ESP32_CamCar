@@ -17,39 +17,57 @@
 
 // Camera related constants
 // ESP32-WROVER-E
-#define PWDN_GPIO_NUM -1
+// #define PWDN_GPIO_NUM -1
+// #define RESET_GPIO_NUM -1
+// #define XCLK_GPIO_NUM 21
+// #define SIOD_GPIO_NUM 26
+// #define SIOC_GPIO_NUM 27
+// #define Y9_GPIO_NUM 35
+// #define Y8_GPIO_NUM 34
+// #define Y7_GPIO_NUM 39
+// #define Y6_GPIO_NUM 36
+// #define Y5_GPIO_NUM 19
+// #define Y4_GPIO_NUM 18
+// #define Y3_GPIO_NUM 5
+// #define Y2_GPIO_NUM 4
+// #define VSYNC_GPIO_NUM 25
+// #define HREF_GPIO_NUM 23
+// #define PCLK_GPIO_NUM 22
+
+// ESP32-CAM
+#define PWDN_GPIO_NUM 32
 #define RESET_GPIO_NUM -1
-#define XCLK_GPIO_NUM 21
+#define XCLK_GPIO_NUM 0
 #define SIOD_GPIO_NUM 26
 #define SIOC_GPIO_NUM 27
 #define Y9_GPIO_NUM 35
 #define Y8_GPIO_NUM 34
 #define Y7_GPIO_NUM 39
 #define Y6_GPIO_NUM 36
-#define Y5_GPIO_NUM 19
-#define Y4_GPIO_NUM 18
-#define Y3_GPIO_NUM 5
-#define Y2_GPIO_NUM 4
+#define Y5_GPIO_NUM 21
+#define Y4_GPIO_NUM 19
+#define Y3_GPIO_NUM 18
+#define Y2_GPIO_NUM 5
 #define VSYNC_GPIO_NUM 25
 #define HREF_GPIO_NUM 23
 #define PCLK_GPIO_NUM 22
 
 const int psramLimit = 10000;
 
-const static int builtinLedPin = 2;
+const static int builtinLedPin = 33;
 
-const static int lightPin = 13;
+const static int lightPin = 4;
 static bool enableLight = false;
 
-const static int buzzerPin = 12;
+//const static int buzzerPin = 13;
 const static int buzzerChannel = 3;
 static bool melodyOn = false;
 
 Servo panServo;
 Servo tiltServo;
 
-const static int panPin = 14;
-const static int tiltPin = 15;
+const static int panPin = 12;
+const static int tiltPin = 2;
 const static int panCenter = 80;
 
 #ifdef DEBUG
@@ -60,9 +78,9 @@ const static int tiltCenter = 90;
 
 static bool enableObstacleAvoidance = false;
 
-PCF8574 pcf8574(0x20, SIOD_GPIO_NUM, SIOC_GPIO_NUM); // PCF8574 library included in CamCar.h
-Motor leftMotor(P3, P4, 32, 1, P2);                  // BIN1,BIN2,PWMB,OFFSET,STBY.
-Motor rightMotor(P1, P0, 33, 1, P2);                 // AIN1,AIN2,PWMA,OFFSET,STBY.
+PCF8574 pcf8574(0x20, 14, 15);      // PCF8574 library included in CamCar.h
+Motor leftMotor(P3, P4, 1, 1, P2);  // BIN1,BIN2,PWMB,OFFSET,STBY.
+Motor rightMotor(P1, P0, 3, 1, P2); // AIN1,AIN2,PWMA,OFFSET,STBY.
 
 static int motorSpeed = 255;
 #define FORWARD 1
@@ -88,7 +106,7 @@ AsyncWebSocket wsCamera("/Camera");
 AsyncWebSocket wsCarInput("/CarInput");
 static int cameraClientId = 0;
 
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void handleRSSI(AsyncWebServerRequest *request)
 {
@@ -118,14 +136,14 @@ void ledIndicator(int blinkTimes, int delayTimeMS)
   unsigned long currentMillis = millis();
   for (int i = 0; i < blinkTimes; i++)
   {
-    digitalWrite(builtinLedPin, HIGH); // LED ON
+    digitalWrite(builtinLedPin, LOW); // LED ON
     previousMillis = currentMillis;
     while (currentMillis - previousMillis <= delayTimeMS)
     {
-      toneToPlay(buzzerPin, buzzerChannel, NOTE_G5, 1);
+     // toneToPlay(buzzerPin, buzzerChannel, NOTE_G5, 1);
       currentMillis = millis();
     }
-    digitalWrite(builtinLedPin, LOW); // LED OFF
+    digitalWrite(builtinLedPin, HIGH); // LED OFF
     previousMillis = currentMillis;
     while (currentMillis - previousMillis <= delayTimeMS)
     {
@@ -138,11 +156,11 @@ void ledIndicator(int state)
 {
   if (state == HIGH)
   {
-    digitalWrite(builtinLedPin, HIGH); // LED ON
+    digitalWrite(builtinLedPin, LOW); // LED ON
   }
   if (state == LOW)
   {
-    digitalWrite(builtinLedPin, LOW); // LED OFF
+    digitalWrite(builtinLedPin, HIGH); // LED OFF
   }
 }
 
@@ -280,9 +298,9 @@ void playMelody(void *parameters)
 #ifdef DEBUG
 // Serial.println( uxTaskGetStackHighWaterMark(nullptr));
 #endif
-  gameOfThrones(buzzerPin, buzzerChannel);
+   //gameOfThrones(buzzerPin, buzzerChannel);
   melodyOn = false;
-  ledcDetachPin(buzzerPin);
+  // ledcDetachPin(buzzerPin);
   vTaskDelete(playMelodyTask);
 }
 
@@ -309,6 +327,7 @@ void sendCameraPicture(void *parameters)
 {
   unsigned long previousMillis = 0;
   unsigned long currentMillis = millis();
+  camera_fb_t *fb = nullptr;
 #ifdef DEBUG
   Serial.printf("sendCameraPicture() running on core: %d\n", xPortGetCoreID());
 #endif
@@ -321,42 +340,52 @@ void sendCameraPicture(void *parameters)
     {
       continue;
     }
-    ///////////////////////////////////////////////////////////////////////////////////////////
-    unsigned long startTime1 = millis();
-    // capture a frame
-    camera_fb_t *fb = esp_camera_fb_get();
-    if (!fb)
+    else
     {
-#ifdef DEBUG
-      Serial.println("Frame buffer could not be acquired");
-#endif
-      continue;
-    }
-    ///////////////////////////////////////////////////////////////////////////////////////////
-    unsigned long startTime2 = millis();
-    wsCamera.binary(cameraClientId, fb->buf, fb->len);
-    AsyncWebSocketClient *clientPointer = wsCamera.client(cameraClientId);
-    esp_camera_fb_return(fb);
+      ///////////////////////////////////////////////////////////////////////////////////////////
+      unsigned long startTime1 = millis();
 
-    // Wait for message to be delivered
-    while (true)
-    {
-      if (!clientPointer || !(clientPointer->queueIsFull()))
+      // capture a frame
+      fb = esp_camera_fb_get();
+      if (!fb)
       {
-        break;
+#ifdef DEBUG
+        Serial.println("Frame buffer could not be acquired");
+#endif
+        esp_camera_fb_return(fb);
+        continue;
       }
-
-      previousMillis = currentMillis;
-      while (currentMillis - previousMillis <= 1)
+      else
       {
-        currentMillis = millis();
+        ///////////////////////////////////////////////////////////////////////////////////////////
+        unsigned long startTime2 = millis();
+
+        wsCamera.binary(cameraClientId, fb->buf, fb->len);
+        AsyncWebSocketClient *clientPointer = wsCamera.client(cameraClientId);
+        esp_camera_fb_return(fb);
+
+        // Wait for message to be delivered
+        while (true)
+        {
+          if (!clientPointer || !(clientPointer->queueIsFull()))
+          {
+            break;
+          }
+
+          previousMillis = currentMillis;
+          while (currentMillis - previousMillis <= 1)
+          {
+            currentMillis = millis();
+          }
+        }
+
+        ///////////////////////////////////////////////////////////////////////////////////////////
+        unsigned long startTime3 = millis();
+#ifdef DEBUG
+        Serial.printf("Time taken Total: %d|%d|%d\n", startTime3 - startTime1, startTime2 - startTime1, startTime3 - startTime2);
+#endif
       }
     }
-
-    unsigned long startTime3 = millis();
-#ifdef DEBUG
-    Serial.printf("Time taken Total: %d|%d|%d\n", startTime3 - startTime1, startTime2 - startTime1, startTime3 - startTime2);
-#endif
   }
 }
 
@@ -556,7 +585,7 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server,
     if (melodyOn)
     {
       melodyOn = false;
-      ledcDetachPin(buzzerPin);
+      //ledcDetachPin(buzzerPin);
       vTaskDelete(playMelodyTask);
     }
 
@@ -644,7 +673,7 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server,
         else
         {
           melodyOn = false;
-          ledcDetachPin(buzzerPin);
+          //ledcDetachPin(buzzerPin);
           vTaskDelete(playMelodyTask);
 #ifdef DEBUG
           Serial.println("Melody OFF");
@@ -815,7 +844,7 @@ void setupPinModes()
   digitalWrite(builtinLedPin, LOW); // LED OFF
 
   // turn off buzzer, just in case ;P
-  ledcDetachPin(buzzerPin);
+  //ledcDetachPin(buzzerPin);
 
   panServo.attach(panPin);
   tiltServo.attach(tiltPin);
@@ -871,8 +900,8 @@ void setup()
 void loop()
 {
 #ifdef DEBUG
-  Serial.printf("Total heap: %d, Free heap: %d, Total PSRAM: %d,Free PSRAM: %d\n", ESP.getHeapSize(), ESP.getFreeHeap(), ESP.getPsramSize(), ESP.getFreePsram());
-  Serial.println(uxTaskGetStackHighWaterMark(nullptr));
+  // Serial.printf("Total heap: %d, Free heap: %d, Total PSRAM: %d,Free PSRAM: %d\n", ESP.getHeapSize(), ESP.getFreeHeap(), ESP.getPsramSize(), ESP.getFreePsram());
+  // Serial.println(uxTaskGetStackHighWaterMark(nullptr));
 #else
   vTaskDelay(portMAX_DELAY);
 #endif
