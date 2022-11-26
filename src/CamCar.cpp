@@ -341,7 +341,7 @@ void onCameraWebSocketEvent(AsyncWebSocket *server,
         "cleanupWSClients",           /* Name of the task */
         STACK_SIZE,                   /* Stack size in words */
         NULL,                         /* Task input parameter */
-        1,                            /* Priority of the task */
+        tskIDLE_PRIORITY,             /* Priority of the task */
         &cleanupWSClientsTask,        /* Task handle. */
         CONFIG_ARDUINO_RUNNING_CORE); /* Core where the task should run */
 
@@ -568,7 +568,7 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server,
               "playMelody",                 /* Name of the task */
               STACK_SIZE,                   /* Stack size in words */
               NULL,                         /* Task input parameter */
-              1,                            /* Priority of the task */
+              tskIDLE_PRIORITY,             /* Priority of the task */
               &playMelodyTask,              /* Task handle. */
               CONFIG_ARDUINO_RUNNING_CORE); /* Core where the task should run */
 #ifdef DEBUG
@@ -657,7 +657,7 @@ void initTasks()
       "keepWiFiAlive",              /* Name of the task */
       STACK_SIZE,                   /* Stack size in words */
       NULL,                         /* Task input parameter */
-      1,                            /* Priority of the task */
+      tskIDLE_PRIORITY,             /* Priority of the task */
       &keepWiFiAliveTask,           /* Task handle. */
       CONFIG_ARDUINO_RUNNING_CORE); /* Core where the task should run */
 
@@ -666,7 +666,7 @@ void initTasks()
       "arduinoOTA",                 /* Name of the task */
       STACK_SIZE,                   /* Stack size in words */
       NULL,                         /* Task input parameter */
-      1,                            /* Priority of the task */
+      tskIDLE_PRIORITY,             /* Priority of the task */
       &arduinoOTATask,              /* Task handle. */
       CONFIG_ARDUINO_RUNNING_CORE); /* Core where the task should run */
 }
