@@ -33,7 +33,7 @@
 #define HREF_GPIO_NUM 23
 #define PCLK_GPIO_NUM 22
 
-const int psramLimit = 10000;
+const static int psramLimit = 10000;
 
 const static int builtinLedPin = 33;
 
@@ -51,11 +51,7 @@ const static int panPin = 12;
 const static int tiltPin = 2;
 const static int panCenter = 80;
 
-#ifdef DEBUG
-const static int tiltCenter = 60;
-#else
 const static int tiltCenter = 90;
-#endif
 
 static bool enableObstacleAvoidance = false;
 static bool obstacleFound = false;
@@ -179,6 +175,10 @@ void arduinoOTA(void *parameters)
 
 void keepWiFiAlive(void *parameters)
 {
+#ifdef DEBUG
+  Serial.printf("keepWiFiAlive() running on core: %d\n", xPortGetCoreID());
+#endif
+
   // ===========================
   // Enter your WiFi credentials
   // ===========================
@@ -243,7 +243,7 @@ void keepWiFiAlive(void *parameters)
 void playMelody(void *parameters)
 {
 #ifdef DEBUG
-// Serial.println( uxTaskGetStackHighWaterMark(nullptr));
+  Serial.printf("playMelody() running on core: %d\n", xPortGetCoreID());
 #endif
   gameOfThrones(buzzerPin, buzzerChannel);
   melodyOn = false;
@@ -253,8 +253,14 @@ void playMelody(void *parameters)
 
 void cleanupWSClients(void *parameters)
 {
+#ifdef DEBUG
+  Serial.printf("cleanupWSClients() running on core: %d\n", xPortGetCoreID());
+#endif
   for (;;)
   {
+#ifdef DEBUG
+// Serial.println( uxTaskGetStackHighWaterMark(nullptr));
+#endif
     wsCamera.cleanupClients();
     wsCarInput.cleanupClients();
 #ifdef DEBUG
