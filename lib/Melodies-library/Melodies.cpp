@@ -12,37 +12,27 @@
 //
 ////////////////////////////////////////////////////////////////////////
 
-static unsigned long previousMillis = 0;
 const static int buzzFrequency = 5000;
 const static int buzzResolution = 12;
 
 void toneToPlay(uint32_t buzzPin, uint8_t buzzChannel, uint32_t buzzNote, uint32_t buzzDuration)
 {
-    unsigned long currentMillis = millis();
     ledcSetup(buzzChannel, buzzFrequency, buzzResolution);
     ledcAttachPin(buzzPin, buzzChannel);
-    ledcWriteTone(buzzChannel, buzzNote);
-    previousMillis = currentMillis;
-    while (currentMillis - previousMillis <= buzzDuration)
-    {
-        currentMillis = millis();
-    }
+    ledcWriteTone(buzzChannel, buzzNote);   
+    vTaskDelay(pdMS_TO_TICKS(buzzDuration));
     ledcDetachPin(buzzPin);
 }
 
 void toneToPlay(uint32_t buzzPin, uint8_t buzzChannel, uint32_t buzzNote, uint32_t buzzDuration, uint32_t buzzBips)
 {
-    unsigned long currentMillis = millis();
+    
     for (int i = 0; i < buzzBips; i++)
     {
         ledcSetup(buzzChannel, buzzFrequency, buzzResolution);
         ledcAttachPin(buzzPin, buzzChannel);
-        ledcWriteTone(buzzChannel, buzzNote);
-        previousMillis = currentMillis;
-        while (currentMillis - previousMillis <= buzzDuration)
-        {
-            currentMillis = millis();
-        }
+        ledcWriteTone(buzzChannel, buzzNote);        
+        vTaskDelay(pdMS_TO_TICKS(buzzDuration));
         ledcDetachPin(buzzPin);
     }
 }

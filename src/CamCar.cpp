@@ -15,25 +15,6 @@
 
 //#define DEBUG // Uncomment to enable Serial Monitor
 
-// Camera related constants
-// ESP32-WROVER-E
-// #define PWDN_GPIO_NUM -1
-// #define RESET_GPIO_NUM -1
-// #define XCLK_GPIO_NUM 21
-// #define SIOD_GPIO_NUM 26
-// #define SIOC_GPIO_NUM 27
-// #define Y9_GPIO_NUM 35
-// #define Y8_GPIO_NUM 34
-// #define Y7_GPIO_NUM 39
-// #define Y6_GPIO_NUM 36
-// #define Y5_GPIO_NUM 19
-// #define Y4_GPIO_NUM 18
-// #define Y3_GPIO_NUM 5
-// #define Y2_GPIO_NUM 4
-// #define VSYNC_GPIO_NUM 25
-// #define HREF_GPIO_NUM 23
-// #define PCLK_GPIO_NUM 22
-
 // ESP32-CAM
 #define PWDN_GPIO_NUM 32
 #define RESET_GPIO_NUM -1
@@ -59,7 +40,7 @@ const static int builtinLedPin = 33;
 const static int lightPin = 4;
 static bool enableLight = false;
 
-// const static int buzzerPin = 13;
+const static int buzzerPin = 13;
 const static int buzzerChannel = 3;
 static bool melodyOn = false;
 
@@ -77,12 +58,15 @@ const static int tiltCenter = 90;
 #endif
 
 static bool enableObstacleAvoidance = false;
+static bool obstacleFound = false;
 
 PCF8574 pcf8574(0x20, 14, 15);      // PCF8574 library included in CamCar.h
 Motor leftMotor(P3, P4, 1, 1, P2);  // BIN1,BIN2,PWMB,OFFSET,STBY.
 Motor rightMotor(P1, P0, 3, 1, P2); // AIN1,AIN2,PWMA,OFFSET,STBY.
 
 static int motorSpeed = 255;
+static int currentDirection = 0;
+
 #define FORWARD 1
 #define BACKWARD 2
 #define LEFT 3
@@ -132,23 +116,13 @@ void handleNotFound(AsyncWebServerRequest *request)
 
 void ledIndicator(int blinkTimes, int delayTimeMS)
 {
-  unsigned long previousMillis = 0;
-  unsigned long currentMillis = millis();
   for (int i = 0; i < blinkTimes; i++)
   {
     digitalWrite(builtinLedPin, LOW); // LED ON
-    previousMillis = currentMillis;
-    while (currentMillis - previousMillis <= delayTimeMS)
-    {
-      // toneToPlay(buzzerPin, buzzerChannel, NOTE_G5, 1);
-      currentMillis = millis();
-    }
+    toneToPlay(buzzerPin, buzzerChannel, NOTE_G5, delayTimeMS);
+    // vTaskDelay(pdMS_TO_TICKS(delayTimeMS));    No delay needed because ToneToPlay has it
     digitalWrite(builtinLedPin, HIGH); // LED OFF
-    previousMillis = currentMillis;
-    while (currentMillis - previousMillis <= delayTimeMS)
-    {
-      currentMillis = millis();
-    }
+    vTaskDelay(pdMS_TO_TICKS(delayTimeMS));
   }
 }
 
@@ -212,82 +186,55 @@ void keepWiFiAlive(void *parameters)
   const static char *sta_ssid = "My Pills";       // set Wifi network you want to connect to
   const static char *sta_password = "Ivonne2011"; // set password for Wifi network
   const static int WIFI_TIMEOUT_MS = 10000;
-  unsigned long previousMillis = 0;
-  unsigned long currentMillis = millis();
 
   ////////////// Set ESP32 Wifi hostname based on chip mac address//////////////////
   char chip_id[15];
   snprintf(chip_id, 15, "%04X", (uint16_t)(ESP.getEfuseMac() >> 32));
   String hostname = "esp32cam-" + String(chip_id);
   /////////////////////////////////////////////////////////////////////////////////
-#ifdef DEBUG
-  Serial.printf("keepWiFiAlive() running on core: %d\n", xPortGetCoreID());
-#endif
+
   for (;;)
   {
-#ifdef DEBUG
-// Serial.println( uxTaskGetStackHighWaterMark(nullptr));
-#endif
     if (WiFi.status() == WL_CONNECTED)
     {
-#ifdef DEBUG
-      Serial.println("WiFi still connected");
-#endif
-      previousMillis = currentMillis;
-      while (currentMillis - previousMillis <= WIFI_TIMEOUT_MS)
-      {
-        currentMillis = millis();
-      }
+      // Serial.println("WiFi still connected");
+      vTaskDelay(pdMS_TO_TICKS(WIFI_TIMEOUT_MS));
       continue;
     }
     else
     {
+      // first, set ESP32 as STA mode to connect with a Wifi network
 
-// first, set ESP32 as STA mode to connect with a Wifi network
-#ifdef DEBUG
       Serial.println("");
-      Serial.print("Connecting to: ");
-      Serial.println(sta_ssid);
-      Serial.print("Password: ");
-      Serial.println(sta_password);
-#endif
+      Serial.printf("Connecting to: %s\n", String(sta_ssid));
+      Serial.printf("Password: %s\n", String(sta_password));
       WiFi.mode(WIFI_STA);
       WiFi.begin(sta_ssid, sta_password);
 
       // try to connect with Wifi network about 10 seconds
-      previousMillis = currentMillis;
-      while (WiFi.status() != WL_CONNECTED && currentMillis - previousMillis <= WIFI_TIMEOUT_MS)
+
+      for (int i = 0; i < WIFI_TIMEOUT_MS / 1000; i++)
       {
-#ifdef DEBUG
-        unsigned long previousMillis1 = millis();
-        while (previousMillis1 - currentMillis <= 1000)
-        {
-          previousMillis1 = millis();
-        }
         Serial.print(".");
-#endif
         ledIndicator(1, 500);
-        currentMillis = millis();
+        if (WiFi.status() == WL_CONNECTED)
+        {
+          IPAddress myIP = WiFi.localIP();
+          Serial.println("");
+          Serial.println("*WiFi-STA-Mode*");
+          Serial.printf("IP: %s\n", myIP.toString());
+          ledIndicator(10, 50);
+          ledIndicator(HIGH);
+          break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(500));
       }
+
       // Check if connected with Wifi network
       if (WiFi.status() != WL_CONNECTED)
       {
-#ifdef DEBUG
         Serial.println("[WIFI] FAILED");
-#endif
         continue;
-      }
-      else if (WiFi.status() == WL_CONNECTED)
-      {
-#ifdef DEBUG
-        IPAddress myIP = WiFi.localIP();
-        Serial.println("");
-        Serial.println("*WiFi-STA-Mode*");
-        Serial.print("IP: ");
-        Serial.println(myIP);
-#endif
-        ledIndicator(10, 50);
-        ledIndicator(HIGH);
       }
     }
   }
@@ -298,35 +245,27 @@ void playMelody(void *parameters)
 #ifdef DEBUG
 // Serial.println( uxTaskGetStackHighWaterMark(nullptr));
 #endif
-  // gameOfThrones(buzzerPin, buzzerChannel);
+  gameOfThrones(buzzerPin, buzzerChannel);
   melodyOn = false;
-  // ledcDetachPin(buzzerPin);
+  ledcDetachPin(buzzerPin);
   vTaskDelete(playMelodyTask);
 }
 
 void cleanupWSClients(void *parameters)
 {
-  unsigned long previousMillis = 0;
-  unsigned long currentMillis = millis();
   for (;;)
   {
-    previousMillis = currentMillis;
-    while (currentMillis - previousMillis <= 1000)
-    {
-      currentMillis = millis();
-    }
     wsCamera.cleanupClients();
     wsCarInput.cleanupClients();
 #ifdef DEBUG
     Serial.println("ws cleaned");
 #endif
+    vTaskDelay(pdMS_TO_TICKS(1000));
   }
 }
 
 void sendCameraPicture(void *parameters)
 {
-  unsigned long previousMillis = 0;
-  unsigned long currentMillis = millis();
   camera_fb_t *fb = nullptr;
 #ifdef DEBUG
   Serial.printf("sendCameraPicture() running on core: %d\n", xPortGetCoreID());
@@ -342,9 +281,6 @@ void sendCameraPicture(void *parameters)
     }
     else
     {
-      ///////////////////////////////////////////////////////////////////////////////////////////
-      unsigned long startTime1 = millis();
-
       // capture a frame
       fb = esp_camera_fb_get();
       if (!fb)
@@ -357,9 +293,6 @@ void sendCameraPicture(void *parameters)
       }
       else
       {
-        ///////////////////////////////////////////////////////////////////////////////////////////
-        unsigned long startTime2 = millis();
-
         wsCamera.binary(cameraClientId, fb->buf, fb->len);
         AsyncWebSocketClient *clientPointer = wsCamera.client(cameraClientId);
         esp_camera_fb_return(fb);
@@ -371,19 +304,8 @@ void sendCameraPicture(void *parameters)
           {
             break;
           }
-
-          previousMillis = currentMillis;
-          while (currentMillis - previousMillis <= 1)
-          {
-            currentMillis = millis();
-          }
+          vTaskDelay(pdMS_TO_TICKS(1));
         }
-
-        ///////////////////////////////////////////////////////////////////////////////////////////
-        unsigned long startTime3 = millis();
-#ifdef DEBUG
-        Serial.printf("Time taken Total: %d|%d|%d\n", startTime3 - startTime1, startTime2 - startTime1, startTime3 - startTime2);
-#endif
       }
     }
   }
@@ -450,51 +372,55 @@ void moveCar(int inputValue)
   switch (inputValue)
   {
   case FORWARD:
+    currentDirection = FORWARD;
     forward(leftMotor, rightMotor, motorSpeed);
     leftBackLed(HIGH);
     rightBackLed(HIGH);
     break;
   case BACKWARD:
+    currentDirection = BACKWARD;
     back(leftMotor, rightMotor, motorSpeed);
     leftBackLed(HIGH);
     rightBackLed(HIGH);
     break;
   case LEFT:
+    currentDirection = LEFT;
     left(leftMotor, rightMotor, motorSpeed);
     leftBackLed(HIGH);
     rightBackLed(HIGH);
     break;
   case RIGHT:
+    currentDirection = RIGHT;
     right(leftMotor, rightMotor, motorSpeed);
     leftBackLed(HIGH);
     rightBackLed(HIGH);
     break;
   case FORWARDLEFT:
+    currentDirection = FORWARDLEFT;
     forwardleft(leftMotor, rightMotor, motorSpeed);
     leftBackLed(HIGH);
     rightBackLed(HIGH);
     break;
   case FORWARDRIGHT:
+    currentDirection = FORWARDRIGHT;
     forwardright(leftMotor, rightMotor, motorSpeed);
     leftBackLed(HIGH);
     rightBackLed(HIGH);
     break;
   case BACKLEFT:
+    currentDirection = BACKLEFT;
     backleft(leftMotor, rightMotor, motorSpeed);
     leftBackLed(HIGH);
     rightBackLed(HIGH);
     break;
   case BACKRIGHT:
+    currentDirection = BACKRIGHT;
     backright(leftMotor, rightMotor, motorSpeed);
     leftBackLed(HIGH);
     rightBackLed(HIGH);
     break;
   case STOP:
-    brake(leftMotor, rightMotor);
-    leftBackLed(LOW);
-    rightBackLed(LOW);
-    break;
-  default:
+    currentDirection = STOP;
     brake(leftMotor, rightMotor);
     leftBackLed(LOW);
     rightBackLed(LOW);
@@ -504,8 +430,6 @@ void moveCar(int inputValue)
 
 void obstacleAvoidanceMode(void *parameters)
 {
-  unsigned long previousMillis = 0;
-  unsigned long currentMillis = millis();
   int detect;
 #ifdef DEBUG
   Serial.printf("obstacleAvoidanceMode() running on core: %d\n", xPortGetCoreID());
@@ -517,37 +441,22 @@ void obstacleAvoidanceMode(void *parameters)
 #endif
     detect = pcf8574.digitalRead(P5); // read obstacle status and store it into "detect"
 
-    if (detect == LOW)
+    if (detect == LOW && (currentDirection == FORWARD || currentDirection == FORWARDLEFT || currentDirection == FORWARDRIGHT))
     {
 #ifdef DEBUG
       Serial.println("Obstacle detected");
 #endif
-      moveCar(BACKWARD);
-      previousMillis = currentMillis;
-      while (currentMillis - previousMillis <= 500)
-      {
-        currentMillis = millis();
-      }
-
-      moveCar(RIGHT);
-      previousMillis = currentMillis;
-      while (currentMillis - previousMillis <= 800)
-      {
-        currentMillis = millis();
-      }
+      obstacleFound = true;
+      moveCar(STOP);
     }
     else
     {
 #ifdef DEBUG
       Serial.println("Clear - no obstacle detected");
 #endif
-      moveCar(FORWARD);
+      obstacleFound = false;
     }
-    previousMillis = currentMillis;
-    while (currentMillis - previousMillis <= 100)
-    {
-      currentMillis = millis();
-    }
+    vTaskDelay(pdMS_TO_TICKS(50));
   }
 }
 
@@ -585,13 +494,14 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server,
     if (melodyOn)
     {
       melodyOn = false;
-      // ledcDetachPin(buzzerPin);
+      ledcDetachPin(buzzerPin);
       vTaskDelete(playMelodyTask);
     }
 
     if (enableObstacleAvoidance)
     {
       enableObstacleAvoidance = false;
+      obstacleFound = false;
       vTaskDelete(obstacleAvoidanceModeTask);
     }
 
@@ -617,7 +527,8 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server,
       }
       else if (key == "Speed")
       {
-        motorSpeed = valueInt;
+        int temp = map(valueInt, 0, 100, 200, 255);
+        motorSpeed = temp;
       }
       else if (key == "Light")
       {
@@ -639,14 +550,8 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server,
       }
       else if (key == "Tilt")
       {
-
-#ifdef DEBUG
-        int tempTilt = map(valueInt, 0, 180, 60, 0);
-        tiltServo.write(tempTilt);
-#else
         int tempTilt = map(valueInt, 0, 180, 180, 0);
         tiltServo.write(tempTilt);
-#endif
       }
       else if (key == "CenterServos")
       {
@@ -673,7 +578,7 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server,
         else
         {
           melodyOn = false;
-          // ledcDetachPin(buzzerPin);
+          ledcDetachPin(buzzerPin);
           vTaskDelete(playMelodyTask);
 #ifdef DEBUG
           Serial.println("Melody OFF");
@@ -700,6 +605,7 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server,
         else
         {
           enableObstacleAvoidance = false;
+          obstacleFound = false;
           vTaskDelete(obstacleAvoidanceModeTask);
           moveCar(STOP);
 #ifdef DEBUG
@@ -792,9 +698,6 @@ void setupCamera()
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG; // for streaming
 
-  // if (config.pixel_format == PIXFORMAT_JPEG)
-  // {
-  // if PSRAM IC present, init with UXGA resolution and higher JPEG quality for larger pre-allocated frame buffer.
   if (psramFound())
   {
     config.fb_location = CAMERA_FB_IN_PSRAM;
@@ -817,15 +720,6 @@ void setupCamera()
     config.fb_count = 1;
     config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
   }
-  //}
-  //   else
-  //   {
-  //     // Best option for face detection/recognition
-  //     config.frame_size = FRAMESIZE_240X240;
-  // #if CONFIG_IDF_TARGET_ESP32S3
-  //     config.fb_count = 2;
-  // #endif
-  //   }
 
   // camera init
   esp_err_t err = esp_camera_init(&config);
@@ -841,10 +735,10 @@ void setupCamera()
 void setupPinModes()
 {
   pinMode(builtinLedPin, OUTPUT);
-  digitalWrite(builtinLedPin, LOW); // LED OFF
+  digitalWrite(builtinLedPin, HIGH); // LED OFF
 
   // turn off buzzer, just in case ;P
-  // ledcDetachPin(buzzerPin);
+  ledcDetachPin(buzzerPin);
 
   panServo.attach(panPin);
   tiltServo.attach(tiltPin);
@@ -871,7 +765,6 @@ void setupPinModes()
     Serial.println("FAILED");
 #endif
   }
-
   // indicate car started
   ledIndicator(3, 250);
 }
