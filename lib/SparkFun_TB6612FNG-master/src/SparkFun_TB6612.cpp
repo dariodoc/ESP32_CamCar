@@ -50,22 +50,16 @@ Motor::Motor(int In1pin, int In2pin, int PWMpin, int offset, int STBYpin)
 
 void Motor::drive(int speed)
 {
-
 #ifdef PCF8574_ON
   pcf8574.digitalWrite(Standby, HIGH);
-  speed = speed * Offset;
-  if (speed >= 0)
-    fwd(speed);
-  else
-    rev(-speed);
 #else
   digitalWrite(Standby, HIGH);
+#endif
   speed = speed * Offset;
   if (speed >= 0)
     fwd(speed);
   else
     rev(-speed);
-#endif
 }
 void Motor::drive(int speed, int duration)
 {
@@ -78,12 +72,11 @@ void Motor::fwd(int speed)
 #ifdef PCF8574_ON
   pcf8574.digitalWrite(In1, HIGH);
   pcf8574.digitalWrite(In2, LOW);
-  analogWrite(PWM, speed);
 #else
   digitalWrite(In1, HIGH);
   digitalWrite(In2, LOW);
-  analogWrite(PWM, speed);
 #endif
+  analogWrite(PWM, speed);
 }
 
 void Motor::rev(int speed)
@@ -91,12 +84,11 @@ void Motor::rev(int speed)
 #ifdef PCF8574_ON
   pcf8574.digitalWrite(In1, LOW);
   pcf8574.digitalWrite(In2, HIGH);
-  analogWrite(PWM, speed);
 #else
   digitalWrite(In1, LOW);
   digitalWrite(In2, HIGH);
-  analogWrite(PWM, speed);
 #endif
+  analogWrite(PWM, speed);
 }
 
 void Motor::brake()
@@ -105,13 +97,12 @@ void Motor::brake()
   pcf8574.digitalWrite(Standby, LOW);
   pcf8574.digitalWrite(In1, HIGH);
   pcf8574.digitalWrite(In2, HIGH);
-  analogWrite(PWM, 0);
 #else
   digitalWrite(Standby, LOW);
   digitalWrite(In1, HIGH);
   digitalWrite(In2, HIGH);
-  analogWrite(PWM, 0);
 #endif
+  analogWrite(PWM, 0);
 }
 
 void Motor::standby()
