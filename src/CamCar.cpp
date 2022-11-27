@@ -170,6 +170,7 @@ void arduinoOTA(void *parameters)
 // Serial.println( uxTaskGetStackHighWaterMark(nullptr));
 #endif
     ArduinoOTA.handle(); // enable to receive update/upload firmware via Wifi OTA
+    vTaskDelay(pdMS_TO_TICKS(1));
   }
 }
 
@@ -649,7 +650,7 @@ void initServer()
       server.addHandler(&wsCarInput);
       server.begin();
 #ifdef DEBUG
-      Serial.println("HTTP server started");
+      Serial.println(" HTTP server started");
 #endif
       return;
     }
