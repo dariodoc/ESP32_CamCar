@@ -184,9 +184,9 @@ void keepWiFiAlive(void *parameters)
   // Enter your WiFi credentials
   // ===========================
   // Wifi Credentials //
-  const static char *sta_ssid = "My Pills";       // set Wifi network you want to connect to
-  const static char *sta_password = "Ivonne2011"; // set password for Wifi network
-  const static int WIFI_TIMEOUT_MS = 10000;
+  const char *sta_ssid = "My Pills";       // set Wifi network you want to connect to
+  const char *sta_password = "Ivonne2011"; // set password for Wifi network
+  const int WIFI_TIMEOUT_MS = 10000;
 
   ////////////// Set ESP32 Wifi hostname based on chip mac address//////////////////
   char chip_id[15];
