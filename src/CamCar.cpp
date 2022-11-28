@@ -211,6 +211,7 @@ void keepWiFiAlive(void *parameters)
       Serial.printf("Password: %s\n", String(sta_password));
       WiFi.mode(WIFI_STA);
       WiFi.begin(sta_ssid, sta_password);
+      WiFi.setTxPower(WIFI_POWER_19_5dBm);
 
       // try to connect with Wifi network about 10 seconds
 
