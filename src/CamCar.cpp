@@ -792,11 +792,10 @@ void setup()
 #endif
     return;
   }  
-  
-  initTasks();
-  initServer();
   setupCamera();
   setupPinModes();
+  initTasks();
+  initServer();  
 }
 
 void loop()
