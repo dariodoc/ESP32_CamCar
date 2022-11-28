@@ -791,9 +791,10 @@ void setup()
     Serial.println("An error has ocurred while mounting SPIFFS");
 #endif
     return;
-  }  
-  setupCamera();
-  setupPinModes();
+  } 
+
+  setupPinModes(); 
+  setupCamera();  
   initTasks();
   initServer();  
 }
