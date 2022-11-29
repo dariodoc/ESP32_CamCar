@@ -534,8 +534,7 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server,
       }
       else if (key == "Speed")
       {
-        int temp = map(valueInt, 0, 100, 200, 255);
-        motorSpeed = temp;
+        motorSpeed = map(valueInt, 0, 100, 200, 255);
       }
       else if (key == "Light")
       {
@@ -552,13 +551,11 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server,
       }
       else if (key == "Pan")
       {
-        int tempPan = map(valueInt, 0, 180, 180, 0);
-        panServo.write(tempPan);
+        panServo.write(map(valueInt, 0, 180, 180, 0));
       }
       else if (key == "Tilt")
       {
-        int tempTilt = map(valueInt, 0, 180, 180, 0);
-        tiltServo.write(tempTilt);
+        tiltServo.write(map(valueInt, 0, 180, 180, 0));
       }
       else if (key == "CenterServos")
       {
