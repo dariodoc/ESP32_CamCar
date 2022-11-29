@@ -305,7 +305,7 @@ void sendCameraPicture(void *parameters)
         esp_camera_fb_return(fb);
 
         // Wait for message to be delivered
-        while (true)
+        for (;;)
         {
           if (!clientPointer || !(clientPointer->queueIsFull()))
           {
