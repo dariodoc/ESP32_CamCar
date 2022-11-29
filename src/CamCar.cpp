@@ -50,7 +50,6 @@ Servo tiltServo;
 const static int panPin = 12;
 const static int tiltPin = 2;
 const static int panCenter = 80;
-
 const static int tiltCenter = 90;
 
 static bool enableObstacleAvoidance = false;
