@@ -169,7 +169,7 @@ void arduinoOTA(void *parameters)
 #ifdef DEBUG
 // Serial.println( uxTaskGetStackHighWaterMark(nullptr));
 #endif
-    ArduinoOTA.handle(); // enable to receive update/upload firmware via Wifi OTA
+    ArduinoOTA.handle(); // enable to receive update/upload firmware via WiFi OTA
     vTaskDelay(pdMS_TO_TICKS(1));
   }
 }
@@ -183,12 +183,12 @@ void keepWiFiAlive(void *parameters)
   // ===========================
   // Enter your WiFi credentials
   // ===========================
-  // Wifi Credentials //
-  const char *sta_ssid = "My Pills";       // set Wifi network you want to connect to
-  const char *sta_password = "Ivonne2011"; // set password for Wifi network
+  // WiFi Credentials //
+  const char *sta_ssid = "My Pills";       // set WiFi network you want to connect to
+  const char *sta_password = "Ivonne2011"; // set password for WiFi network
   const int WIFI_TIMEOUT_MS = 10000;
 
-  ////////////// Set ESP32 Wifi hostname based on chip mac address//////////////////
+  ////////////// Set ESP32 WiFi hostname based on chip mac address//////////////////
   char chip_id[15];
   snprintf(chip_id, 15, "%04X", (uint16_t)(ESP.getEfuseMac() >> 32));
   String hostname = "esp32cam-" + String(chip_id);
@@ -204,7 +204,7 @@ void keepWiFiAlive(void *parameters)
     }
     else
     {
-      // first, set ESP32 as STA mode to connect with a Wifi network
+      // first, set ESP32 as STA mode to connect with a WiFi network
 
       Serial.println("");
       Serial.printf("Connecting to: %s\n", String(sta_ssid));
@@ -213,7 +213,7 @@ void keepWiFiAlive(void *parameters)
       WiFi.begin(sta_ssid, sta_password);
       WiFi.setTxPower(WIFI_POWER_19_5dBm);
 
-      // try to connect with Wifi network about 10 seconds
+      // try to connect with WiFi network about 10 seconds
 
       for (int i = 0; i < WIFI_TIMEOUT_MS / 1000; i++)
       {
@@ -232,7 +232,7 @@ void keepWiFiAlive(void *parameters)
         vTaskDelay(pdMS_TO_TICKS(500));
       }
 
-      // Check if connected with Wifi network
+      // Check if connected with WiFi network
       if (WiFi.status() != WL_CONNECTED)
       {
         Serial.println("[WIFI] FAILED");
