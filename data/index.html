@@ -158,7 +158,7 @@
       sliderPan.value = "100";
       sliderTilt.value = "90";
       sendButtonInput("CenterServos", "1");
-      navigator.vibrate(50);
+      window.navigator.vibrate(50);
 
     }
 
@@ -172,7 +172,7 @@
         isObstacleAvoidanceOn = false;
       }
       sendButtonInput("ObstacleAvoidance", "1");      
-      navigator.vibrate(50);
+      window.navigator.vibrate(50);
     }
 
     function LightOnOff() {
@@ -185,7 +185,7 @@
         isLightOn = false;
       }
       sendButtonInput("Light", "1");
-      navigator.vibrate(50);
+      window.navigator.vibrate(50);
     }
 
     function MelodyOnOff() {
@@ -198,7 +198,7 @@
         isMelodyOn = false;
       }
       sendButtonInput("InitMelody", "1");
-      navigator.vibrate(50);
+      window.navigator.vibrate(50);
     }
 
     ////////////////////FUNCTIONS RELATED WITH JOYSTICK////////////////////////////
