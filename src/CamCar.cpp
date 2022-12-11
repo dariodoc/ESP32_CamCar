@@ -13,7 +13,7 @@
 #include <soc/rtc_cntl_reg.h>
 #include <SPIFFS.h>
 
-//#define DEBUG // Uncomment to enable Serial Monitor
+// #define DEBUG // Uncomment to enable Serial Monitor
 
 // ESP32-CAM
 #define PWDN_GPIO_NUM 32
@@ -91,12 +91,12 @@ void handleRSSI(AsyncWebServerRequest *request)
 {
   String rssi = "0";
   rssi = WiFi.RSSI();
-  request->send(200, "text/plane", rssi);
+  request->send(200, "text/plain", rssi);
 }
 
 void handleRoot(AsyncWebServerRequest *request)
 {
-  request->send(SPIFFS, "/index.html", String());
+  request->send(SPIFFS, "/index.html", "text/html");
 }
 
 void handleStyle(AsyncWebServerRequest *request)
@@ -197,17 +197,20 @@ void keepWiFiAlive(void *parameters)
   {
     if (WiFi.status() == WL_CONNECTED)
     {
-      // Serial.println("WiFi still connected");
+#ifdef DEBUG
+          Serial.println("WiFi still connected");
+#endif
       vTaskDelay(pdMS_TO_TICKS(WIFI_TIMEOUT_MS));
       continue;
     }
     else
     {
       // first, set ESP32 as STA mode to connect with a WiFi network
-
+#ifdef DEBUG
       Serial.println("");
       Serial.printf("Connecting to: %s\n", String(sta_ssid));
       Serial.printf("Password: %s\n", String(sta_password));
+#endif
       WiFi.mode(WIFI_STA);
       WiFi.begin(sta_ssid, sta_password);
       WiFi.setTxPower(WIFI_POWER_19_5dBm);
@@ -216,14 +219,18 @@ void keepWiFiAlive(void *parameters)
 
       for (int i = 0; i < WIFI_TIMEOUT_MS / 1000; i++)
       {
+#ifdef DEBUG
         Serial.print(".");
+#endif
         ledIndicator(1, 500);
         if (WiFi.status() == WL_CONNECTED)
         {
           IPAddress myIP = WiFi.localIP();
+#ifdef DEBUG
           Serial.println("");
           Serial.println("*WiFi-STA-Mode*");
           Serial.printf("IP: %s\n", myIP.toString());
+#endif
           ledIndicator(10, 50);
           ledIndicator(HIGH);
           break;
@@ -234,7 +241,9 @@ void keepWiFiAlive(void *parameters)
       // Check if connected with WiFi network
       if (WiFi.status() != WL_CONNECTED)
       {
+#ifdef DEBUG
         Serial.println("[WIFI] FAILED");
+#endif
         continue;
       }
     }
@@ -350,7 +359,7 @@ void onCameraWebSocketEvent(AsyncWebSocket *server,
         NULL,                         /* Task input parameter */
         tskIDLE_PRIORITY,             /* Priority of the task */
         &cleanupWSClientsTask,        /* Task handle. */
-        CONFIG_ARDUINO_RUNNING_CORE); /* Core where the task should run */
+        0); /* Core where the task should run */
 
     break;
   case WS_EVT_DISCONNECT:
@@ -663,7 +672,7 @@ void initTasks()
       NULL,                         /* Task input parameter */
       tskIDLE_PRIORITY,             /* Priority of the task */
       &keepWiFiAliveTask,           /* Task handle. */
-      CONFIG_ARDUINO_RUNNING_CORE); /* Core where the task should run */
+      0); /* Core where the task should run */
 
   xTaskCreatePinnedToCore(
       arduinoOTA,                   /* Function to implement the task */
@@ -672,7 +681,7 @@ void initTasks()
       NULL,                         /* Task input parameter */
       tskIDLE_PRIORITY,             /* Priority of the task */
       &arduinoOTATask,              /* Task handle. */
-      CONFIG_ARDUINO_RUNNING_CORE); /* Core where the task should run */
+      0); /* Core where the task should run */
 }
 
 void setupCamera()
@@ -787,12 +796,12 @@ void setup()
     Serial.println("An error has ocurred while mounting SPIFFS");
 #endif
     return;
-  } 
+  }
 
-  setupPinModes(); 
-  setupCamera();  
+  setupPinModes();
+  setupCamera();
   initTasks();
-  initServer();  
+  initServer();
 }
 
 void loop()
