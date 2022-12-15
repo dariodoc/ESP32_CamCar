@@ -12,6 +12,8 @@
 #include <soc/soc.h>
 #include <soc/rtc_cntl_reg.h>
 #include <SPIFFS.h>
+#include <ESPmDNS.h>
+
 
 // #define DEBUG // Uncomment to enable Serial Monitor
 
@@ -187,18 +189,12 @@ void keepWiFiAlive(void *parameters)
   const char *sta_password = "Ivonne2011"; // set password for WiFi network
   const int WIFI_TIMEOUT_MS = 10000;
 
-  ////////////// Set ESP32 WiFi hostname based on chip mac address//////////////////
-  char chip_id[15];
-  snprintf(chip_id, 15, "%04X", (uint16_t)(ESP.getEfuseMac() >> 32));
-  String hostname = "esp32cam-" + String(chip_id);
-  /////////////////////////////////////////////////////////////////////////////////
-
   for (;;)
   {
     if (WiFi.status() == WL_CONNECTED)
     {
 #ifdef DEBUG
-          Serial.println("WiFi still connected");
+      Serial.println("WiFi still connected");
 #endif
       vTaskDelay(pdMS_TO_TICKS(WIFI_TIMEOUT_MS));
       continue;
@@ -231,6 +227,21 @@ void keepWiFiAlive(void *parameters)
           Serial.println("*WiFi-STA-Mode*");
           Serial.printf("IP: %s\n", myIP.toString());
 #endif
+          if (!MDNS.begin("camcar"))
+          {
+#ifdef DEBUG
+            Serial.println("Error setting up MDNS responder!");
+#endif
+          }
+          else
+          {
+#ifdef DEBUG
+            Serial.println("mDNS responder started");
+#endif
+            // Add service to MDNS-SD
+            MDNS.addService("http", "tcp", 80);
+          }
+
           ledIndicator(10, 50);
           ledIndicator(HIGH);
           break;
@@ -353,13 +364,13 @@ void onCameraWebSocketEvent(AsyncWebSocket *server,
 
     // Create task to cleanupWSClients
     xTaskCreatePinnedToCore(
-        cleanupWSClients,             /* Function to implement the task */
-        "cleanupWSClients",           /* Name of the task */
-        STACK_SIZE,                   /* Stack size in words */
-        NULL,                         /* Task input parameter */
-        tskIDLE_PRIORITY,             /* Priority of the task */
-        &cleanupWSClientsTask,        /* Task handle. */
-        0); /* Core where the task should run */
+        cleanupWSClients,      /* Function to implement the task */
+        "cleanupWSClients",    /* Name of the task */
+        STACK_SIZE,            /* Stack size in words */
+        NULL,                  /* Task input parameter */
+        tskIDLE_PRIORITY,      /* Priority of the task */
+        &cleanupWSClientsTask, /* Task handle. */
+        0);                    /* Core where the task should run */
 
     break;
   case WS_EVT_DISCONNECT:
@@ -666,22 +677,22 @@ void initServer()
 void initTasks()
 {
   xTaskCreatePinnedToCore(
-      keepWiFiAlive,                /* Function to implement the task */
-      "keepWiFiAlive",              /* Name of the task */
-      STACK_SIZE,                   /* Stack size in words */
-      NULL,                         /* Task input parameter */
-      tskIDLE_PRIORITY,             /* Priority of the task */
-      &keepWiFiAliveTask,           /* Task handle. */
-      0); /* Core where the task should run */
+      keepWiFiAlive,      /* Function to implement the task */
+      "keepWiFiAlive",    /* Name of the task */
+      STACK_SIZE,         /* Stack size in words */
+      NULL,               /* Task input parameter */
+      tskIDLE_PRIORITY,   /* Priority of the task */
+      &keepWiFiAliveTask, /* Task handle. */
+      0);                 /* Core where the task should run */
 
   xTaskCreatePinnedToCore(
-      arduinoOTA,                   /* Function to implement the task */
-      "arduinoOTA",                 /* Name of the task */
-      STACK_SIZE,                   /* Stack size in words */
-      NULL,                         /* Task input parameter */
-      tskIDLE_PRIORITY,             /* Priority of the task */
-      &arduinoOTATask,              /* Task handle. */
-      0); /* Core where the task should run */
+      arduinoOTA,       /* Function to implement the task */
+      "arduinoOTA",     /* Name of the task */
+      STACK_SIZE,       /* Stack size in words */
+      NULL,             /* Task input parameter */
+      tskIDLE_PRIORITY, /* Priority of the task */
+      &arduinoOTATask,  /* Task handle. */
+      0);               /* Core where the task should run */
 }
 
 void setupCamera()
