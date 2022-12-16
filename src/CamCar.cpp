@@ -51,7 +51,7 @@ Servo tiltServo;
 
 const static int panPin = 12;
 const static int tiltPin = 2;
-const static int panCenter = 80;
+const static int panCenter = 75;
 const static int tiltCenter = 90;
 
 static bool enableObstacleAvoidance = false;
@@ -227,7 +227,7 @@ void keepWiFiAlive(void *parameters)
           Serial.println("*WiFi-STA-Mode*");
           Serial.printf("IP: %s\n", myIP.toString());
 #endif
-          if (!MDNS.begin("camcar"))
+          if (!MDNS.begin("cameracar"))
           {
 #ifdef DEBUG
             Serial.println("Error setting up MDNS responder!");
@@ -571,11 +571,11 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server,
       }
       else if (key == "Pan")
       {
-        panServo.write(map(valueInt, 0, 180, 180, 0));
+        panServo.write(valueInt);
       }
       else if (key == "Tilt")
       {
-        tiltServo.write(map(valueInt, 0, 180, 180, 0));
+        tiltServo.write(valueInt);
       }
       else if (key == "CenterServos")
       {
@@ -725,7 +725,7 @@ void setupCamera()
   if (psramFound())
   {
     config.fb_location = CAMERA_FB_IN_PSRAM;
-    config.frame_size = FRAMESIZE_CIF; // FRAMESIZE_ + QVGA|CIF|HVGA|VGA|SVGA|XGA|HD|SXGA|UXGA
+    config.frame_size = FRAMESIZE_HVGA; // FRAMESIZE_ + QVGA|CIF|HVGA|VGA|SVGA|XGA|HD|SXGA|UXGA
     config.jpeg_quality = 10;
     config.fb_count = 2;
     config.grab_mode = CAMERA_GRAB_LATEST;

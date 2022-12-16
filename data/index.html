@@ -43,7 +43,7 @@
       <td style="text-align:left"><b>Pan:</b></td>
       <td colspan=2>
         <div class="slidecontainer">
-          <input type="range" min="60" max="180" value="100" class="slider" id="Pan"
+          <input type="range" min="0" max="180" value="75" class="slider" id="Pan"
             oninput='sendButtonInput("Pan",value)'>
         </div>
       </td>
@@ -155,7 +155,7 @@
     }
 
     function CenterServos() {
-      sliderPan.value = "100";
+      sliderPan.value = "75";
       sliderTilt.value = "90";
       sendButtonInput("CenterServos", "1");
       window.navigator.vibrate(50);
