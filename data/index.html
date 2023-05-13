@@ -143,7 +143,7 @@
       websocketCarInput.onopen = function (event) {
         sendButtonInput("Pan", sliderPan.value);
         sendButtonInput("Tilt", sliderTilt.value);
-        ObstacleAvoidanceOnOff();
+       // ObstacleAvoidanceOnOff();
       };
       websocketCarInput.onclose = function (event) { setTimeout(initCarInputWebSocket, 2000); };
       websocketCarInput.onmessage = function (event) { };
