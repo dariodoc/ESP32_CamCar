@@ -33,12 +33,13 @@
       <td colspan=1 style="text-align:left"><b>Speed:</b></td>
       <td>
         <div class="slidecontainer">
-          <input type="range" min="0" max="100" value="100" class="slider" id="Speed" oninput='sendButtonInput("Speed",value)'>
+          <input type="range" min="0" max="100" value="100" class="slider" id="Speed"
+            oninput='sendButtonInput("Speed",value)'>
         </div>
       </td>
     </tr>
 
-    
+
     <tr>
       <td style="text-align:left"><b>Pan:</b></td>
       <td colspan=2>
@@ -63,8 +64,9 @@
       <td class="button" id="Melody" ontouchstart='MelodyOnOff();'><span class="arrows">&#127925;</span></td>
     </tr>
     <tr>
-     <td></td>
-      <td class="button" id="ObstacleAvoidance" ontouchstart='ObstacleAvoidanceOnOff();'><span class="arrows">&#128225;</span></td>
+      <td></td>
+      <td class="button" id="ObstacleAvoidance" ontouchstart='ObstacleAvoidanceOnOff();'><span
+          class="arrows">&#128225;</span></td>
       <td></td>
     </tr>
 
@@ -143,7 +145,7 @@
       websocketCarInput.onopen = function (event) {
         sendButtonInput("Pan", sliderPan.value);
         sendButtonInput("Tilt", sliderTilt.value);
-       // ObstacleAvoidanceOnOff();
+        // ObstacleAvoidanceOnOff();
       };
       websocketCarInput.onclose = function (event) { setTimeout(initCarInputWebSocket, 2000); };
       websocketCarInput.onmessage = function (event) { };
@@ -159,7 +161,6 @@
       sliderTilt.value = "90";
       sendButtonInput("CenterServos", "1");
       window.navigator.vibrate(50);
-
     }
 
     function ObstacleAvoidanceOnOff() {
@@ -168,10 +169,10 @@
         isObstacleAvoidanceOn = true;
       }
       else {
-        btnObstacleAvoidance.style.backgroundColor = 'black';        
+        btnObstacleAvoidance.style.backgroundColor = 'black';
         isObstacleAvoidanceOn = false;
       }
-      sendButtonInput("ObstacleAvoidance", "1");      
+      sendButtonInput("ObstacleAvoidance", "1");
       window.navigator.vibrate(50);
     }
 
@@ -181,7 +182,7 @@
         isLightOn = true;
       }
       else {
-        btnLight.style.backgroundColor = 'black';        
+        btnLight.style.backgroundColor = 'black';
         isLightOn = false;
       }
       sendButtonInput("Light", "1");
@@ -194,7 +195,7 @@
         isMelodyOn = true;
       }
       else {
-        btnMelody.style.backgroundColor = 'black';        
+        btnMelody.style.backgroundColor = 'black';
         isMelodyOn = false;
       }
       sendButtonInput("InitMelody", "1");
@@ -248,7 +249,7 @@
 
     function processAndSend(x, y, speed, angle) {
 
-        if (x == 0 && y == 0) {
+      if (x == 0 && y == 0) {
         currentDirection = STOP;
         sendButtonInput("MoveCar", STOP);
       }
@@ -267,7 +268,7 @@
       else if (angle >= 150 && angle <= 210) {
         if (currentDirection != LEFT) {
           currentDirection = LEFT;
-          sendButtonInput("MoveCar", LEFT);          
+          sendButtonInput("MoveCar", LEFT);
         }
       }
       else if (angle >= 330 && angle <= 360 || angle >= 0 && angle <= 30) {
@@ -373,7 +374,7 @@
     function initFunction() {
       resize();
       initCameraWebSocket();
-      initCarInputWebSocket();         
+      initCarInputWebSocket();
 
       // canvas.addEventListener('mousedown', startDrawing);
       // canvas.addEventListener('mouseup', stopDrawing);
