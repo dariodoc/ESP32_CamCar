@@ -171,8 +171,6 @@
     }
 
     function CenterServos() {
-      // sliderPan.value = "75";
-      // sliderTilt.value = "90";
       panServoCounter = 75;
       tiltServoCounter = 90;
       sendButtonInput("CenterServos", "1");
@@ -261,7 +259,6 @@
       btnPanRight.style.backgroundColor = 'black';
       btnTiltUp.style.backgroundColor = 'black';
       btnTiltDown.style.backgroundColor = 'black';
-
     }
 
     function stopDecrement() {
@@ -407,11 +404,6 @@
         let x_relative = Math.round(x - x_orig);
         let y_relative = Math.round(y - y_orig);
 
-        // document.getElementById("x_coordinate").innerText = x_relative;
-        // document.getElementById("y_coordinate").innerText = y_relative;
-        // document.getElementById("speed").innerText = speed;
-        // document.getElementById("angle").innerText = angle_in_degrees;
-
         processAndSend(x_relative, y_relative, speed, angle_in_degrees);
       }
     }
@@ -448,20 +440,15 @@
       initCameraWebSocket();
       initCarInputWebSocket();
 
-      // canvas.addEventListener('mousedown', startDrawing);
-      // canvas.addEventListener('mouseup', stopDrawing);
-      // canvas.addEventListener('mousemove', Draw);
+      canvas.addEventListener('mousedown', startDrawing);
+      canvas.addEventListener('mouseup', stopDrawing);
+      canvas.addEventListener('mousemove', Draw);
 
       canvas.addEventListener('touchstart', startDrawing);
       canvas.addEventListener('touchend', stopDrawing);
       canvas.addEventListener('touchcancel', stopDrawing);
       canvas.addEventListener('touchmove', Draw);
       window.addEventListener('resize', resize);
-
-      // document.getElementById("x_coordinate").innerText = 0;
-      // document.getElementById("y_coordinate").innerText = 0;
-      // document.getElementById("speed").innerText = 0;
-      // document.getElementById("angle").innerText = 0;
     }
 
     window.onload = initFunction();
