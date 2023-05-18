@@ -42,31 +42,37 @@
 
     <tr>
       <td style="text-align:left"><b>Pan:</b></td>
-      <td colspan=2>
-        <div class="slidecontainer">
-          <input type="range" min="0" max="180" value="75" class="slider" id="Pan"
-            oninput='sendButtonInput("Pan",value)'>
-        </div>
+
+      <td class="button" id="btnPanLeft" onmousedown='PanLeft();' onmouseup=stopIncrement(); ontouchstart='PanLeft();'
+        ontouchend='stopIncrement();'><span class="arrows">&#9664;</span>
       </td>
+      <td class="button" id="btnPanRight" onmousedown='PanRight();' onmouseup=stopDecrement();
+        ontouchstart='PanRight();' ontouchend='stopDecrement();'><span class="arrows">&#9654;</span>
+      </td>
+
     </tr>
     <tr>
       <td style="text-align:left"><b>Tilt:</b></td>
-      <td colspan=2>
-        <div class="slidecontainer">
-          <input type="range" min="0" max="180" value="90" class="slider" id="Tilt"
-            oninput='sendButtonInput("Tilt",value)'>
-        </div>
+
+      <td class="button" id="btnTiltUp" onmousedown='TiltUp();' onmouseup=stopIncrement(); ontouchstart='TiltUp();'
+        ontouchend='stopIncrement();'><span class="arrows">&#9650;</span>
+      </td>
+      <td class="button" id="btnTiltDown" onmousedown='TiltDown();' onmouseup=stopDecrement();
+        ontouchstart='TiltDown();' ontouchend='stopDecrement();'><span class="arrows">&#9660;</span>
       </td>
     </tr>
     <tr>
-      <td class="button" id="Light" ontouchstart='LightOnOff();'><span class="arrows">&#128262;</span></td>
-      <td class="button" id="CenterServos" ontouchstart='CenterServos();'><span class="arrows">&#9678;</span></td>
-      <td class="button" id="Melody" ontouchstart='MelodyOnOff();'><span class="arrows">&#127925;</span></td>
+      <td class="button" id="Light" onmousedown='LightOnOff();' ontouchstart='LightOnOff();'><span
+          class="arrows">&#128262;</span></td>
+      <td class="button" id="CenterServos" onmousedown='CenterServos();' ontouchstart='CenterServos();'><span
+          class="arrows">&#9678;</span></td>
+      <td class="button" id="Melody" onmousedown='MelodyOnOff();' ontouchstart='MelodyOnOff();'><span
+          class="arrows">&#127925;</span></td>
     </tr>
     <tr>
       <td></td>
-      <td class="button" id="ObstacleAvoidance" ontouchstart='ObstacleAvoidanceOnOff();'><span
-          class="arrows">&#128225;</span></td>
+      <td class="button" id="ObstacleAvoidance" onmousedown='ObstacleAvoidanceOnOff();' ontouchstart='
+        ObstacleAvoidanceOnOff();'><span class="arrows">&#128225;</span></td>
       <td></td>
     </tr>
 
@@ -88,6 +94,9 @@
     let isLightOn = false;
     let isObstacleAvoidanceOn = false;
     let currentDirection = 0;
+    let servoSpeed = 10;
+    let panServoCounter = 75;
+    let tiltServoCounter = 90;
 
     const btnObstacleAvoidance = document.getElementById("ObstacleAvoidance");
     const btnLight = document.getElementById("Light");
@@ -100,6 +109,11 @@
     const sliderPan = document.getElementById("Pan");
     const sliderTilt = document.getElementById("Tilt");
     const cameraImage = document.getElementById("CameraImage");
+
+    const btnPanLeft = document.getElementById("btnPanLeft");
+    const btnPanRight = document.getElementById("btnPanRight");
+    const btnTiltUp = document.getElementById("btnTiltUp");
+    const btnTiltDown = document.getElementById("btnTiltDown");
 
     const FORWARD = 1;
     const BACKWARD = 2;
@@ -143,8 +157,8 @@
     function initCarInputWebSocket() {
       websocketCarInput = new WebSocket(webSocketCarInputUrl);
       websocketCarInput.onopen = function (event) {
-        sendButtonInput("Pan", sliderPan.value);
-        sendButtonInput("Tilt", sliderTilt.value);
+        sendButtonInput("Pan", panServoCounter);
+        sendButtonInput("Tilt", tiltServoCounter);
         // ObstacleAvoidanceOnOff();
       };
       websocketCarInput.onclose = function (event) { setTimeout(initCarInputWebSocket, 2000); };
@@ -157,8 +171,10 @@
     }
 
     function CenterServos() {
-      sliderPan.value = "75";
-      sliderTilt.value = "90";
+      // sliderPan.value = "75";
+      // sliderTilt.value = "90";
+      panServoCounter = 75;
+      tiltServoCounter = 90;
       sendButtonInput("CenterServos", "1");
       window.navigator.vibrate(50);
     }
@@ -201,6 +217,62 @@
       sendButtonInput("InitMelody", "1");
       window.navigator.vibrate(50);
     }
+
+    function PanLeft() {
+      btnPanLeft.style.backgroundColor = "rgb(236 240 243)";
+      if (panServoCounter < 180) {
+        panServoCounter++;
+        timer = setTimeout(PanLeft, servoSpeed);
+        sendButtonInput("Pan", panServoCounter);
+      }
+    }
+
+    function PanRight() {
+      btnPanRight.style.backgroundColor = "rgb(236 240 243)";
+      if (panServoCounter > 0) {
+        panServoCounter--;
+        timer = setTimeout(PanRight, servoSpeed);
+        sendButtonInput("Pan", panServoCounter);
+      }
+    }
+
+    function TiltUp() {
+      btnTiltUp.style.backgroundColor = "rgb(236 240 243)";
+      if (tiltServoCounter > 0) {
+        tiltServoCounter--;
+        timer = setTimeout(TiltUp, servoSpeed); // set a timer to call this function again in 100 milliseconds
+        sendButtonInput("Tilt", tiltServoCounter);
+      }
+    }
+
+    function TiltDown() {
+      btnTiltDown.style.backgroundColor = "rgb(236 240 243)";
+      if (tiltServoCounter < 180) {
+        tiltServoCounter++;
+        timer = setTimeout(TiltDown, servoSpeed); // set a timer to call this function again in 100 milliseconds
+        sendButtonInput("Tilt", tiltServoCounter);
+      }
+    }
+
+
+    function stopIncrement() {
+      clearTimeout(timer); // stop the timer
+      btnPanLeft.style.backgroundColor = 'black';
+      btnPanRight.style.backgroundColor = 'black';
+      btnTiltUp.style.backgroundColor = 'black';
+      btnTiltDown.style.backgroundColor = 'black';
+
+    }
+
+    function stopDecrement() {
+      // this function is called when the button is released
+      clearTimeout(timer); // stop the timer
+      btnPanLeft.style.backgroundColor = 'black';
+      btnPanRight.style.backgroundColor = 'black';
+      btnTiltUp.style.backgroundColor = 'black';
+      btnTiltDown.style.backgroundColor = 'black';
+    }
+
 
     ////////////////////FUNCTIONS RELATED WITH JOYSTICK////////////////////////////
 
