@@ -19,19 +19,19 @@ void toneToPlay(uint32_t buzzPin, uint8_t buzzChannel, uint32_t buzzNote, uint32
 {
     ledcSetup(buzzChannel, buzzFrequency, buzzResolution);
     ledcAttachPin(buzzPin, buzzChannel);
-    ledcWriteTone(buzzChannel, buzzNote);   
+    ledcWriteTone(buzzChannel, buzzNote);
     vTaskDelay(pdMS_TO_TICKS(buzzDuration));
     ledcDetachPin(buzzPin);
 }
 
 void toneToPlay(uint32_t buzzPin, uint8_t buzzChannel, uint32_t buzzNote, uint32_t buzzDuration, uint32_t buzzBips)
 {
-    
+
     for (int i = 0; i < buzzBips; i++)
     {
         ledcSetup(buzzChannel, buzzFrequency, buzzResolution);
         ledcAttachPin(buzzPin, buzzChannel);
-        ledcWriteTone(buzzChannel, buzzNote);        
+        ledcWriteTone(buzzChannel, buzzNote);
         vTaskDelay(pdMS_TO_TICKS(buzzDuration));
         ledcDetachPin(buzzPin);
     }

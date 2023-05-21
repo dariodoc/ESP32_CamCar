@@ -14,8 +14,7 @@
 #include <SPIFFS.h>
 #include <ESPmDNS.h>
 
-
-// #define DEBUG // Uncomment to enable Serial Monitor
+#define DEBUG // Uncomment to enable Serial Monitor
 
 // ESP32-CAM
 #define PWDN_GPIO_NUM 32
@@ -75,41 +74,37 @@ static int currentDirection = 0;
 #define BACKRIGHT 8
 
 #define STACK_SIZE 1024 * 4
-TaskHandle_t keepWiFiAliveTask;
 TaskHandle_t arduinoOTATask;
 TaskHandle_t sendCameraPictureTask;
 TaskHandle_t obstacleAvoidanceModeTask;
 TaskHandle_t playMelodyTask;
 TaskHandle_t cleanupWSClientsTask;
 
+/////////////////////////////////////////////////////WIFI variables//////////////////////////////////////////////////////
 AsyncWebServer server(80);
 AsyncWebSocket wsCamera("/Camera");
 AsyncWebSocket wsCarInput("/CarInput");
 static int cameraClientId = 0;
 
+// Search for parameter in HTTP POST request
+const char *PARAM_INPUT_1 = "ssid";
+const char *PARAM_INPUT_2 = "pass";
+const char *PARAM_INPUT_3 = "ip";
+const char *PARAM_INPUT_4 = "gateway";
+
+// Variables to save values from HTML form
+String ssid;
+String pass;
+String ip;
+String gateway;
+
+// File paths to save input values permanently
+const char *ssidPath = "/ssid.txt";
+const char *passPath = "/pass.txt";
+const char *ipPath = "/ip.txt";
+const char *gatewayPath = "/gateway.txt";
+
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-void handleRSSI(AsyncWebServerRequest *request)
-{
-  String rssi = "0";
-  rssi = WiFi.RSSI();
-  request->send(200, "text/plain", rssi);
-}
-
-void handleRoot(AsyncWebServerRequest *request)
-{
-  request->send(SPIFFS, "/index.html", "text/html");
-}
-
-void handleStyle(AsyncWebServerRequest *request)
-{
-  request->send(SPIFFS, "/style.css", "text/css");
-}
-
-void handleNotFound(AsyncWebServerRequest *request)
-{
-  request->send(404, "text/plain", "File Not Found");
-}
 
 void ledIndicator(int blinkTimes, int delayTimeMS)
 {
@@ -164,6 +159,7 @@ void arduinoOTA(void *parameters)
 #ifdef DEBUG
   Serial.printf("arduinoOTA() running on core: %d\n", xPortGetCoreID());
 #endif
+  ArduinoOTA.setMdnsEnabled(false); //DISABLE MDNS INCLUDED iN ARDUINOOTA TO PREVENT ISSUES WITH MDNS
   ArduinoOTA.begin(); // enable to receive update/upload firmware via WiFi OTA
   for (;;)
   {
@@ -172,92 +168,6 @@ void arduinoOTA(void *parameters)
 #endif
     ArduinoOTA.handle(); // enable to receive update/upload firmware via WiFi OTA
     vTaskDelay(pdMS_TO_TICKS(1));
-  }
-}
-
-void keepWiFiAlive(void *parameters)
-{
-#ifdef DEBUG
-  Serial.printf("keepWiFiAlive() running on core: %d\n", xPortGetCoreID());
-#endif
-
-  // ===========================
-  // Enter your WiFi credentials
-  // ===========================
-  // WiFi Credentials //
-  const char *sta_ssid = "My Pills";       // set WiFi network you want to connect to
-  const char *sta_password = "Ivonne2011"; // set password for WiFi network
-  const int WIFI_TIMEOUT_MS = 10000;
-
-  for (;;)
-  {
-    if (WiFi.status() == WL_CONNECTED)
-    {
-#ifdef DEBUG
-      Serial.println("WiFi still connected");
-#endif
-      vTaskDelay(pdMS_TO_TICKS(WIFI_TIMEOUT_MS));
-      continue;
-    }
-    else
-    {
-      // first, set ESP32 as STA mode to connect with a WiFi network
-#ifdef DEBUG
-      Serial.println("");
-      Serial.printf("Connecting to: %s\n", String(sta_ssid));
-      Serial.printf("Password: %s\n", String(sta_password));
-#endif
-      WiFi.mode(WIFI_STA);
-      WiFi.begin(sta_ssid, sta_password);
-      WiFi.setTxPower(WIFI_POWER_19_5dBm);
-
-      // try to connect with WiFi network about 10 seconds
-
-      for (int i = 0; i < WIFI_TIMEOUT_MS / 1000; i++)
-      {
-#ifdef DEBUG
-        Serial.print(".");
-#endif
-        ledIndicator(1, 500);
-        if (WiFi.status() == WL_CONNECTED)
-        {
-          IPAddress myIP = WiFi.localIP();
-#ifdef DEBUG
-          Serial.println("");
-          Serial.println("*WiFi-STA-Mode*");
-          Serial.printf("IP: %s\n", myIP.toString());
-#endif
-          if (!MDNS.begin("cameracar"))
-          {
-#ifdef DEBUG
-            Serial.println("Error setting up MDNS responder!");
-#endif
-          }
-          else
-          {
-#ifdef DEBUG
-            Serial.println("mDNS responder started");
-#endif
-            // Add service to MDNS-SD
-            MDNS.addService("http", "tcp", 80);
-          }
-
-          ledIndicator(10, 50);
-          ledIndicator(HIGH);
-          break;
-        }
-        vTaskDelay(pdMS_TO_TICKS(500));
-      }
-
-      // Check if connected with WiFi network
-      if (WiFi.status() != WL_CONNECTED)
-      {
-#ifdef DEBUG
-        Serial.println("[WIFI] FAILED");
-#endif
-        continue;
-      }
-    }
   }
 }
 
@@ -647,44 +557,8 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server,
   }
 }
 
-void initServer()
-{
-#ifdef DEBUG
-  Serial.printf("initServer() running on core: %d\n", xPortGetCoreID());
-#endif
-
-  for (;;)
-  {
-    if (WiFi.status() == WL_CONNECTED)
-    {
-      server.on("/", HTTP_GET, handleRoot);
-      server.on("/style.css", HTTP_GET, handleStyle);
-      server.on("/readRSSI", HTTP_GET, handleRSSI);
-      server.onNotFound(handleNotFound);
-      wsCamera.onEvent(onCameraWebSocketEvent);
-      server.addHandler(&wsCamera);
-      wsCarInput.onEvent(onCarInputWebSocketEvent);
-      server.addHandler(&wsCarInput);
-      server.begin();
-#ifdef DEBUG
-      Serial.println(" HTTP server started");
-#endif
-      return;
-    }
-  }
-}
-
 void initTasks()
 {
-  xTaskCreatePinnedToCore(
-      keepWiFiAlive,      /* Function to implement the task */
-      "keepWiFiAlive",    /* Name of the task */
-      STACK_SIZE,         /* Stack size in words */
-      NULL,               /* Task input parameter */
-      tskIDLE_PRIORITY,   /* Priority of the task */
-      &keepWiFiAliveTask, /* Task handle. */
-      0);                 /* Core where the task should run */
-
   xTaskCreatePinnedToCore(
       arduinoOTA,       /* Function to implement the task */
       "arduinoOTA",     /* Name of the task */
@@ -793,6 +667,252 @@ void setupPinModes()
   ledIndicator(3, 250);
 }
 
+// Read File from SPIFFS
+String readFile(fs::FS &fs, const char *path)
+{
+#ifdef DEBUG
+  Serial.printf("Reading file: %s\r\n", path);
+#endif
+
+  File file = fs.open(path);
+  if (!file || file.isDirectory())
+  {
+#ifdef DEBUG
+    Serial.println("- failed to open file for reading");
+#endif
+    return String();
+  }
+
+  String fileContent;
+  while (file.available())
+  {
+    fileContent = file.readStringUntil('\n');
+    break;
+  }
+  return fileContent;
+}
+
+// Write file to SPIFFS
+void writeFile(fs::FS &fs, const char *path, const char *message)
+{
+#ifdef DEBUG
+  Serial.printf("Writing file: %s\r\n", path);
+#endif
+
+  File file = fs.open(path, FILE_WRITE);
+  if (!file)
+  {
+#ifdef DEBUG
+    Serial.println("- failed to open file for writing");
+#endif
+    return;
+  }
+  if (file.print(message))
+  {
+#ifdef DEBUG
+    Serial.println("- file written");
+#endif
+  }
+  else
+  {
+#ifdef DEBUG
+    Serial.println("- write failed");
+#endif
+  }
+}
+
+// Initialize WiFi
+void initWiFi()
+{
+  const int WIFI_TIMEOUT_MS = 10000;
+
+  // Load values saved in SPIFFS
+  ssid = readFile(SPIFFS, ssidPath);
+  pass = readFile(SPIFFS, passPath);
+  ip = readFile(SPIFFS, ipPath);
+  gateway = readFile(SPIFFS, gatewayPath);
+#ifdef DEBUG
+  Serial.println(ssid);
+  Serial.println(pass);
+  Serial.println(ip);
+  Serial.println(gateway);
+#endif
+
+  if (ssid.isEmpty())
+  {
+#ifdef DEBUG
+    Serial.println("Undefined SSID.");
+#endif
+  }
+  else
+  {
+    WiFi.mode(WIFI_AP_STA);
+
+    if (!ip.isEmpty() && !gateway.isEmpty())
+    {
+      IPAddress localIP, localGateway, subnet(255, 255, 255, 0);
+      localIP.fromString(ip);
+      localGateway.fromString(gateway);
+      if (!WiFi.config(localIP, localGateway, subnet))
+      {
+#ifdef DEBUG
+        Serial.println("STA Failed to configure");
+#endif
+      }
+    }
+
+    WiFi.begin(ssid.c_str(), pass.c_str());
+    WiFi.setAutoReconnect(true);
+
+#ifdef DEBUG
+    Serial.println("Connecting to WiFi...");
+#endif
+
+    unsigned long startTime = millis();
+
+    while (WiFi.status() != WL_CONNECTED)
+    {
+      unsigned long currentTime = millis();
+      ledIndicator(1, 500);
+      if (currentTime - startTime >= WIFI_TIMEOUT_MS)
+      {
+#ifdef DEBUG
+        Serial.println("Failed to connect to STA.");
+#endif
+        break;
+      }
+    }
+
+    if (WiFi.status() == WL_CONNECTED)
+    {
+      if (!MDNS.begin("cameracar"))
+      {
+#ifdef DEBUG
+        Serial.println("Error setting up MDNS responder!");
+#endif
+      }
+      else
+      {
+#ifdef DEBUG
+        Serial.println("mDNS responder started");
+#endif
+        // Add service to MDNS-SD
+        MDNS.addService("http", "tcp", 80);
+      }
+      ledIndicator(10, 50);
+      ledIndicator(HIGH);
+#ifdef DEBUG
+      Serial.println("");
+      Serial.print("Connected to ");
+      Serial.println(ssid);
+      Serial.print("IP address: ");
+      Serial.println(WiFi.localIP());
+#endif
+    }
+  }
+
+  WiFi.setTxPower(WIFI_POWER_19_5dBm);
+
+#ifdef DEBUG
+  Serial.println("Setting AP (Access Point)");
+#endif
+  // NULL sets an open Access Point
+  WiFi.softAP("ESP-WIFI-MANAGER", NULL);
+
+  IPAddress IP = WiFi.softAPIP();
+#ifdef DEBUG
+  Serial.print("AP IP address: ");
+  Serial.println(IP);
+#endif
+
+  server.on("/wifimanager", HTTP_GET, [](AsyncWebServerRequest *request)
+            { request->send(SPIFFS, "/wifimanager.html", "text/html"); });
+
+  server.on("/wifimanager.css", HTTP_GET, [](AsyncWebServerRequest *request)
+            { request->send(SPIFFS, "/wifimanager.css", "text/css"); });
+
+  server.on("/", HTTP_POST, [](AsyncWebServerRequest *request)
+            {
+      int params = request->params();
+      for(int i=0;i<params;i++){
+        AsyncWebParameter* p = request->getParam(i);
+        if(p->isPost()){
+          // HTTP POST ssid value
+          if (p->name() == PARAM_INPUT_1) {
+            ssid = p->value().c_str();
+
+#ifdef DEBUG
+            Serial.print("SSID set to: ");
+            Serial.println(ssid);
+#endif
+            // Write file to save value
+            writeFile(SPIFFS, ssidPath, ssid.c_str());
+          }
+          // HTTP POST pass value
+          if (p->name() == PARAM_INPUT_2) {
+            pass = p->value().c_str();
+#ifdef DEBUG
+            Serial.print("Password set to: ");
+            Serial.println(pass);
+#endif
+            // Write file to save value
+            writeFile(SPIFFS, passPath, pass.c_str());
+          }
+          // HTTP POST ip value
+          if (p->name() == PARAM_INPUT_3) {
+            ip = p->value().c_str();
+#ifdef DEBUG
+            Serial.print("IP Address set to: ");
+            Serial.println(ip);
+#endif
+            // Write file to save value
+            writeFile(SPIFFS, ipPath, ip.c_str());
+          }
+          // HTTP POST gateway value
+          if (p->name() == PARAM_INPUT_4) {
+            gateway = p->value().c_str();
+#ifdef DEBUG
+            Serial.print("Gateway set to: ");
+            Serial.println(gateway);
+#endif
+            // Write file to save value
+            writeFile(SPIFFS, gatewayPath, gateway.c_str());
+          }
+          //Serial.printf("POST[%s]: %s\n", p->name().c_str(), p->value().c_str());
+        }
+      }
+      request->send(200, "text/plain", "Done. ESP will restart, connect to your router and go to IP address: " + ip);
+      vTaskDelay(pdMS_TO_TICKS(3000));
+      ESP.restart(); });
+
+  server.onNotFound([](AsyncWebServerRequest *request)
+                    { request->send(404, "text/plain", "File Not Found"); });
+
+  //////////////////////////////////ADD YOUR CODE/////////////////////////////////////////////////////////////////
+
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
+            { request->send(SPIFFS, "/index.html", "text/html"); });
+
+  server.on("/style.css", HTTP_GET, [](AsyncWebServerRequest *request)
+            { request->send(SPIFFS, "/style.css", "text/css"); });
+
+  server.on("/readRSSI", HTTP_GET, [](AsyncWebServerRequest *request)
+            { String rssi = "0";
+              rssi = WiFi.RSSI();              
+              request->send(200, "text/plain", rssi); });
+
+  wsCamera.onEvent(onCameraWebSocketEvent);
+  server.addHandler(&wsCamera);
+  wsCarInput.onEvent(onCarInputWebSocketEvent);
+  server.addHandler(&wsCarInput);
+  ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  server.begin();
+#ifdef DEBUG
+  Serial.println("HTTP server started");
+#endif
+}
+
 void setup()
 {
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); // disable detector
@@ -806,21 +926,19 @@ void setup()
 #ifdef DEBUG
     Serial.println("An error has ocurred while mounting SPIFFS");
 #endif
-    return;
+    ESP.restart();
   }
+#ifdef DEBUG
+  Serial.println("SPIFFS mounted successfully");
+#endif
 
   setupPinModes();
   setupCamera();
+  initWiFi();
   initTasks();
-  initServer();
 }
 
 void loop()
 {
-#ifdef DEBUG
-  // Serial.printf("Total heap: %d, Free heap: %d, Total PSRAM: %d,Free PSRAM: %d\n", ESP.getHeapSize(), ESP.getFreeHeap(), ESP.getPsramSize(), ESP.getFreePsram());
-  // Serial.println(uxTaskGetStackHighWaterMark(nullptr));
-#else
   vTaskDelay(portMAX_DELAY);
-#endif
 }
