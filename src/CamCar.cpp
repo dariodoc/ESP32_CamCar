@@ -14,7 +14,7 @@
 #include <SPIFFS.h>
 #include <ESPmDNS.h>
 
-#define DEBUG // Uncomment to enable Serial Monitor
+//#define DEBUG // Uncomment to enable Serial Monitor
 
 // ESP32-CAM
 #define PWDN_GPIO_NUM 32
