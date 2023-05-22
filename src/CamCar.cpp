@@ -80,12 +80,13 @@ TaskHandle_t obstacleAvoidanceModeTask;
 TaskHandle_t playMelodyTask;
 TaskHandle_t cleanupWSClientsTask;
 
-/////////////////////////////////////////////////////WIFI variables//////////////////////////////////////////////////////
+/////////////////////////////////////////////////////SERVER variables//////////////////////////////////////////////////////
 AsyncWebServer server(80);
 AsyncWebSocket wsCamera("/Camera");
 AsyncWebSocket wsCarInput("/CarInput");
 static int cameraClientId = 0;
 
+/////////////////////////////////////////////////////WIFI variables//////////////////////////////////////////////////////
 // Search for parameter in HTTP POST request
 const char *PARAM_INPUT_1 = "ssid";
 const char *PARAM_INPUT_2 = "pass";
@@ -817,7 +818,7 @@ void initWiFi()
   Serial.println("Setting AP (Access Point)");
 #endif
   // NULL sets an open Access Point
-  WiFi.softAP("ESP-WIFI-MANAGER", NULL);
+  WiFi.softAP("ESP-CAMERA-CAR", "carbondioxide");
 
   IPAddress IP = WiFi.softAPIP();
 #ifdef DEBUG
