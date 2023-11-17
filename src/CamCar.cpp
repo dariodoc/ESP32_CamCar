@@ -14,7 +14,7 @@
 #include <SPIFFS.h>
 #include <ESPmDNS.h>
 
-//#define DEBUG // Uncomment to enable Serial Monitor
+// #define DEBUG // Uncomment to enable Serial Monitor
 
 // ESP32-CAM
 #define PWDN_GPIO_NUM 32
@@ -160,8 +160,8 @@ void arduinoOTA(void *parameters)
 #ifdef DEBUG
   Serial.printf("arduinoOTA() running on core: %d\n", xPortGetCoreID());
 #endif
-  ArduinoOTA.setMdnsEnabled(false); //DISABLE MDNS INCLUDED iN ARDUINOOTA TO PREVENT ISSUES WITH MDNS
-  ArduinoOTA.begin(); // enable to receive update/upload firmware via WiFi OTA
+  ArduinoOTA.setMdnsEnabled(false); // DISABLE MDNS INCLUDED iN ARDUINOOTA TO PREVENT ISSUES WITH MDNS
+  ArduinoOTA.begin();               // enable to receive update/upload firmware via WiFi OTA
   for (;;)
   {
 #ifdef DEBUG
@@ -386,6 +386,7 @@ void obstacleAvoidanceMode(void *parameters)
 #endif
       obstacleFound = true;
       moveCar(STOP);
+      toneToPlay(buzzerPin, buzzerChannel, NOTE_G5, 200); // alert when obstacle is detected
     }
     else
     {
@@ -394,7 +395,7 @@ void obstacleAvoidanceMode(void *parameters)
 #endif
       obstacleFound = false;
     }
-    vTaskDelay(pdMS_TO_TICKS(50));
+    vTaskDelay(pdMS_TO_TICKS(30));
   }
 }
 
