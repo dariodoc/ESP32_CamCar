@@ -414,15 +414,17 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server,
 #endif
     leftBackLed(LOW);
     rightBackLed(LOW);
+
+    // NOT USING moveCar(), to be able to turn on the car without powering the motors. moveCar() without power will cause the ESP32 to reboot.
+
     break;
   case WS_EVT_DISCONNECT:
 #ifdef DEBUG
     Serial.printf("WebSocket client #%u disconnected\n", client->id());
 #endif
     // Actions when disconnected
-    brake(leftMotor, rightMotor);
-    leftBackLed(HIGH);
-    rightBackLed(HIGH);
+
+    moveCar(STOP);
 
     enableLight = false;
     digitalWrite(lightPin, LOW);
@@ -462,7 +464,10 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server,
       int valueInt = atoi(value.c_str());
       if (key == "MoveCar")
       {
-        moveCar(valueInt);
+        if (!obstacleFound)
+        {
+          moveCar(valueInt);
+        }
       }
       else if (key == "Speed")
       {
