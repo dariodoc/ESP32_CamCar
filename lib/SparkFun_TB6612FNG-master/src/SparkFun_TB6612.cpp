@@ -21,9 +21,10 @@ Developed with ROB-9457
 #include "SparkFun_TB6612.h"
 #include <Arduino.h>
 
-#define PCF8574_ON // Uncomment to use PCF8574 by including "CamCar.h"
+#define PCF8574_ON // Uncomment to use PCF8574 by including "PCF8574.h"
 #ifdef PCF8574_ON
-#include "CamCar.h"
+#include <PCF8574.h>
+extern PCF8574 pcf8574;
 #endif
 
 Motor::Motor(int In1pin, int In2pin, int PWMpin, int offset, int STBYpin)
@@ -119,11 +120,11 @@ void forward(Motor motor1, Motor motor2, int speed)
   motor1.drive(speed);
   motor2.drive(speed);
 }
-void forward(Motor motor1, Motor motor2)
-{
-  motor1.drive(DEFAULTSPEED);
-  motor2.drive(DEFAULTSPEED);
-}
+// void forward(Motor motor1, Motor motor2)
+// {
+//   motor1.drive(DEFAULTSPEED);
+//   motor2.drive(DEFAULTSPEED);
+// }
 
 void back(Motor motor1, Motor motor2, int speed)
 {
@@ -131,21 +132,20 @@ void back(Motor motor1, Motor motor2, int speed)
   motor1.drive(-temp);
   motor2.drive(-temp);
 }
-void back(Motor motor1, Motor motor2)
-{
-  motor1.drive(-DEFAULTSPEED);
-  motor2.drive(-DEFAULTSPEED);
-}
+// void back(Motor motor1, Motor motor2)
+// {
+//   motor1.drive(-DEFAULTSPEED);
+//   motor2.drive(-DEFAULTSPEED);
+// }
 void left(Motor left, Motor right, int speed)
 {
-  int temp = abs(speed) / 2;
+  int temp = abs(speed);
   left.drive(-temp);
   right.drive(temp);
 }
-
 void right(Motor left, Motor right, int speed)
 {
-  int temp = abs(speed) / 2;
+  int temp = abs(speed) ;
   left.drive(temp);
   right.drive(-temp);
 }
@@ -154,28 +154,24 @@ void brake(Motor motor1, Motor motor2)
   motor1.brake();
   motor2.brake();
 }
-
 void forwardleft(Motor left, Motor right, int speed)
 {
   int temp = abs(speed) / 2;
   left.drive(temp);
   right.drive(speed);
 }
-
 void forwardright(Motor left, Motor right, int speed)
 {
   int temp = abs(speed) / 2;
   left.drive(speed);
   right.drive(temp);
 }
-
 void backleft(Motor left, Motor right, int speed)
 {
   int temp = abs(speed) / 2;
   left.drive(-temp);
   right.drive(-speed);
 }
-
 void backright(Motor left, Motor right, int speed)
 {
   int temp = abs(speed) / 2;

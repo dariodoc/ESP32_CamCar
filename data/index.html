@@ -2,18 +2,18 @@
 <html>
 
 <head>
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-  <link rel="stylesheet" type="text/css" href="style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <link rel="stylesheet" type="text/css" href="style.css">
 </head>
 
 
 <body scroll="no" class="noselect"
-style="background-color:white; position:relative; overflow:auto; text-align: center;">
+    style="background-color:white; position:relative; overflow:auto; text-align: center;">
 
 
-  <img id="CameraImage" src="" style="width:345px;height:250px"></td>
+    <img id="CameraImage" src="" style="width:345px;height:250px">
 
-  <!--
+    <!--
     <p style="text-align: center;">
     X: <span id="x_coordinate"> </span>
     Y: <span id="y_coordinate"> </span>
@@ -22,441 +22,383 @@ style="background-color:white; position:relative; overflow:auto; text-align: cen
   </p>  
   -->
 
-  <br>
+    <br>
 
-  <canvas id="Canvas" name="game" style="background-color:rgb(4 3 20 / 40%);"></canvas>
+    <canvas id="Canvas" name="game" style="background-color:rgb(4 3 20 / 40%);"></canvas>
 
-  <table id="MainTable" style="width:345px; margin:auto; table-layout:fixed" cellspacing=10>
+    <table id="MainTable" style="width:345px; margin:auto; table-layout:fixed" cellspacing=10>
 
-    <tr>
-      <td style="text-align:left"><b>RSSI: </b><b id="Rssi"></b></td>
-      <td colspan=1 style="text-align:left"><b>Speed:</b></td>
-      <td>
-        <div class="slidecontainer">
-          <input type="range" min="0" max="100" value="100" class="slider" id="Speed"
-            oninput='sendButtonInput("Speed",value)'>
-        </div>
-      </td>
-    </tr>
+        <tr>
+            <td style="text-align:left"><b>RSSI: </b><b id="Rssi"></b></td>
+            <td colspan=1 style="text-align:left"><b>Speed:</b></td>
+            <td>
+                <div class="slidecontainer">
+                    <input type="range" min="1" max="5" value="5" class="slider" id="Speed">
+                </div>
+            </td>
+        </tr>
 
 
-    <tr>
-      <td style="text-align:left"><b>Pan:</b></td>
+        <tr>
+            <td style="text-align:left"><b>Pan:</b></td>
 
-      <td class="button" id="btnPanLeft" onmousedown='PanLeft();' onmouseup=stopIncrement(); ontouchstart='PanLeft();'
-        ontouchend='stopIncrement();'><span class="arrows">&#9664;</span>
-      </td>
-      <td class="button" id="btnPanRight" onmousedown='PanRight();' onmouseup=stopDecrement();
-        ontouchstart='PanRight();' ontouchend='stopDecrement();'><span class="arrows">&#9654;</span>
-      </td>
+            <td class="button" id="btnPanLeft" onmousedown='PanLeft();' onmouseup=stopIncrement();
+                ontouchstart='PanLeft();' ontouchend='stopIncrement();'><span class="arrows">&#9664;</span>
+            </td>
+            <td class="button" id="btnPanRight" onmousedown='PanRight();' onmouseup=stopDecrement();
+                ontouchstart='PanRight();' ontouchend='stopDecrement();'><span class="arrows">&#9654;</span>
+            </td>
 
-    </tr>
-    <tr>
-      <td style="text-align:left"><b>Tilt:</b></td>
+        </tr>
+        <tr>
+            <td style="text-align:left"><b>Tilt:</b></td>
 
-      <td class="button" id="btnTiltUp" onmousedown='TiltUp();' onmouseup=stopIncrement(); ontouchstart='TiltUp();'
-        ontouchend='stopIncrement();'><span class="arrows">&#9650;</span>
-      </td>
-      <td class="button" id="btnTiltDown" onmousedown='TiltDown();' onmouseup=stopDecrement();
-        ontouchstart='TiltDown();' ontouchend='stopDecrement();'><span class="arrows">&#9660;</span>
-      </td>
-    </tr>
-    <tr>
-      <td class="button" id="Light" onmousedown='LightOnOff();' ontouchstart='LightOnOff();'><span
-          class="arrows">&#128262;</span></td>
-      <td class="button" id="CenterServos" onmousedown='CenterServos();' ontouchstart='CenterServos();'><span
-          class="arrows">&#9678;</span></td>
-      <td class="button" id="Melody" onmousedown='MelodyOnOff();' ontouchstart='MelodyOnOff();'><span
-          class="arrows">&#127925;</span></td>
-    </tr>
-    <tr>
-      <td></td>
-      <td class="button" id="ObstacleAvoidance" onmousedown='ObstacleAvoidanceOnOff();' ontouchstart='
+            <td class="button" id="btnTiltUp" onmousedown='TiltUp();' onmouseup=stopIncrement();
+                ontouchstart='TiltUp();' ontouchend='stopIncrement();'><span class="arrows">&#9650;</span>
+            </td>
+            <td class="button" id="btnTiltDown" onmousedown='TiltDown();' onmouseup=stopDecrement();
+                ontouchstart='TiltDown();' ontouchend='stopDecrement();'><span class="arrows">&#9660;</span>
+            </td>
+        </tr>
+        <tr>
+            <td class="button" id="btnLight" onmousedown='LightOnOff();' ontouchstart='LightOnOff();'><span
+                    class="arrows">&#128262;</span></td>
+            <td class="button" id="btnCenterServos" onmousedown='CenterServos();' ontouchstart='CenterServos();'><span
+                    class="arrows">&#9678;</span></td>
+            <td class="button" id="btnMelody" onmousedown='MelodyOnOff();' ontouchstart='MelodyOnOff();'><span
+                    class="arrows">&#127925;</span></td>
+        </tr>
+        <tr>
+            <td></td>
+            <td class="button" id="btnObstacleAvoidance" onmousedown='ObstacleAvoidanceOnOff();' ontouchstart='
         ObstacleAvoidanceOnOff();'><span class="arrows">&#128225;</span></td>
-      <td></td>
-    </tr>
+            <td></td>
+        </tr>
 
-  </table>
+    </table>
 
-  <script>
+    <script>
+        /////////////////////////VARIABLES//////////////////////////////////////////////
 
+        let width, height, radius, x_orig, y_orig;
+        let coord = { x: 0, y: 0 };
+        let paint = false;
+        let webSocketCameraUrl = "ws://" + window.location.hostname + "/Camera";
+        let webSocketCarInputUrl = "ws://" + window.location.hostname + "/CarInput";
+        let websocketCamera;
+        let websocketCarInput;
+        let timer;
+        let isMelodyOn = false;
+        let isLightOn = false;
+        let isObstacleAvoidanceOn = false;
+        let currentDirection = 0;
+        let servoSpeed = 10;
+        let panServoCounter = 75;
+        let tiltServoCounter = 90;
 
-    /////////////////////////VARIABLES//////////////////////////////////////////////
+        const btnObstacleAvoidance = document.getElementById("btnObstacleAvoidance");
+        const btnLight = document.getElementById("btnLight");
+        const btnMelody = document.getElementById("btnMelody");
+        const btnCenterServos = document.getElementById("btnCenterServos");
+        const canvas = document.getElementById("Canvas");
+        const ctx = canvas.getContext("2d");
+        const rssi = document.getElementById("Rssi");
+        const mainTable = document.getElementById("MainTable");
+        const cameraImage = document.getElementById("CameraImage");
 
-    let width, height, radius, x_orig, y_orig;
-    let coord = { x: 0, y: 0 };
-    let paint = false;
-    let webSocketCameraUrl = "ws:\/\/" + window.location.hostname + "/Camera";
-    let webSocketCarInputUrl = "ws:\/\/" + window.location.hostname + "/CarInput";
-    let websocketCamera;
-    let websocketCarInput;
-    let isMelodyOn = false;
-    let isLightOn = false;
-    let isObstacleAvoidanceOn = false;
-    let currentDirection = 0;
-    let servoSpeed = 10;
-    let panServoCounter = 75;
-    let tiltServoCounter = 90;
+        const btnPanLeft = document.getElementById("btnPanLeft");
+        const btnPanRight = document.getElementById("btnPanRight");
+        const btnTiltUp = document.getElementById("btnTiltUp");
+        const btnTiltDown = document.getElementById("btnTiltDown");
 
-    const btnObstacleAvoidance = document.getElementById("ObstacleAvoidance");
-    const btnLight = document.getElementById("Light");
-    const btnMelody = document.getElementById("Melody");
-    const btnCenterServos = document.getElementById("CenterServos");
-    const canvas = document.getElementById("Canvas");
-    const ctx = canvas.getContext("2d");
-    const rssi = document.getElementById("Rssi");
-    const mainTable = document.getElementById("MainTable");
-    const sliderPan = document.getElementById("Pan");
-    const sliderTilt = document.getElementById("Tilt");
-    const cameraImage = document.getElementById("CameraImage");
+        const FORWARD = 1;
+        const BACKWARD = 2;
+        const LEFT = 3;
+        const RIGHT = 4;
+        const STOP = 0;
+        const FORWARDLEFT = 5;
+        const FORWARDRIGHT = 6;
+        const BACKLEFT = 7;
+        const BACKRIGHT = 8;
 
-    const btnPanLeft = document.getElementById("btnPanLeft");
-    const btnPanRight = document.getElementById("btnPanRight");
-    const btnTiltUp = document.getElementById("btnTiltUp");
-    const btnTiltDown = document.getElementById("btnTiltDown");
+        //////////////////////////////////FUNCTIONS////////////////////////////////
 
-    const FORWARD = 1;
-    const BACKWARD = 2;
-    const LEFT = 3;
-    const RIGHT = 4;
-    const STOP = 0;
-    const FORWARDLEFT = 5;
-    const FORWARDRIGHT = 6;
-    const BACKLEFT = 7;
-    const BACKRIGHT = 8;
-
-    //////////////////////////////////FUNCTIONS////////////////////////////////
-
-    setInterval(function () {
-      // Call a function repetatively with 1 Second interval
-      getData();
-    }, 1000); //1000mSeconds update rate
-
-    function getData() {
-      let xhttp = new XMLHttpRequest();
-      xhttp.onreadystatechange = function () {
-        if (this.readyState == 4 && this.status == 200) {
-          rssi.innerHTML = this.responseText;
-        }
-      };
-      xhttp.open("GET", "readRSSI", true);
-      xhttp.send();
-    }
-
-    function initCameraWebSocket() {
-      websocketCamera = new WebSocket(webSocketCameraUrl);
-      websocketCamera.binaryType = 'blob';
-      websocketCamera.onopen = function (event) { };
-      websocketCamera.onclose = function (event) { setTimeout(initCameraWebSocket, 2000); };
-      websocketCamera.onmessage = function (event) {
-        let imageId = cameraImage;
-        imageId.src = URL.createObjectURL(event.data);
-      };
-    }
-
-    function initCarInputWebSocket() {
-      websocketCarInput = new WebSocket(webSocketCarInputUrl);
-      websocketCarInput.onopen = function (event) {
-        sendButtonInput("Pan", panServoCounter);
-        sendButtonInput("Tilt", tiltServoCounter);
-        // ObstacleAvoidanceOnOff();
-      };
-      websocketCarInput.onclose = function (event) { setTimeout(initCarInputWebSocket, 2000); };
-      websocketCarInput.onmessage = function (event) { };
-    }
-
-    function sendButtonInput(key, value) {
-      let data = key + "," + value;
-      websocketCarInput.send(data);
-    }
-
-    function CenterServos() {
-      panServoCounter = 75;
-      tiltServoCounter = 90;
-      sendButtonInput("CenterServos", "1");
-      window.navigator.vibrate(50);
-    }
-
-    function ObstacleAvoidanceOnOff() {
-      if (isObstacleAvoidanceOn == false) {
-        btnObstacleAvoidance.style.backgroundColor = "rgb(236 240 243)";
-        isObstacleAvoidanceOn = true;
-      }
-      else {
-        btnObstacleAvoidance.style.backgroundColor = 'black';
-        isObstacleAvoidanceOn = false;
-      }
-      sendButtonInput("ObstacleAvoidance", "1");
-      window.navigator.vibrate(50);
-    }
-
-    function LightOnOff() {
-      if (isLightOn == false) {
-        btnLight.style.backgroundColor = "rgb(236 240 243)";
-        isLightOn = true;
-      }
-      else {
-        btnLight.style.backgroundColor = 'black';
-        isLightOn = false;
-      }
-      sendButtonInput("Light", "1");
-      window.navigator.vibrate(50);
-    }
-
-    function MelodyOnOff() {
-      if (isMelodyOn == false) {
-        btnMelody.style.backgroundColor = "rgb(236 240 243)";
-        isMelodyOn = true;
-      }
-      else {
-        btnMelody.style.backgroundColor = 'black';
-        isMelodyOn = false;
-      }
-      sendButtonInput("InitMelody", "1");
-      window.navigator.vibrate(50);
-    }
-
-    function PanLeft() {
-      btnPanLeft.style.backgroundColor = "rgb(236 240 243)";
-      if (panServoCounter < 180) {
-        panServoCounter++;
-        timer = setTimeout(PanLeft, servoSpeed);
-        sendButtonInput("Pan", panServoCounter);
-      }
-    }
-
-    function PanRight() {
-      btnPanRight.style.backgroundColor = "rgb(236 240 243)";
-      if (panServoCounter > 0) {
-        panServoCounter--;
-        timer = setTimeout(PanRight, servoSpeed);
-        sendButtonInput("Pan", panServoCounter);
-      }
-    }
-
-    function TiltUp() {
-      btnTiltUp.style.backgroundColor = "rgb(236 240 243)";
-      if (tiltServoCounter > 0) {
-        tiltServoCounter--;
-        timer = setTimeout(TiltUp, servoSpeed); // set a timer to call this function again in 100 milliseconds
-        sendButtonInput("Tilt", tiltServoCounter);
-      }
-    }
-
-    function TiltDown() {
-      btnTiltDown.style.backgroundColor = "rgb(236 240 243)";
-      if (tiltServoCounter < 180) {
-        tiltServoCounter++;
-        timer = setTimeout(TiltDown, servoSpeed); // set a timer to call this function again in 100 milliseconds
-        sendButtonInput("Tilt", tiltServoCounter);
-      }
-    }
-
-
-    function stopIncrement() {
-      clearTimeout(timer); // stop the timer
-      btnPanLeft.style.backgroundColor = 'black';
-      btnPanRight.style.backgroundColor = 'black';
-      btnTiltUp.style.backgroundColor = 'black';
-      btnTiltDown.style.backgroundColor = 'black';
-    }
-
-    function stopDecrement() {
-      // this function is called when the button is released
-      clearTimeout(timer); // stop the timer
-      btnPanLeft.style.backgroundColor = 'black';
-      btnPanRight.style.backgroundColor = 'black';
-      btnTiltUp.style.backgroundColor = 'black';
-      btnTiltDown.style.backgroundColor = 'black';
-    }
-
-
-    ////////////////////FUNCTIONS RELATED WITH JOYSTICK////////////////////////////
-
-    function background() {
-      x_orig = width / 2;
-      y_orig = height / 2;
-      ctx.beginPath();
-      ctx.arc(x_orig, y_orig, radius + 20, 0, Math.PI * 2, true);
-      ctx.fillStyle = '#ECE5E5';
-      ctx.fill();
-    }
-
-    function joystick(width, height) {
-      ctx.beginPath();
-      ctx.arc(width, height, radius, 0, Math.PI * 2, true);
-      ctx.fillStyle = '#e31414';
-      ctx.fill();
-      ctx.strokeStyle = '#F6ABAB';
-      ctx.lineWidth = 8;
-      ctx.stroke();
-    }
-
-    function resize() {
-      width = 345;
-      radius = 30;
-      height = radius * 4.5;
-      ctx.canvas.width = width;
-      ctx.canvas.height = height;
-      background();
-      joystick(width / 2, height / 2);
-    }
-
-    function getPosition(event) {
-      e = window.event || e;
-      let mouse_x = e.clientX || e.touches[0].clientX;
-      let mouse_y = e.clientY || e.touches[0].clientY;
-      coord.x = mouse_x - canvas.offsetLeft;
-      coord.y = mouse_y - canvas.offsetTop;
-    }
-
-    function is_it_in_the_circle() {
-      let current_radius = Math.sqrt(Math.pow(coord.x - x_orig, 2) + Math.pow(coord.y - y_orig, 2));
-      if (radius >= current_radius) return true
-      else return false
-    }
-
-    function processAndSend(x, y, speed, angle) {
-
-      if (x == 0 && y == 0) {
-        currentDirection = STOP;
-        sendButtonInput("MoveCar", STOP);
-      }
-      else if (angle >= 60 && angle <= 120) {
-        if (currentDirection != FORWARD) {
-          currentDirection = FORWARD;
-          sendButtonInput("MoveCar", FORWARD);
-        }
-      }
-      else if (angle >= 240 && angle <= 300) {
-        if (currentDirection != BACKWARD) {
-          currentDirection = BACKWARD;
-          sendButtonInput("MoveCar", BACKWARD);
-        }
-      }
-      else if (angle >= 150 && angle <= 210) {
-        if (currentDirection != LEFT) {
-          currentDirection = LEFT;
-          sendButtonInput("MoveCar", LEFT);
-        }
-      }
-      else if (angle >= 330 && angle <= 360 || angle >= 0 && angle <= 30) {
-        if (currentDirection != RIGHT) {
-          currentDirection = RIGHT;
-          sendButtonInput("MoveCar", RIGHT);
-        }
-      }
-      else if (angle > 120 && angle < 150) {
-        if (currentDirection != FORWARDLEFT) {
-          currentDirection = FORWARDLEFT;
-          sendButtonInput("MoveCar", FORWARDLEFT);
-        }
-      }
-      else if (angle > 30 && angle < 60) {
-        if (currentDirection != FORWARDRIGHT) {
-          currentDirection = FORWARDRIGHT;
-          sendButtonInput("MoveCar", FORWARDRIGHT);
-        }
-      }
-      else if (angle > 210 && angle < 240) {
-        if (currentDirection != BACKLEFT) {
-          currentDirection = BACKLEFT;
-          sendButtonInput("MoveCar", BACKLEFT);
-        }
-      }
-      else if (angle > 300 && angle < 330) {
-        if (currentDirection != BACKRIGHT) {
-          currentDirection = BACKRIGHT;
-          sendButtonInput("MoveCar", BACKRIGHT);
-        }
-      }
-    }
-
-    function Draw(event) {
-      if (paint) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        background();
-        let angle_in_degrees, x, y, speed;
-        let angle = Math.atan2((coord.y - y_orig), (coord.x - x_orig));
-
-        if (Math.sign(angle) == -1) {
-          angle_in_degrees = Math.round(-angle * 180 / Math.PI);
-        }
-        else {
-          angle_in_degrees = Math.round(360 - angle * 180 / Math.PI);
+        function initCameraWebSocket() {
+            websocketCamera = new WebSocket(webSocketCameraUrl);
+            websocketCamera.binaryType = 'blob';
+            websocketCamera.onopen = function (event) { console.log('Camera WebSocket connected'); };
+            websocketCamera.onclose = function (event) { setTimeout(initCameraWebSocket, 2000); };
+            websocketCamera.onmessage = function (event) {
+                cameraImage.src = URL.createObjectURL(event.data);
+            };
         }
 
-        if (is_it_in_the_circle()) {
-          joystick(coord.x, coord.y);
-          x = coord.x;
-          y = coord.y;
+        function initCarInputWebSocket() {
+            websocketCarInput = new WebSocket(webSocketCarInputUrl);
+            websocketCarInput.onopen = function (event) {
+                console.log('CarInput WebSocket connected');
+                // Al conectar, envía la posición inicial de los servos
+                sendCommand('P', panServoCounter);
+                sendCommand('T', tiltServoCounter);
+            };
+            websocketCarInput.onclose = function (event) { setTimeout(initCarInputWebSocket, 2000); };
+            // NUEVO: Escucha la telemetría enviada por el coche
+            websocketCarInput.onmessage = function (event) {
+                try {
+                    const telemetry = JSON.parse(event.data);
+                    if (telemetry.rssi !== undefined) {
+                        rssi.innerText = telemetry.rssi;
+                    }
+                    if (telemetry.obstacle !== undefined) {
+                        // Indicador visual de obstáculo
+                        canvas.style.border = telemetry.obstacle ? "3px solid red" : "none";
+                    }
+                } catch (e) {
+                    // Ignora errores si el mensaje no es JSON
+                }
+            };
         }
-        else {
-          x = radius * Math.cos(angle) + x_orig;
-          y = radius * Math.sin(angle) + y_orig;
-          joystick(x, y);
+
+        // NUEVA FUNCIÓN OPTIMIZADA para enviar comandos
+        function sendCommand(command, value) {
+            if (websocketCarInput && websocketCarInput.readyState === WebSocket.OPEN) {
+                // Crea un array de 2 bytes: [comando, valor]
+                const data = new Uint8Array([command.charCodeAt(0), value]);
+                websocketCarInput.send(data);
+            }
         }
 
-        getPosition(event);
+        // Funciones de botones actualizadas para usar sendCommand
+        function CenterServos() {
+            panServoCounter = 75;
+            tiltServoCounter = 90;
+            sendCommand('C', 1); // Comando 'C' para centrar
+            window.navigator.vibrate(50);
+        }
 
-        speed = Math.round(100 * Math.sqrt(Math.pow(x - x_orig, 2) + Math.pow(y - y_orig, 2)) / radius);
+        function ObstacleAvoidanceOnOff() {
+            isObstacleAvoidanceOn = !isObstacleAvoidanceOn;
+            btnObstacleAvoidance.style.backgroundColor = isObstacleAvoidanceOn ? "rgb(236 240 243)" : 'black';
+            sendCommand('O', 1); // Comando 'O' para Obstáculos
+            window.navigator.vibrate(50);
+        }
 
-        let x_relative = Math.round(x - x_orig);
-        let y_relative = Math.round(y - y_orig);
+        function LightOnOff() {
+            isLightOn = !isLightOn;
+            btnLight.style.backgroundColor = isLightOn ? "rgb(236 240 243)" : 'black';
+            sendCommand('L', 1); // Comando 'L' para Luz
+            window.navigator.vibrate(50);
+        }
 
-        processAndSend(x_relative, y_relative, speed, angle_in_degrees);
-      }
-    }
+        function MelodyOnOff() {
+            isMelodyOn = !isMelodyOn;
+            btnMelody.style.backgroundColor = isMelodyOn ? "rgb(236 240 243)" : 'black';
+            sendCommand('H', 1); // Comando 'H' para Horn (Melodía)
+            window.navigator.vibrate(50);
+        }
 
-    function startDrawing(event) {
-      paint = true;
-      getPosition(event);
-      if (is_it_in_the_circle()) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        background();
-        joystick(coord.x, coord.y);
-        Draw();
-      }
-    }
+        function PanLeft() {
+            btnPanLeft.style.backgroundColor = "rgb(236 240 243)";
+            if (panServoCounter < 180) {
+                panServoCounter++;
+                timer = setTimeout(PanLeft, servoSpeed);
+                sendCommand("P", panServoCounter);
+            }
+        }
 
-    function stopDrawing() {
-      paint = false;
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      background();
-      joystick(width / 2, height / 2);
+        function PanRight() {
+            btnPanRight.style.backgroundColor = "rgb(236 240 243)";
+            if (panServoCounter > 0) {
+                panServoCounter--;
+                timer = setTimeout(PanRight, servoSpeed);
+                sendCommand("P", panServoCounter);
+            }
+        }
 
-      // document.getElementById("x_coordinate").innerText = 0;
-      // document.getElementById("y_coordinate").innerText = 0;
-      // document.getElementById("speed").innerText = 0;
-      // document.getElementById("angle").innerText = 0;
+        function TiltUp() {
+            btnTiltUp.style.backgroundColor = "rgb(236 240 243)";
+            if (tiltServoCounter > 0) {
+                tiltServoCounter--;
+                timer = setTimeout(TiltUp, servoSpeed);
+                sendCommand("T", tiltServoCounter);
+            }
+        }
 
-      //stop the car
-      currentDirection = STOP;
-      processAndSend(0, 0, 0, 0);
-    }
+        function TiltDown() {
+            btnTiltDown.style.backgroundColor = "rgb(236 240 243)";
+            if (tiltServoCounter < 180) {
+                tiltServoCounter++;
+                timer = setTimeout(TiltDown, servoSpeed);
+                sendCommand("T", tiltServoCounter);
+            }
+        }
 
-    function initFunction() {
-      resize();
-      initCameraWebSocket();
-      initCarInputWebSocket();
+        function stopIncrement() {
+            clearTimeout(timer);
+            btnPanLeft.style.backgroundColor = 'black';
+            btnTiltUp.style.backgroundColor = 'black';
+        }
 
-      canvas.addEventListener('mousedown', startDrawing);
-      canvas.addEventListener('mouseup', stopDrawing);
-      canvas.addEventListener('mousemove', Draw);
+        function stopDecrement() {
+            clearTimeout(timer);
+            btnPanRight.style.backgroundColor = 'black';
+            btnTiltDown.style.backgroundColor = 'black';
+        }
 
-      canvas.addEventListener('touchstart', startDrawing);
-      canvas.addEventListener('touchend', stopDrawing);
-      canvas.addEventListener('touchcancel', stopDrawing);
-      canvas.addEventListener('touchmove', Draw);
-      window.addEventListener('resize', resize);
-    }
+        // Slider de velocidad actualizado
+        document.getElementById("Speed").oninput = function () {
+            sendCommand('S', this.value);
+        };
 
-    window.onload = initFunction();
-    mainTable.addEventListener("touchend", function (event) {
-      event.preventDefault()
-    });
 
-  </script>
+
+        ////////////////////FUNCTIONS RELATED WITH JOYSTICK////////////////////////////
+        // (Esta sección no necesita cambios, pero se mantiene para que todo funcione)
+
+        function background() {
+            x_orig = width / 2;
+            y_orig = height / 2;
+            ctx.beginPath();
+            ctx.arc(x_orig, y_orig, radius + 20, 0, Math.PI * 2, true);
+            ctx.fillStyle = '#ECE5E5';
+            ctx.fill();
+        }
+
+        function joystick(width, height) {
+            ctx.beginPath();
+            ctx.arc(width, height, radius, 0, Math.PI * 2, true);
+            ctx.fillStyle = '#e31414';
+            ctx.fill();
+            ctx.strokeStyle = '#F6ABAB';
+            ctx.lineWidth = 8;
+            ctx.stroke();
+        }
+
+        function resize() {
+            width = 345;
+            radius = 30;
+            height = radius * 4.5;
+            ctx.canvas.width = width;
+            ctx.canvas.height = height;
+            background();
+            joystick(width / 2, height / 2);
+        }
+
+        function getPosition(event) {
+            let mouse_x = event.clientX || event.touches[0].clientX;
+            let mouse_y = event.clientY || event.touches[0].clientY;
+            coord.x = mouse_x - canvas.offsetLeft;
+            coord.y = mouse_y - canvas.offsetTop;
+        }
+
+        function is_it_in_the_circle() {
+            let current_radius = Math.sqrt(Math.pow(coord.x - x_orig, 2) + Math.pow(coord.y - y_orig, 2));
+            return radius >= current_radius;
+        }
+
+        function processAndSend(x, y, speed, angle) {
+            let newDirection = STOP;
+            if (x === 0 && y === 0) {
+                newDirection = STOP;
+            } else if (angle >= 60 && angle <= 120) {
+                newDirection = FORWARD;
+            } else if (angle >= 240 && angle <= 300) {
+                newDirection = BACKWARD;
+            } else if (angle >= 150 && angle <= 210) {
+                newDirection = LEFT;
+            } else if (angle >= 330 || angle <= 30) {
+                newDirection = RIGHT;
+            } else if (angle > 120 && angle < 150) {
+                newDirection = FORWARDRIGHT;
+            } else if (angle > 30 && angle < 60) {
+                newDirection = FORWARDLEFT;
+            } else if (angle > 210 && angle < 240) {
+                newDirection = BACKRIGHT;
+            } else if (angle > 300 && angle < 330) {
+                newDirection = BACKLEFT;
+            }
+
+            if (newDirection !== currentDirection) {
+                currentDirection = newDirection;
+                sendCommand('M', currentDirection);
+            }
+        }
+
+
+        function Draw(event) {
+            if (paint) {
+                // 1. Obtén la posición MÁS RECIENTE del puntero. Esto es lo más importante.
+                getPosition(event);
+
+                // 2. Ahora que tienes las coordenadas correctas, calcula el ángulo.
+                let angle = Math.atan2((coord.y - y_orig), (coord.x - x_orig));
+                let angle_in_degrees;
+
+                if (angle < 0) {
+                    angle_in_degrees = Math.round(-angle * 180 / Math.PI);
+                } else {
+                    angle_in_degrees = Math.round(360 - angle * 180 / Math.PI);
+                }
+
+                // 3. Limpia y dibuja el fondo
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                background();
+
+                // 4. Determina la posición del joystick (dentro o en el borde del círculo)
+                let x, y;
+                if (is_it_in_the_circle()) {
+                    x = coord.x;
+                    y = coord.y;
+                } else {
+                    x = radius * Math.cos(angle) + x_orig;
+                    y = radius * Math.sin(angle) + y_orig;
+                }
+                joystick(x, y);
+
+                // 5. Calcula la velocidad y coordenadas relativas para enviar
+                let speed = Math.round(100 * Math.sqrt(Math.pow(x - x_orig, 2) + Math.pow(y - y_orig, 2)) / radius);
+                let x_relative = Math.round(x - x_orig);
+                let y_relative = Math.round(y - y_orig);
+
+                // 6. Envía los datos, ahora todos son consistentes con el evento actual
+                processAndSend(x_relative, y_relative, speed, angle_in_degrees);
+            }
+        }
+        function startDrawing(event) {
+            paint = true;
+            getPosition(event);
+            Draw(event);
+        }
+
+        function stopDrawing() {
+            paint = false;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            background();
+            joystick(width / 2, height / 2);
+            processAndSend(0, 0, 0, 0);
+        }
+
+        function initFunction() {
+            resize();
+            initCameraWebSocket();
+            initCarInputWebSocket();
+
+            canvas.addEventListener('mousedown', startDrawing);
+            canvas.addEventListener('mouseup', stopDrawing);
+            canvas.addEventListener('mousemove', Draw);
+
+            canvas.addEventListener('touchstart', startDrawing);
+            canvas.addEventListener('touchend', stopDrawing);
+            canvas.addEventListener('touchcancel', stopDrawing);
+            canvas.addEventListener('touchmove', Draw);
+            window.addEventListener('resize', resize);
+        }
+
+        window.onload = initFunction;
+        mainTable.addEventListener("touchend", function (event) {
+            event.preventDefault()
+        });
+    </script>
 </body>
 
 </html>
