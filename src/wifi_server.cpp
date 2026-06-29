@@ -12,9 +12,6 @@ AsyncWebSocket wsCamera("/Camera");
 AsyncWebSocket wsCarInput("/CarInput");
 int cameraClientId = 0;
 
-TaskHandle_t sendCameraPictureTask;
-TaskHandle_t cleanupWSClientsTask;
-
 // Variables de WiFi Manager
 String ssid, pass, ip, gateway;
 const char *ssidPath = "/ssid.txt", *passPath = "/pass.txt", *ipPath = "/ip.txt", *gatewayPath = "/gateway.txt";
@@ -27,12 +24,48 @@ String readFile(fs::FS &fs, const char *path);
 void writeFile(fs::FS &fs, const char *path, const char *message);
 void scanAndConnectToBestAP(const char *targetSSID, const char *password);
 void cleanupWSClients_task(void *parameters);
+void servoControlTask(void *parameters);
+
+// --- NUEVO: Variables para desacoplar los servos ---
+volatile int targetPan = 75;
+volatile int targetTilt = 90;
+volatile int targetDirection = STOP; // <--- AÑADE ESTA LÍNEA
+TaskHandle_t servoControlTaskHandle = NULL;
+
+// --- NUEVO: Tarea dedicada para mover los servos de forma síncrona ---
+void servoControlTask(void *parameters)
+{
+    int lastPan = -1;
+    int lastTilt = -1;
+    int lastDirection = -1; // Para rastrear el estado del motor
+
+    for (;;)
+    {
+        // Solo escribe en el hardware si la posición objetivo cambió
+        if (targetPan != lastPan)
+        {
+            panServo.write(targetPan);
+            lastPan = targetPan;
+        }
+        if (targetTilt != lastTilt)
+        {
+            tiltServo.write(targetTilt);
+            lastTilt = targetTilt;
+        }
+        // 2. Control de Motores (¡Tu brillante idea aplicada!)
+        if (targetDirection != lastDirection)
+        {
+            moveCar(targetDirection);
+            lastDirection = targetDirection;
+        }
+        vTaskDelay(pdMS_TO_TICKS(35)); // Frecuencia de actualización estable (aprox. 30Hz)
+    }
+}
 
 // --- Tareas de Red (OTA, Limpieza, Telemetría) ---
 void arduinoOTA_task(void *parameters)
 {
-    ArduinoOTA.setMdnsEnabled(false);
-    ArduinoOTA.begin();
+
     for (;;)
     {
         ArduinoOTA.handle();
@@ -77,23 +110,13 @@ void onCameraWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client
 {
     if (type == WS_EVT_CONNECT)
     {
-#ifdef DEBUG
-        Serial.printf("WS Camera client #%u connected\n", client->id());
-#endif
         cameraClientId = client->id();
-        xTaskCreatePinnedToCore(sendCameraPicture, "sendCameraPicture", STACK_SIZE, NULL, 2, &sendCameraPictureTask, CONFIG_ARDUINO_RUNNING_CORE);
-        xTaskCreatePinnedToCore(cleanupWSClients_task, "cleanupWSClients", STACK_SIZE, NULL, 1, &cleanupWSClientsTask, 0);
+        // ELIMINADAS las creaciones de xTaskCreatePinnedToCore de aquí
     }
     else if (type == WS_EVT_DISCONNECT)
     {
-#ifdef DEBUG
-        Serial.printf("WS Camera client #%u disconnected\n", client->id());
-#endif
         cameraClientId = 0;
-        if (sendCameraPictureTask != NULL)
-            vTaskDelete(sendCameraPictureTask);
-        if (cleanupWSClientsTask != NULL)
-            vTaskDelete(cleanupWSClientsTask);
+        // ELIMINADOS los vTaskDelete de aquí, las tareas deben seguir viviendo en el fondo.
     }
 }
 
@@ -112,11 +135,14 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
 #ifdef DEBUG
         Serial.printf("WS Control client #%u disconnected\n", client->id());
 #endif
-        moveCar(STOP);
+        targetDirection = STOP; // <--- Delegado a la tarea síncrona
         digitalWrite(lightPin, LOW);
         enableLight = false;
-        panServo.write(panCenter);
-        tiltServo.write(tiltCenter);
+
+        // Actualiza las variables de destino al centro en lugar de escribir directo
+        targetPan = 75;  // panCenter
+        targetTilt = 90; // tiltCenter
+
         if (melodyOn)
         {
             vTaskDelete(playMelodyTask);
@@ -139,7 +165,7 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
         {
         case 'M':
             if (!obstacleFound)
-                moveCar(value);
+                targetDirection = value; // <--- Delegado a la tarea síncrona
             break;
         case 'S':
             motorSpeed = map(value, 1, 5, 200, 255);
@@ -149,14 +175,14 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
             digitalWrite(lightPin, enableLight);
             break;
         case 'P':
-            panServo.write(value);
+            targetPan = value; // Asigna el objetivo, la tarea se encarga del movimiento
             break;
         case 'T':
-            tiltServo.write(value);
+            targetTilt = value; // Asigna el objetivo, la tarea se encarga del movimiento
             break;
         case 'C':
-            panServo.write(panCenter);
-            tiltServo.write(tiltCenter);
+            targetPan = 75;  // panCenter
+            targetTilt = 90; // tiltCenter
             break;
         case 'H': // Horn (Melody)
             melodyOn = !melodyOn;
@@ -180,7 +206,7 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
             {
                 vTaskDelete(obstacleAvoidanceModeTask);
                 obstacleFound = false;
-                moveCar(STOP);
+                targetDirection = STOP; // <--- Delegado a la tarea síncrona
             }
             break;
         }
@@ -296,6 +322,7 @@ void initWiFi()
             Serial.print("   IP address: ");
             Serial.println(WiFi.localIP());
 #endif
+
             if (MDNS.begin("cameracar"))
                 MDNS.addService("http", "tcp", 80);
             ledIndicator(10, 50);
@@ -386,6 +413,9 @@ void initWiFi()
     server.addHandler(&wsCamera);
     wsCarInput.onEvent(onCarInputWebSocketEvent);
     server.addHandler(&wsCarInput);
+
+    ArduinoOTA.setMdnsEnabled(false);
+    ArduinoOTA.begin();
 
     server.begin();
 

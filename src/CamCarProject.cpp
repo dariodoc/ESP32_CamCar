@@ -3,30 +3,36 @@
 #include "motor_control.h"
 #include "peripherals.h"
 #include "wifi_server.h"
+#include "camera_setup.h"
+#include <esp_camera.h>
 
 TaskHandle_t arduinoOTATask;
+TaskHandle_t sendCameraPictureTask;
+TaskHandle_t cleanupWSClientsTask;
+extern TaskHandle_t servoControlTaskHandle;
+extern void servoControlTask(void *parameters);
 
 void initTasks()
 {
-    // Tarea para actualizaciones inalámbricas (OTA)
-    xTaskCreatePinnedToCore(
-        arduinoOTA_task,
-        "arduinoOTA",
-        STACK_SIZE,
-        NULL,
-        0, // Prioridad baja
-        &arduinoOTATask,
-        0);
+    // Tarea OTA
+    xTaskCreatePinnedToCore(arduinoOTA_task, "arduinoOTA", 1024 * 8, NULL, 2, &arduinoOTATask, 0);
 
-    // Tarea para enviar telemetría (RSSI, etc.) al cliente
+    // Tarea de Telemetría
+    xTaskCreatePinnedToCore(sendTelemetryTask, "Telemetry", 2048, NULL, 0, NULL, 0);
+
+    // MUEVE ESTAS DOS TAREAS AQUÍ (Asegúrate de tener declarados los TaskHandle_t correspondientes)
+    xTaskCreatePinnedToCore(sendCameraPicture, "sendCameraPicture", STACK_SIZE, NULL, 2, &sendCameraPictureTask, 0);
+    xTaskCreatePinnedToCore(cleanupWSClients_task, "cleanupWSClients", 2048, NULL, 1, &cleanupWSClientsTask, 0);
+
+    // --- NUEVO: Lanzar el controlador asíncrono de los servos en el Core 1 ---
     xTaskCreatePinnedToCore(
-        sendTelemetryTask,
-        "Telemetry",
-        2048, // Esta tarea no necesita tanto stack
+        servoControlTask,
+        "ServoControl",
+        2048,
         NULL,
         1, // Prioridad normal
-        NULL,
-        0);
+        &servoControlTaskHandle,
+        1); // Forzado al núcleo 1
 }
 
 void setup()

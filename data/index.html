@@ -92,7 +92,7 @@
         let isLightOn = false;
         let isObstacleAvoidanceOn = false;
         let currentDirection = 0;
-        let servoSpeed = 10;
+        let servoSpeed = 50;
         let panServoCounter = 75;
         let tiltServoCounter = 90;
 
@@ -121,7 +121,11 @@
         const BACKLEFT = 7;
         const BACKRIGHT = 8;
 
+        let lastCameraUrl = null; // Añade esta variable global arriba
+
         //////////////////////////////////FUNCTIONS////////////////////////////////
+
+
 
         function initCameraWebSocket() {
             websocketCamera = new WebSocket(webSocketCameraUrl);
@@ -129,7 +133,12 @@
             websocketCamera.onopen = function (event) { console.log('Camera WebSocket connected'); };
             websocketCamera.onclose = function (event) { setTimeout(initCameraWebSocket, 2000); };
             websocketCamera.onmessage = function (event) {
-                cameraImage.src = URL.createObjectURL(event.data);
+                // Liberar la imagen anterior de la RAM del navegador
+                if (lastCameraUrl) {
+                    URL.revokeObjectURL(lastCameraUrl);
+                }
+                lastCameraUrl = URL.createObjectURL(event.data);
+                cameraImage.src = lastCameraUrl;
             };
         }
 
@@ -162,8 +171,8 @@
         // NUEVA FUNCIÓN OPTIMIZADA para enviar comandos
         function sendCommand(command, value) {
             if (websocketCarInput && websocketCarInput.readyState === WebSocket.OPEN) {
-                // Crea un array de 2 bytes: [comando, valor]
-                const data = new Uint8Array([command.charCodeAt(0), value]);
+                // Aseguramos que 'value' sea un entero (parseInt)
+                const data = new Uint8Array([command.charCodeAt(0), parseInt(value)]);
                 websocketCarInput.send(data);
             }
         }
@@ -284,38 +293,76 @@
             joystick(width / 2, height / 2);
         }
 
+        /////////////////////// JOYSTICK FUNCTIONS CORREGIDAS ///////////////////////
+
         function getPosition(event) {
-            let mouse_x = event.clientX || event.touches[0].clientX;
-            let mouse_y = event.clientY || event.touches[0].clientY;
-            coord.x = mouse_x - canvas.offsetLeft;
-            coord.y = mouse_y - canvas.offsetTop;
+            const rect = canvas.getBoundingClientRect();
+            const mouse_x = event.clientX || event.touches[0].clientX;
+            const mouse_y = event.clientY || event.touches[0].clientY;
+            coord.x = mouse_x - rect.left;
+            coord.y = mouse_y - rect.top;
         }
 
         function is_it_in_the_circle() {
-            let current_radius = Math.sqrt(Math.pow(coord.x - x_orig, 2) + Math.pow(coord.y - y_orig, 2));
+            const current_radius = Math.sqrt(Math.pow(coord.x - x_orig, 2) + Math.pow(coord.y - y_orig, 2));
             return radius >= current_radius;
         }
 
-        function processAndSend(x, y, speed, angle) {
+        function Draw(event) {
+            if (!paint) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = event.clientX || event.touches[0].clientX;
+            const mouseY = event.clientY || event.touches[0].clientY;
+
+            // Coordenadas relativas al centro
+            let dx = mouseX - rect.left - x_orig;
+            let dy = mouseY - rect.top - y_orig;
+
+            // Invertimos Y para que arriba sea positivo
+            let invertedY = -dy;
+
+            let distance = Math.sqrt(dx * dx + dy * dy);
+
+            // Calculamos ángulo en grados
+            let angle = Math.atan2(invertedY, dx) * 180 / Math.PI;
+            if (angle < 0) angle += 360;
+
+            // Dibujar joystick
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            background();
+
+            let x, y;
+            if (distance <= radius) {
+                x = mouseX - rect.left;
+                y = mouseY - rect.top;
+            } else {
+                let rad = angle * Math.PI / 180;
+                x = x_orig + radius * Math.cos(rad);
+                y = y_orig - radius * Math.sin(rad);
+            }
+            joystick(x, y);
+
+            let speed = Math.round(100 * Math.min(distance, radius) / radius);
+
+            processAndSend(speed, angle);
+        }
+
+        function processAndSend(speed, angle) {
             let newDirection = STOP;
-            if (x === 0 && y === 0) {
+
+            if (speed < 10) {
                 newDirection = STOP;
-            } else if (angle >= 60 && angle <= 120) {
-                newDirection = FORWARD;
-            } else if (angle >= 240 && angle <= 300) {
-                newDirection = BACKWARD;
-            } else if (angle >= 150 && angle <= 210) {
-                newDirection = LEFT;
-            } else if (angle >= 330 || angle <= 30) {
-                newDirection = RIGHT;
-            } else if (angle > 120 && angle < 150) {
-                newDirection = FORWARDRIGHT;
-            } else if (angle > 30 && angle < 60) {
-                newDirection = FORWARDLEFT;
-            } else if (angle > 210 && angle < 240) {
-                newDirection = BACKRIGHT;
-            } else if (angle > 300 && angle < 330) {
-                newDirection = BACKLEFT;
+            } else {
+                // Mapeo corregido: 0°=Derecha, 90°=Adelante, 180°=Izquierda, 270°=Atrás
+                if (angle >= 67.5 && angle < 112.5) newDirection = FORWARD;
+                else if (angle >= 112.5 && angle < 157.5) newDirection = FORWARDRIGHT;
+                else if (angle >= 157.5 && angle < 202.5) newDirection = LEFT;
+                else if (angle >= 202.5 && angle < 247.5) newDirection = BACKRIGHT;
+                else if (angle >= 247.5 && angle < 292.5) newDirection = BACKWARD;
+                else if (angle >= 292.5 && angle < 337.5) newDirection = BACKLEFT;
+                else if (angle >= 337.5 || angle < 22.5) newDirection = RIGHT;
+                else if (angle >= 22.5 && angle < 67.5) newDirection = FORWARDLEFT;
             }
 
             if (newDirection !== currentDirection) {
@@ -324,46 +371,6 @@
             }
         }
 
-
-        function Draw(event) {
-            if (paint) {
-                // 1. Obtén la posición MÁS RECIENTE del puntero. Esto es lo más importante.
-                getPosition(event);
-
-                // 2. Ahora que tienes las coordenadas correctas, calcula el ángulo.
-                let angle = Math.atan2((coord.y - y_orig), (coord.x - x_orig));
-                let angle_in_degrees;
-
-                if (angle < 0) {
-                    angle_in_degrees = Math.round(-angle * 180 / Math.PI);
-                } else {
-                    angle_in_degrees = Math.round(360 - angle * 180 / Math.PI);
-                }
-
-                // 3. Limpia y dibuja el fondo
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                background();
-
-                // 4. Determina la posición del joystick (dentro o en el borde del círculo)
-                let x, y;
-                if (is_it_in_the_circle()) {
-                    x = coord.x;
-                    y = coord.y;
-                } else {
-                    x = radius * Math.cos(angle) + x_orig;
-                    y = radius * Math.sin(angle) + y_orig;
-                }
-                joystick(x, y);
-
-                // 5. Calcula la velocidad y coordenadas relativas para enviar
-                let speed = Math.round(100 * Math.sqrt(Math.pow(x - x_orig, 2) + Math.pow(y - y_orig, 2)) / radius);
-                let x_relative = Math.round(x - x_orig);
-                let y_relative = Math.round(y - y_orig);
-
-                // 6. Envía los datos, ahora todos son consistentes con el evento actual
-                processAndSend(x_relative, y_relative, speed, angle_in_degrees);
-            }
-        }
         function startDrawing(event) {
             paint = true;
             getPosition(event);
@@ -375,7 +382,7 @@
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             background();
             joystick(width / 2, height / 2);
-            processAndSend(0, 0, 0, 0);
+            processAndSend(0, 0); // <--- Corregido a 2 parámetros
         }
 
         function initFunction() {

@@ -86,6 +86,6 @@ void sendCameraPicture(void *parameters)
         }
 
         esp_camera_fb_return(fb);
-        vTaskDelay(pdMS_TO_TICKS(1)); // Pequeña pausa para no saturar la red
+        vTaskDelay(pdMS_TO_TICKS(50)); // Pequeña pausa para no saturar la red
     }
 }
