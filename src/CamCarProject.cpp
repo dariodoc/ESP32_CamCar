@@ -21,7 +21,7 @@ void initTasks()
     xTaskCreatePinnedToCore(sendTelemetryTask, "Telemetry", 2048, NULL, 0, NULL, 0);
 
     // MUEVE ESTAS DOS TAREAS AQUÍ (Asegúrate de tener declarados los TaskHandle_t correspondientes)
-    xTaskCreatePinnedToCore(sendCameraPicture, "sendCameraPicture", STACK_SIZE, NULL, 2, &sendCameraPictureTask, 0);
+    xTaskCreatePinnedToCore(sendCameraPicture, "sendCameraPicture", 1024 * 8, NULL, 2, &sendCameraPictureTask, 0);
     xTaskCreatePinnedToCore(cleanupWSClients_task, "cleanupWSClients", 2048, NULL, 1, &cleanupWSClientsTask, 0);
 
     // --- NUEVO: Lanzar el controlador asíncrono de los servos en el Core 1 ---

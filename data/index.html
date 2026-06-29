@@ -206,56 +206,64 @@
             window.navigator.vibrate(50);
         }
 
+        ////////////////// FUNCIONES DE CONTROL DE SERVOS BLINDADAS //////////////////
+
         function PanLeft() {
+            if (timer) clearTimeout(timer); // Mata cualquier bucle duplicado previo
             btnPanLeft.style.backgroundColor = "rgb(236 240 243)";
             if (panServoCounter < 180) {
                 panServoCounter++;
-                timer = setTimeout(PanLeft, servoSpeed);
                 sendCommand("P", panServoCounter);
+                timer = setTimeout(PanLeft, servoSpeed);
             }
         }
 
         function PanRight() {
+            if (timer) clearTimeout(timer); // Mata cualquier bucle duplicado previo
             btnPanRight.style.backgroundColor = "rgb(236 240 243)";
             if (panServoCounter > 0) {
                 panServoCounter--;
-                timer = setTimeout(PanRight, servoSpeed);
                 sendCommand("P", panServoCounter);
+                timer = setTimeout(PanRight, servoSpeed);
             }
         }
 
         function TiltUp() {
+            if (timer) clearTimeout(timer); // Mata cualquier bucle duplicado previo
             btnTiltUp.style.backgroundColor = "rgb(236 240 243)";
             if (tiltServoCounter > 0) {
                 tiltServoCounter--;
-                timer = setTimeout(TiltUp, servoSpeed);
                 sendCommand("T", tiltServoCounter);
+                timer = setTimeout(TiltUp, servoSpeed);
             }
         }
 
         function TiltDown() {
+            if (timer) clearTimeout(timer); // Mata cualquier bucle duplicado previo
             btnTiltDown.style.backgroundColor = "rgb(236 240 243)";
             if (tiltServoCounter < 180) {
                 tiltServoCounter++;
-                timer = setTimeout(TiltDown, servoSpeed);
                 sendCommand("T", tiltServoCounter);
+                timer = setTimeout(TiltDown, servoSpeed);
             }
         }
 
         function stopIncrement() {
             clearTimeout(timer);
+            timer = null; // Resetea la variable para seguridad
             btnPanLeft.style.backgroundColor = 'black';
             btnTiltUp.style.backgroundColor = 'black';
         }
 
         function stopDecrement() {
             clearTimeout(timer);
+            timer = null; // Resetea la variable para seguridad
             btnPanRight.style.backgroundColor = 'black';
             btnTiltDown.style.backgroundColor = 'black';
         }
 
         // Slider de velocidad actualizado
-        document.getElementById("Speed").oninput = function () {
+        document.getElementById("Speed").onchange = function () {
             sendCommand('S', this.value);
         };
 
@@ -399,6 +407,16 @@
             canvas.addEventListener('touchcancel', stopDrawing);
             canvas.addEventListener('touchmove', Draw);
             window.addEventListener('resize', resize);
+
+            // --- NUEVO SEGURO GLOBAL: Si se suelta el control en cualquier parte de la ventana, detiene los servos ---
+            window.addEventListener('mouseup', function () {
+                stopIncrement();
+                stopDecrement();
+            });
+            window.addEventListener('touchend', function () {
+                stopIncrement();
+                stopDecrement();
+            });
         }
 
         window.onload = initFunction;

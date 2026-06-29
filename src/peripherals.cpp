@@ -36,6 +36,7 @@ void setupPeripherals() {
         Serial.println("PCF8574 FAILED");
         #endif
     }
+    Wire.setTimeOut(50);
     ledIndicator(3, 250); // Indicar que el coche ha arrancado
 }
 

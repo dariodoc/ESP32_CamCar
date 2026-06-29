@@ -35,30 +35,54 @@ TaskHandle_t servoControlTaskHandle = NULL;
 // --- NUEVO: Tarea dedicada para mover los servos de forma síncrona ---
 void servoControlTask(void *parameters)
 {
-    int lastPan = -1;
-    int lastTilt = -1;
-    int lastDirection = -1; // Para rastrear el estado del motor
+    // Inicializamos las posiciones actuales en el centro al arrancar
+    int currentPan = 75;
+    int currentTilt = 90;
+    int lastDirection = -1;
+
+    // Configura cuántos grados máximo se puede mover el servo por ciclo (menor número = más suave y menos consumo)
+    const int maxStep = 2;
 
     for (;;)
     {
-        // Solo escribe en el hardware si la posición objetivo cambió
-        if (targetPan != lastPan)
+        // --- Suavizado de PASO para PAN ---
+        if (currentPan != targetPan)
         {
-            panServo.write(targetPan);
-            lastPan = targetPan;
+            int diff = targetPan - currentPan;
+            if (abs(diff) <= maxStep)
+            {
+                currentPan = targetPan; // Si está muy cerca, llega al objetivo
+            }
+            else
+            {
+                currentPan += (diff > 0) ? maxStep : -maxStep; // Se mueve a pasos sutiles
+            }
+            panServo.write(currentPan);
         }
-        if (targetTilt != lastTilt)
+
+        // --- Suavizado de PASO para TILT ---
+        if (currentTilt != targetTilt)
         {
-            tiltServo.write(targetTilt);
-            lastTilt = targetTilt;
+            int diff = targetTilt - currentTilt;
+            if (abs(diff) <= maxStep)
+            {
+                currentTilt = targetTilt;
+            }
+            else
+            {
+                currentTilt += (diff > 0) ? maxStep : -maxStep;
+            }
+            tiltServo.write(currentTilt);
         }
-        // 2. Control de Motores (¡Tu brillante idea aplicada!)
+
+        // --- Control de Motores ---
         if (targetDirection != lastDirection)
         {
             moveCar(targetDirection);
             lastDirection = targetDirection;
         }
-        vTaskDelay(pdMS_TO_TICKS(35)); // Frecuencia de actualización estable (aprox. 30Hz)
+
+        vTaskDelay(pdMS_TO_TICKS(25)); // Bajamos a 25ms para compensar la suavidad de los pasos
     }
 }
 
@@ -110,6 +134,7 @@ void onCameraWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client
 {
     if (type == WS_EVT_CONNECT)
     {
+       
         cameraClientId = client->id();
         // ELIMINADAS las creaciones de xTaskCreatePinnedToCore de aquí
     }
@@ -127,6 +152,7 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
 #ifdef DEBUG
         Serial.printf("WS Control client #%u connected\n", client->id());
 #endif
+        
         leftBackLed(HIGH);
         rightBackLed(HIGH);
     }
@@ -337,7 +363,7 @@ void initWiFi()
     }
 
     // Configura el AP como respaldo y para configuración
-    WiFi.setTxPower(WIFI_POWER_19_5dBm);
+    WiFi.setTxPower(WIFI_POWER_17dBm);
     WiFi.softAP("ESP-CAMERA-CAR", "carbondioxide");
 #ifdef DEBUG
     Serial.print("AP IP address: ");
@@ -420,7 +446,7 @@ void initWiFi()
     server.begin();
 
     // Optimizaciones de energía
-    WiFi.setSleep(true);
+    WiFi.setSleep(false);
     btStop();
     esp_bt_controller_disable();
 }
