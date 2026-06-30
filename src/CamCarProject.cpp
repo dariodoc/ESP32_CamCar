@@ -16,23 +16,19 @@ void initTasks()
 {
     // Tarea OTA
     xTaskCreatePinnedToCore(arduinoOTA_task, "arduinoOTA", 1024 * 8, NULL, 2, &arduinoOTATask, 0);
-
     // Tarea de Telemetría
     xTaskCreatePinnedToCore(sendTelemetryTask, "Telemetry", 2048, NULL, 0, NULL, 0);
-
-    // MUEVE ESTAS DOS TAREAS AQUÍ (Asegúrate de tener declarados los TaskHandle_t correspondientes)
+    // Tareas de WebSockets
     xTaskCreatePinnedToCore(sendCameraPicture, "sendCameraPicture", 1024 * 8, NULL, 2, &sendCameraPictureTask, 0);
     xTaskCreatePinnedToCore(cleanupWSClients_task, "cleanupWSClients", 2048, NULL, 1, &cleanupWSClientsTask, 0);
 
-    // --- NUEVO: Lanzar el controlador asíncrono de los servos en el Core 1 ---
-    xTaskCreatePinnedToCore(
-        servoControlTask,
-        "ServoControl",
-        2048,
-        NULL,
-        1, // Prioridad normal
-        &servoControlTaskHandle,
-        1); // Forzado al núcleo 1
+    // --- NUEVO: Tarea de Servos ---
+    xTaskCreatePinnedToCore(servoControlTask, "ServoControl", 2048, NULL, 1, &servoControlTaskHandle, CONFIG_ARDUINO_RUNNING_CORE);
+
+    // --- NUEVO: Instanciar tareas de periféricos de forma permanente ---
+    // Se inician pero se dormirán inmediatamente gracias al código que pondremos en peripherals.cpp
+    xTaskCreatePinnedToCore(playMelody, "playMelody", STACK_SIZE, NULL, 1, &playMelodyTask, CONFIG_ARDUINO_RUNNING_CORE);
+    xTaskCreatePinnedToCore(obstacleAvoidanceMode, "obstacleAvoidanceMode", STACK_SIZE, NULL, 2, &obstacleAvoidanceModeTask, CONFIG_ARDUINO_RUNNING_CORE);
 }
 
 void setup()

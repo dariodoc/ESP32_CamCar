@@ -14,6 +14,7 @@
 #include <soc/rtc_cntl_reg.h>
 #include <SPIFFS.h>
 #include <ESPmDNS.h>
+#include <atomic>
 
 // #define DEBUG // Descomenta para habilitar el monitor Serial
 
@@ -76,13 +77,21 @@ extern Servo tiltServo;
 extern Motor leftMotor;
 extern Motor rightMotor;
 
-// Estado del coche
-extern bool enableLight;
-extern bool melodyOn;
-extern bool enableObstacleAvoidance;
-extern bool obstacleFound;
+extern std::atomic<bool> melodyOn;
 extern int motorSpeed;
 extern int currentDirection;
+
+#include <atomic>
+
+// Estado del coche
+extern std::atomic<bool> enableLight;
+extern std::atomic<bool> enableObstacleAvoidance;
+extern std::atomic<bool> obstacleFound;
+
+// Variables para desacoplar los servos y motores
+extern std::atomic<int> targetPan;
+extern std::atomic<int> targetTilt;
+extern std::atomic<int> targetDirection;
 
 // Handlers de Tareas
 extern TaskHandle_t playMelodyTask;

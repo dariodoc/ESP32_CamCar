@@ -59,6 +59,7 @@ void setupCamera()
         return;
     }
 }
+
 void sendCameraPicture(void *parameters)
 {
     camera_fb_t *fb = nullptr;
@@ -94,10 +95,11 @@ void sendCameraPicture(void *parameters)
 
         consecutiveFailures = 0; // Resetea el contador si la captura fue exitosa
 
-        AsyncWebSocketClient *client = wsCamera.client(cameraClientId);
-        if (client && client->canSend())
+        if (cameraClientId != 0)
         {
-            client->binary(fb->buf, fb->len);
+            // El objeto wsCamera verifica internamente la integridad de la memoria
+            // y si el socket está disponible para enviar el fotograma.
+            wsCamera.binary(cameraClientId, fb->buf, fb->len);
         }
 
         esp_camera_fb_return(fb);

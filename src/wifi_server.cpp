@@ -26,10 +26,10 @@ void scanAndConnectToBestAP(const char *targetSSID, const char *password);
 void cleanupWSClients_task(void *parameters);
 void servoControlTask(void *parameters);
 
-// --- NUEVO: Variables para desacoplar los servos ---
-volatile int targetPan = 75;
-volatile int targetTilt = 90;
-volatile int targetDirection = STOP; // <--- AÑADE ESTA LÍNEA
+std::atomic<int> targetPan(75);
+std::atomic<int> targetTilt(90);
+std::atomic<int> targetDirection(0); // 0 es STOP
+
 TaskHandle_t servoControlTaskHandle = NULL;
 
 // --- NUEVO: Tarea dedicada para mover los servos de forma síncrona ---
@@ -134,7 +134,7 @@ void onCameraWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client
 {
     if (type == WS_EVT_CONNECT)
     {
-       
+
         cameraClientId = client->id();
         // ELIMINADAS las creaciones de xTaskCreatePinnedToCore de aquí
     }
@@ -152,7 +152,7 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
 #ifdef DEBUG
         Serial.printf("WS Control client #%u connected\n", client->id());
 #endif
-        
+
         leftBackLed(HIGH);
         rightBackLed(HIGH);
     }
@@ -171,13 +171,11 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
 
         if (melodyOn)
         {
-            vTaskDelete(playMelodyTask);
-            ledcDetachPin(buzzerPin);
             melodyOn = false;
+            ledcWriteTone(buzzerChannel, 0); // Solo silenciamos
         }
         if (enableObstacleAvoidance)
         {
-            vTaskDelete(obstacleAvoidanceModeTask);
             enableObstacleAvoidance = false;
             obstacleFound = false;
         }
@@ -214,25 +212,27 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
             melodyOn = !melodyOn;
             if (melodyOn)
             {
-                xTaskCreatePinnedToCore(playMelody, "playMelody", STACK_SIZE, NULL, 1, &playMelodyTask, CONFIG_ARDUINO_RUNNING_CORE);
+                // En lugar de crear, solo despertamos a la tarea
+                xTaskNotifyGive(playMelodyTask);
             }
             else
             {
-                vTaskDelete(playMelodyTask);
-                ledcDetachPin(buzzerPin);
+                // Silenciamos si el usuario lo desactiva
+                ledcWriteTone(buzzerChannel, 0);
             }
             break;
         case 'O': // Obstacle Avoidance
             enableObstacleAvoidance = !enableObstacleAvoidance;
             if (enableObstacleAvoidance)
             {
-                xTaskCreatePinnedToCore(obstacleAvoidanceMode, "obstacleAvoidanceMode", STACK_SIZE, NULL, 2, &obstacleAvoidanceModeTask, CONFIG_ARDUINO_RUNNING_CORE);
+                // Despertamos a la tarea del sensor
+                xTaskNotifyGive(obstacleAvoidanceModeTask);
             }
             else
             {
-                vTaskDelete(obstacleAvoidanceModeTask);
+                // Limpiamos banderas. En su siguiente ciclo (30ms), la tarea se dormirá sola.
                 obstacleFound = false;
-                targetDirection = STOP; // <--- Delegado a la tarea síncrona
+                targetDirection = STOP;
             }
             break;
         }
@@ -449,4 +449,7 @@ void initWiFi()
     WiFi.setSleep(false);
     btStop();
     esp_bt_controller_disable();
+
+    // Reactivar protección de voltaje para evitar corrupción de flash
+    WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 1);
 }

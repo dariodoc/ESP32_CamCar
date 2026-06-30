@@ -145,7 +145,7 @@ void left(Motor left, Motor right, int speed)
 }
 void right(Motor left, Motor right, int speed)
 {
-  int temp = abs(speed) ;
+  int temp = abs(speed);
   left.drive(temp);
   right.drive(-temp);
 }

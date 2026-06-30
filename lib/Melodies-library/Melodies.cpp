@@ -1,6 +1,7 @@
 
 #include <Arduino.h>
 #include "Melodies.h"
+#include <atomic> // Necesario para leer la variable atómica
 
 ////////////////////////////////////////////////////////////////////////
 //
@@ -12,28 +13,43 @@
 //
 ////////////////////////////////////////////////////////////////////////
 
+// Declaración externa: enlaza esta librería con la variable global de tu programa principal
+extern std::atomic<bool> melodyOn;
+
 const static int buzzFrequency = 5000;
 const static int buzzResolution = 12;
 
 void toneToPlay(uint32_t buzzPin, uint8_t buzzChannel, uint32_t buzzNote, uint32_t buzzDuration)
 {
+    // Magia de FreeRTOS: ¿Quién está llamando a esta función?
+    // Si es la tarea "playMelody" y el usuario la apagó, abortamos al instante.
+    if (strcmp(pcTaskGetName(NULL), "playMelody") == 0 && !melodyOn)
+        return;
+
     ledcSetup(buzzChannel, buzzFrequency, buzzResolution);
     ledcAttachPin(buzzPin, buzzChannel);
     ledcWriteTone(buzzChannel, buzzNote);
     vTaskDelay(pdMS_TO_TICKS(buzzDuration));
-    ledcDetachPin(buzzPin);
+    ledcWriteTone(buzzChannel, 0); // Silenciamos sin destruir el timer
 }
 
 void toneToPlay(uint32_t buzzPin, uint8_t buzzChannel, uint32_t buzzNote, uint32_t buzzDuration, uint32_t buzzBips)
 {
+    // Verificamos antes de entrar al bucle
+    if (strcmp(pcTaskGetName(NULL), "playMelody") == 0 && !melodyOn)
+        return;
 
     for (int i = 0; i < buzzBips; i++)
     {
+        // Verificamos también dentro del bucle por si se apaga a la mitad de los pitidos
+        if (strcmp(pcTaskGetName(NULL), "playMelody") == 0 && !melodyOn)
+            return;
+
         ledcSetup(buzzChannel, buzzFrequency, buzzResolution);
         ledcAttachPin(buzzPin, buzzChannel);
         ledcWriteTone(buzzChannel, buzzNote);
         vTaskDelay(pdMS_TO_TICKS(buzzDuration));
-        ledcDetachPin(buzzPin);
+        ledcWriteTone(buzzChannel, 0);
     }
 }
 
