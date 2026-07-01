@@ -79,7 +79,7 @@ extern Motor rightMotor;
 
 extern std::atomic<bool> melodyOn;
 extern int motorSpeed;
-extern int currentDirection;
+extern std::atomic<int> currentDirection;
 
 #include <atomic>
 

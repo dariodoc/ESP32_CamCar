@@ -92,23 +92,32 @@ void playMelody(void *parameters)
 
 void obstacleAvoidanceMode(void *parameters)
 {
-#ifdef DEBUG
-    Serial.printf("obstacleAvoidanceMode() initialized on core: %d\n", xPortGetCoreID());
-#endif
+    TickType_t lastWakeTime = xTaskGetTickCount();
 
     for (;;)
     {
-        // Si el modo no está habilitado, dormimos la tarea
+        // Si no está habilitado, dormimos la tarea
         if (!enableObstacleAvoidance)
         {
             ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
         }
 
         int detect = pcf8574.digitalRead(P5);
+
+        // Verificamos si hay obstáculo y si el coche intenta avanzar
         if (detect == LOW && (currentDirection == FORWARD || currentDirection == FORWARDLEFT || currentDirection == FORWARDRIGHT))
         {
+
             obstacleFound = true;
+
+            // --- AQUÍ ESTÁ LA CORRECCIÓN ---
+            // 1. Actualizamos la variable que controla el bucle de motores (el "cerebro")
+            targetDirection = STOP;
+
+            // 2. Ejecutamos el frenado físico
             moveCar(STOP);
+
+            // 3. Avisamos al usuario
             toneToPlay(buzzerPin, buzzerChannel, NOTE_G5, 200);
         }
         else
@@ -116,6 +125,7 @@ void obstacleAvoidanceMode(void *parameters)
             obstacleFound = false;
         }
 
-        vTaskDelay(pdMS_TO_TICKS(30)); // Pequeña pausa para no saturar el bus I2C
+        // Ejecución exacta cada 30ms para evitar deriva temporal
+        vTaskDelayUntil(&lastWakeTime, pdMS_TO_TICKS(30));
     }
 }

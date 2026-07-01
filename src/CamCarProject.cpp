@@ -56,5 +56,5 @@ void setup()
 void loop()
 {
     // El loop queda vacío porque todo se maneja con tareas (FreeRTOS)
-    vTaskDelay(portMAX_DELAY);
+    vTaskDelay(pdMS_TO_TICKS(10));
 }

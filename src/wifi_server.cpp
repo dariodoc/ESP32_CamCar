@@ -126,22 +126,47 @@ void sendTelemetryTask(void *parameters)
             // Envía el contenido del búfer
             wsCarInput.textAll(telemetryJson);
         }
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay(pdMS_TO_TICKS(2000));
     }
 }
 // --- Handlers de WebSocket ---
 void onCameraWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len)
 {
-    if (type == WS_EVT_CONNECT)
+    switch (type)
     {
+    case WS_EVT_CONNECT:
+        // --- NUEVO: ELIMINADOR DE CLONES (Previene el colapso por Refresh) ---
+        // Si ya había alguien conectado y entra un ID nuevo, matamos al viejo de inmediato.
+        if (cameraClientId != 0 && cameraClientId != client->id())
+        {
+            AsyncWebSocketClient *oldClient = server->client(cameraClientId);
+            if (oldClient)
+            {
+                oldClient->close(); // Cortamos la RAM de la conexión fantasma
+            }
+        }
 
+        // Ahora sí, le damos la bienvenida al cliente nuevo
         cameraClientId = client->id();
-        // ELIMINADAS las creaciones de xTaskCreatePinnedToCore de aquí
-    }
-    else if (type == WS_EVT_DISCONNECT)
-    {
-        cameraClientId = 0;
-        // ELIMINADOS los vTaskDelete de aquí, las tareas deben seguir viviendo en el fondo.
+
+#ifdef DEBUG
+        Serial.printf("Camera client connected: %u\n", cameraClientId);
+#endif
+        break;
+
+    case WS_EVT_DISCONNECT:
+        // --- BLINDAJE DE DESCONEXIÓN ---
+        // IMPORTANTE: Solo liberamos el ID si el que se desconecta es el cliente ACTIVO.
+        // Si no ponemos este "if", un zombi viejo podría borrar el ID del cliente nuevo.
+        if (client->id() == cameraClientId)
+        {
+            cameraClientId = 0;
+        }
+
+#ifdef DEBUG
+        Serial.printf("Camera client disconnected: %u\n", client->id());
+#endif
+        break;
     }
 }
 
@@ -363,7 +388,7 @@ void initWiFi()
     }
 
     // Configura el AP como respaldo y para configuración
-    WiFi.setTxPower(WIFI_POWER_17dBm);
+    WiFi.setTxPower(WIFI_POWER_15dBm);
     WiFi.softAP("ESP-CAMERA-CAR", "carbondioxide");
 #ifdef DEBUG
     Serial.print("AP IP address: ");
@@ -451,5 +476,5 @@ void initWiFi()
     esp_bt_controller_disable();
 
     // Reactivar protección de voltaje para evitar corrupción de flash
-    WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 1);
+   // WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 1);
 }

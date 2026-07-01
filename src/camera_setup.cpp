@@ -36,7 +36,7 @@ void setupCamera()
     {
         config.fb_location = CAMERA_FB_IN_PSRAM;
         config.frame_size = FRAMESIZE_HVGA;
-        config.jpeg_quality = 15;
+        config.jpeg_quality = 24;
         config.fb_count = 2;
         config.grab_mode = CAMERA_GRAB_LATEST;
         heap_caps_malloc_extmem_enable(psramLimit);
@@ -45,7 +45,7 @@ void setupCamera()
     {
         config.fb_location = CAMERA_FB_IN_DRAM;
         config.frame_size = FRAMESIZE_QVGA;
-        config.jpeg_quality = 12;
+        config.jpeg_quality = 24; // <--- ✅ SUBIR A 24 PARA EVITAR COLAPSO
         config.fb_count = 1;
         config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
     }
@@ -58,30 +58,73 @@ void setupCamera()
 #endif
         return;
     }
+    sensor_t *s = esp_camera_sensor_get();
+    if (s != NULL)
+    {
+        s->set_whitebal(s, 1); // Auto balance de blancos
+        s->set_awb_gain(s, 1);
+        s->set_wb_mode(s, 0);
+        s->set_exposure_ctrl(s, 1); // Auto exposición
+        s->set_aec2(s, 0);          // Deshabilitar algoritmo DSP extra para ganar CPU
+        s->set_bpc(s, 1);           // Corrección de pixeles negros
+        s->set_wpc(s, 1);           // Corrección de pixeles blancos
+    }
 }
 
 void sendCameraPicture(void *parameters)
 {
     camera_fb_t *fb = nullptr;
-    int consecutiveFailures = 0; // --- NUEVO: Contador de fallos ---
+    int consecutiveFailures = 0;
+    int blockedCounter = 0; // NUEVO: Contador de tiempo bloqueado
 
     for (;;)
     {
         if (cameraClientId == 0)
         {
+            blockedCounter = 0; // Reiniciamos si no hay nadie conectado
             vTaskDelay(pdMS_TO_TICKS(100));
             continue;
         }
 
+        AsyncWebSocketClient *client = wsCamera.client(cameraClientId);
+
+        // --- BLINDAJE DE MEMORIA SEGURO ---
+        if (!client || !client->canSend())
+        {
+            blockedCounter++;
+
+            // Si lleva más de 2 segundos bloqueado (100 intentos de 20ms)
+            if (blockedCounter > 100)
+            {
+                // ❌ NUNCA llamar a client->close() desde esta tarea.
+                // ✅ Solo reseteamos nuestra variable. El servidor cerrará el socket inactivo por su cuenta.
+                cameraClientId = 0;
+                blockedCounter = 0;
+
+#ifdef DEBUG
+                Serial.println("Cliente trabado. Suspendiendo envío de video...");
+#endif
+            }
+
+            vTaskDelay(pdMS_TO_TICKS(20));
+            continue;
+        }
+
+        if (ESP.getFreeHeap() < 50000 || ESP.getMaxAllocHeap() < 30000)
+        {
+            // El procesador está asfixiado de basura digital.
+            // Pausamos la tarea un cuarto de segundo para que FreeRTOS desfragmente la RAM.
+            vTaskDelay(pdMS_TO_TICKS(250));
+            continue;
+        }
+        // Si el cliente sí puede recibir, reiniciamos el contador de bloqueos
+        blockedCounter = 0;
+
+        // --- CAPTURA ---
         fb = esp_camera_fb_get();
         if (!fb)
         {
             consecutiveFailures++;
-#ifdef DEBUG
-            Serial.printf("Fallo al capturar fotograma. Consecutivos: %d\n", consecutiveFailures);
-#endif
-
-            // --- NUEVO: Si falla 15 veces seguidas, resetea el sensor de la cámara ---
             if (consecutiveFailures >= 15)
             {
                 sensor_t *s = esp_camera_sensor_get();
@@ -93,16 +136,12 @@ void sendCameraPicture(void *parameters)
             continue;
         }
 
-        consecutiveFailures = 0; // Resetea el contador si la captura fue exitosa
+        consecutiveFailures = 0;
 
-        if (cameraClientId != 0)
-        {
-            // El objeto wsCamera verifica internamente la integridad de la memoria
-            // y si el socket está disponible para enviar el fotograma.
-            wsCamera.binary(cameraClientId, fb->buf, fb->len);
-        }
-
+        // --- ENVÍO ---
+        client->binary(fb->buf, fb->len);
         esp_camera_fb_return(fb);
-        vTaskDelay(pdMS_TO_TICKS(50));
+
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }

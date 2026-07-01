@@ -7,7 +7,7 @@
 Motor leftMotor(P3, P4, 1, 1, P2);
 Motor rightMotor(P1, P0, 3, 1, P2);
 int motorSpeed = 255;
-int currentDirection = STOP;
+std::atomic<int> currentDirection(STOP);
 
 void moveCar(int inputValue) {
     #ifdef DEBUG

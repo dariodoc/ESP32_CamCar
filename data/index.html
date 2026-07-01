@@ -303,10 +303,12 @@
 
         /////////////////////// JOYSTICK FUNCTIONS CORREGIDAS ///////////////////////
 
+        let lastSendTime = 0; // NUEVO: Control de tiempo para no saturar al ESP32
+
         function getPosition(event) {
             const rect = canvas.getBoundingClientRect();
-            const mouse_x = event.clientX || event.touches[0].clientX;
-            const mouse_y = event.clientY || event.touches[0].clientY;
+            const mouse_x = event.clientX || (event.touches && event.touches[0].clientX);
+            const mouse_y = event.clientY || (event.touches && event.touches[0].clientY);
             coord.x = mouse_x - rect.left;
             coord.y = mouse_y - rect.top;
         }
@@ -317,11 +319,12 @@
         }
 
         function Draw(event) {
+            if (event.cancelable) event.preventDefault(); // Evita que la pantalla haga scroll al mover el coche
             if (!paint) return;
 
             const rect = canvas.getBoundingClientRect();
-            const mouseX = event.clientX || event.touches[0].clientX;
-            const mouseY = event.clientY || event.touches[0].clientY;
+            const mouseX = event.clientX || (event.touches && event.touches[0].clientX);
+            const mouseY = event.clientY || (event.touches && event.touches[0].clientY);
 
             // Coordenadas relativas al centro
             let dx = mouseX - rect.left - x_orig;
@@ -374,24 +377,33 @@
             }
 
             if (newDirection !== currentDirection) {
-                currentDirection = newDirection;
-                sendCommand('M', currentDirection);
+                let currentTime = Date.now();
+
+                // NUEVO BLINDAJE: Solo enviamos si es STOP (urgente) o si pasaron más de 100ms (10 comandos por segundo máximo)
+                if (newDirection === STOP || (currentTime - lastSendTime > 100)) {
+                    currentDirection = newDirection;
+                    sendCommand('M', currentDirection);
+                    lastSendTime = currentTime;
+                }
             }
         }
 
         function startDrawing(event) {
+            if (event.cancelable) event.preventDefault(); // Evita scroll
             paint = true;
             getPosition(event);
             Draw(event);
         }
 
-        function stopDrawing() {
+        function stopDrawing(event) {
+            if (event && event.cancelable) event.preventDefault();
             paint = false;
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             background();
             joystick(width / 2, height / 2);
-            processAndSend(0, 0); // <--- Corregido a 2 parámetros
+            processAndSend(0, 0); // Esto fuerza un STOP
         }
+
 
         function initFunction() {
             resize();
