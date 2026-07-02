@@ -77,21 +77,21 @@ extern Servo tiltServo;
 extern Motor leftMotor;
 extern Motor rightMotor;
 
-extern std::atomic<bool> melodyOn;
-extern int motorSpeed;
-extern std::atomic<int> currentDirection;
+extern volatile bool melodyOn;
+extern volatile int motorSpeed;
+extern volatile int currentDirection;
 
-#include <atomic>
+
 
 // Estado del coche
-extern std::atomic<bool> enableLight;
-extern std::atomic<bool> enableObstacleAvoidance;
-extern std::atomic<bool> obstacleFound;
+extern volatile bool enableLight;
+extern volatile bool enableObstacleAvoidance;
+extern volatile bool obstacleFound;
 
 // Variables para desacoplar los servos y motores
-extern std::atomic<int> targetPan;
-extern std::atomic<int> targetTilt;
-extern std::atomic<int> targetDirection;
+extern volatile int targetPan;
+extern volatile int targetTilt;
+extern volatile int targetDirection;
 
 // Handlers de Tareas
 extern TaskHandle_t playMelodyTask;

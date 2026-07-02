@@ -92,7 +92,7 @@
         let isLightOn = false;
         let isObstacleAvoidanceOn = false;
         let currentDirection = 0;
-        let servoSpeed = 50;
+        let servoSpeed = 80;
         let panServoCounter = 75;
         let tiltServoCounter = 90;
 
@@ -319,27 +319,21 @@
         }
 
         function Draw(event) {
-            if (event.cancelable) event.preventDefault(); // Evita que la pantalla haga scroll al mover el coche
+            if (event.cancelable) event.preventDefault();
             if (!paint) return;
 
             const rect = canvas.getBoundingClientRect();
             const mouseX = event.clientX || (event.touches && event.touches[0].clientX);
             const mouseY = event.clientY || (event.touches && event.touches[0].clientY);
 
-            // Coordenadas relativas al centro
             let dx = mouseX - rect.left - x_orig;
             let dy = mouseY - rect.top - y_orig;
-
-            // Invertimos Y para que arriba sea positivo
             let invertedY = -dy;
-
             let distance = Math.sqrt(dx * dx + dy * dy);
 
-            // Calculamos ángulo en grados
             let angle = Math.atan2(invertedY, dx) * 180 / Math.PI;
             if (angle < 0) angle += 360;
 
-            // Dibujar joystick
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             background();
 
@@ -356,16 +350,17 @@
 
             let speed = Math.round(100 * Math.min(distance, radius) / radius);
 
-            processAndSend(speed, angle);
+            // Pasamos 'false' porque es un movimiento continuo, debe respetar el límite de tiempo
+            processAndSend(speed, angle, false);
         }
 
-        function processAndSend(speed, angle) {
+        function processAndSend(speed, angle, force = false) {
             let newDirection = STOP;
 
-            if (speed < 10) {
+            // Aumentamos ligeramente la zona muerta a 15 para evitar los temblores del mouse
+            if (speed < 15) {
                 newDirection = STOP;
             } else {
-                // Mapeo corregido: 0°=Derecha, 90°=Adelante, 180°=Izquierda, 270°=Atrás
                 if (angle >= 67.5 && angle < 112.5) newDirection = FORWARD;
                 else if (angle >= 112.5 && angle < 157.5) newDirection = FORWARDRIGHT;
                 else if (angle >= 157.5 && angle < 202.5) newDirection = LEFT;
@@ -378,9 +373,8 @@
 
             if (newDirection !== currentDirection) {
                 let currentTime = Date.now();
-
-                // NUEVO BLINDAJE: Solo enviamos si es STOP (urgente) o si pasaron más de 100ms (10 comandos por segundo máximo)
-                if (newDirection === STOP || (currentTime - lastSendTime > 100)) {
+                // BLINDAJE: Solo enviamos si pasaron 150ms, o si forzamos el STOP (al soltar el clic)
+                if (force || (currentTime - lastSendTime > 150)) {
                     currentDirection = newDirection;
                     sendCommand('M', currentDirection);
                     lastSendTime = currentTime;
@@ -401,7 +395,9 @@
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             background();
             joystick(width / 2, height / 2);
-            processAndSend(0, 0); // Esto fuerza un STOP
+            
+            // Pasamos 'true' para forzar el frenado inmediato saltándose el temporizador
+            processAndSend(0, 0, true); 
         }
 
 
@@ -420,14 +416,16 @@
             canvas.addEventListener('touchmove', Draw);
             window.addEventListener('resize', resize);
 
-            // --- NUEVO SEGURO GLOBAL: Si se suelta el control en cualquier parte de la ventana, detiene los servos ---
-            window.addEventListener('mouseup', function () {
+            // --- SEGURO GLOBAL MEJORADO ---
+            window.addEventListener('mouseup', function (e) {
                 stopIncrement();
                 stopDecrement();
+                stopDrawing(e); // Obliga a frenar aunque sueltes el clic fuera de la pantalla
             });
-            window.addEventListener('touchend', function () {
+            window.addEventListener('touchend', function (e) {
                 stopIncrement();
                 stopDecrement();
+                stopDrawing(e);
             });
         }
 

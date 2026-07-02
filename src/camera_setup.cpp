@@ -6,6 +6,7 @@ const static int psramLimit = 10000;
 
 void setupCamera()
 {
+
 #ifdef DEBUG
     Serial.printf("setupCamera() running on core: %d\n", xPortGetCoreID());
 #endif

@@ -11,19 +11,18 @@ TaskHandle_t sendCameraPictureTask;
 TaskHandle_t cleanupWSClientsTask;
 extern TaskHandle_t servoControlTaskHandle;
 extern void servoControlTask(void *parameters);
+// --- Variables globales para controlar los tiempos en el Loop ---
+unsigned long lastServoTime = 0;
+unsigned long lastCleanupTime = 0;
 
 void initTasks()
 {
-    // Tarea OTA
-    xTaskCreatePinnedToCore(arduinoOTA_task, "arduinoOTA", 1024 * 8, NULL, 2, &arduinoOTATask, 0);
     // Tarea de Telemetría
-    xTaskCreatePinnedToCore(sendTelemetryTask, "Telemetry", 2048, NULL, 0, NULL, 0);
-    // Tareas de WebSockets
-    xTaskCreatePinnedToCore(sendCameraPicture, "sendCameraPicture", 1024 * 8, NULL, 2, &sendCameraPictureTask, 0);
-    xTaskCreatePinnedToCore(cleanupWSClients_task, "cleanupWSClients", 2048, NULL, 1, &cleanupWSClientsTask, 0);
+    // xTaskCreatePinnedToCore(sendTelemetryTask, "Telemetry", 2048, NULL, 0, NULL, 0);
 
-    // --- NUEVO: Tarea de Servos ---
-    xTaskCreatePinnedToCore(servoControlTask, "ServoControl", 2048, NULL, 1, &servoControlTaskHandle, CONFIG_ARDUINO_RUNNING_CORE);
+    xTaskCreatePinnedToCore(sendCameraPicture, "sendCameraPicture", 1024 * 8, NULL, 2, &sendCameraPictureTask, 0);
+  // --- NUEVO: Tarea de Servos ---
+    xTaskCreatePinnedToCore(servoControlTask, "ServoControl", 1024 * 8, NULL, 1, &servoControlTaskHandle, CONFIG_ARDUINO_RUNNING_CORE);
 
     // --- NUEVO: Instanciar tareas de periféricos de forma permanente ---
     // Se inician pero se dormirán inmediatamente gracias al código que pondremos en peripherals.cpp
@@ -55,6 +54,31 @@ void setup()
 
 void loop()
 {
-    // El loop queda vacío porque todo se maneja con tareas (FreeRTOS)
+    ArduinoOTA.handle();
+    static int lastDirection = -1;
+
+    // 👇 AÑADE ESTE BLOQUE PARA EVITAR QUE LA RAM EXPLOTE
+    static unsigned long lastCleanupTime = 0;
+    unsigned long currentMillis = millis();
+    if (currentMillis - lastCleanupTime >= 2000) {
+        lastCleanupTime = currentMillis;
+        wsCamera.cleanupClients();
+        wsCarInput.cleanupClients();
+    }
+    // 👆 FIN DEL BLOQUE
+
+    // --- FILTRO INTELIGENTE DE OBSTÁCULOS ---
+    // Si hay un obstáculo Y el usuario intenta ir hacia adelante, forzamos un STOP
+    if (obstacleFound && (targetDirection == FORWARD || targetDirection == FORWARDLEFT || targetDirection == FORWARDRIGHT)) {
+        toneToPlay(buzzerPin, buzzerChannel, NOTE_G5, 200);
+        targetDirection = STOP;
+    }
+
+    // Ejecutamos el movimiento (permitirá la reversa porque no será filtrada arriba)
+    if (targetDirection != lastDirection) {
+        moveCar(targetDirection);
+        lastDirection = targetDirection;
+    }
+
     vTaskDelay(pdMS_TO_TICKS(10));
 }

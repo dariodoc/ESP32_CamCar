@@ -8,10 +8,10 @@ PCF8574 pcf8574(0x20, 14, 15);
 Servo panServo;
 Servo tiltServo;
 
-std::atomic<bool> enableLight(false);
-std::atomic<bool> melodyOn(false);
-std::atomic<bool> enableObstacleAvoidance(false);
-std::atomic<bool> obstacleFound(false);
+volatile bool enableLight = false;
+volatile bool melodyOn = false;
+volatile bool enableObstacleAvoidance = false;
+volatile bool obstacleFound = false;
 
 TaskHandle_t playMelodyTask;
 TaskHandle_t obstacleAvoidanceModeTask;
@@ -96,7 +96,6 @@ void obstacleAvoidanceMode(void *parameters)
 
     for (;;)
     {
-        // Si no está habilitado, dormimos la tarea
         if (!enableObstacleAvoidance)
         {
             ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
@@ -104,28 +103,9 @@ void obstacleAvoidanceMode(void *parameters)
 
         int detect = pcf8574.digitalRead(P5);
 
-        // Verificamos si hay obstáculo y si el coche intenta avanzar
-        if (detect == LOW && (currentDirection == FORWARD || currentDirection == FORWARDLEFT || currentDirection == FORWARDRIGHT))
-        {
+        // 1. Simplemente actualizamos la bandera indicando si hay pared
+        obstacleFound = (detect == LOW);
 
-            obstacleFound = true;
-
-            // --- AQUÍ ESTÁ LA CORRECCIÓN ---
-            // 1. Actualizamos la variable que controla el bucle de motores (el "cerebro")
-            targetDirection = STOP;
-
-            // 2. Ejecutamos el frenado físico
-            moveCar(STOP);
-
-            // 3. Avisamos al usuario
-            toneToPlay(buzzerPin, buzzerChannel, NOTE_G5, 200);
-        }
-        else
-        {
-            obstacleFound = false;
-        }
-
-        // Ejecución exacta cada 30ms para evitar deriva temporal
         vTaskDelayUntil(&lastWakeTime, pdMS_TO_TICKS(30));
     }
 }

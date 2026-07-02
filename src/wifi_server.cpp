@@ -11,6 +11,7 @@ AsyncWebServer server(80);
 AsyncWebSocket wsCamera("/Camera");
 AsyncWebSocket wsCarInput("/CarInput");
 int cameraClientId = 0;
+int carInputClientId = 0; // <--- AÑADE ESTA LÍNEA
 
 // Variables de WiFi Manager
 String ssid, pass, ip, gateway;
@@ -26,9 +27,9 @@ void scanAndConnectToBestAP(const char *targetSSID, const char *password);
 void cleanupWSClients_task(void *parameters);
 void servoControlTask(void *parameters);
 
-std::atomic<int> targetPan(75);
-std::atomic<int> targetTilt(90);
-std::atomic<int> targetDirection(0); // 0 es STOP
+volatile int targetPan = 75;
+volatile int targetTilt = 90;
+volatile int targetDirection = 0; // 0 es STOP
 
 TaskHandle_t servoControlTaskHandle = NULL;
 
@@ -36,9 +37,10 @@ TaskHandle_t servoControlTaskHandle = NULL;
 void servoControlTask(void *parameters)
 {
     // Inicializamos las posiciones actuales en el centro al arrancar
-    int currentPan = 75;
-    int currentTilt = 90;
-    int lastDirection = -1;
+    static int currentPan = 75;
+    static int currentTilt = 90;
+    static int lastDirection = -1;
+    static int lastSpeed = -1;
 
     // Configura cuántos grados máximo se puede mover el servo por ciclo (menor número = más suave y menos consumo)
     const int maxStep = 2;
@@ -75,14 +77,18 @@ void servoControlTask(void *parameters)
             tiltServo.write(currentTilt);
         }
 
-        // --- Control de Motores ---
-        if (targetDirection != lastDirection)
+        int currentDir = targetDirection; // Lectura rápida
+        int currentSpd = motorSpeed;      // Lectura rápida
+
+        // Si cambia la dirección O la velocidad, le mandamos la orden al hardware
+        if (currentDir != lastDirection || currentSpd != lastSpeed)
         {
-            moveCar(targetDirection);
-            lastDirection = targetDirection;
+            // moveCar(currentDir);
+            lastDirection = currentDir;
+            lastSpeed = currentSpd;
         }
 
-        vTaskDelay(pdMS_TO_TICKS(25)); // Bajamos a 25ms para compensar la suavidad de los pasos
+        vTaskDelay(pdMS_TO_TICKS(30)); // Bajamos a 30ms para compensar la suavidad de los pasos
     }
 }
 
@@ -174,15 +180,27 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
 {
     if (type == WS_EVT_CONNECT)
     {
+        // --- NUEVO: ELIMINADOR DE CLONES PARA EL JOYSTICK ---
+        if (carInputClientId != 0 && carInputClientId != client->id())
+        {
+            AsyncWebSocketClient *oldClient = server->client(carInputClientId);
+            if (oldClient)
+            {
+                oldClient->close(); // Liberamos el socket viejo inmediatamente
+            }
+        }
+        carInputClientId = client->id();
 #ifdef DEBUG
         Serial.printf("WS Control client #%u connected\n", client->id());
 #endif
-
-        leftBackLed(HIGH);
-        rightBackLed(HIGH);
     }
     else if (type == WS_EVT_DISCONNECT)
     {
+        // --- BLINDAJE DE DESCONEXIÓN ---
+        if (client->id() == carInputClientId)
+        {
+            carInputClientId = 0;
+        }
 #ifdef DEBUG
         Serial.printf("WS Control client #%u disconnected\n", client->id());
 #endif
@@ -207,14 +225,35 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
     }
     else if (type == WS_EVT_DATA && len > 0)
     {
-        char command = data[0];              // El primer byte es el comando
-        int value = (len > 1) ? data[1] : 0; // El segundo byte es el valor, si existe
+        // --- 1. ESCUDO ANTI-FRAGMENTACIÓN ---
+        // Verificamos que el paquete sea un mensaje completo y no un fragmento roto.
+        // Leer un fragmento roto causa un Core Panic inmediato en esta librería.
+        AwsFrameInfo *info = (AwsFrameInfo *)arg;
+        if (!(info->final && info->index == 0 && info->len == len))
+        {
+            return; // Descartamos la basura digital
+        }
 
+        // --- 2. ESCUDO ANTI-DDOS (Freno de Hardware) ---
+        // Ignoramos cualquier comando si hace menos de 50 milisegundos que recibimos el anterior.
+        // Esto limita el tráfico a un máximo seguro de 20 comandos por segundo.
+        static unsigned long lastWsTime = 0;
+        unsigned long currentWsTime = millis();
+
+        if (currentWsTime - lastWsTime < 50)
+        {
+            return; // Bloqueamos el ataque de la laptop
+        }
+        lastWsTime = currentWsTime;
+
+        // --- 3. PROCESAMIENTO SEGURO ---
+        char command = data[0];              // El primer byte es el comando
+        int value = (len > 1) ? data[1] : 0; // El segundo byte es el valor
         switch (command)
         {
         case 'M':
-            if (!obstacleFound)
-                targetDirection = value; // <--- Delegado a la tarea síncrona
+            // if (!obstacleFound)
+            targetDirection = value; // <--- Delegado a la tarea síncrona
             break;
         case 'S':
             motorSpeed = map(value, 1, 5, 200, 255);
@@ -370,9 +409,9 @@ void initWiFi()
         {
 #ifdef DEBUG
             Serial.println("\n✅ WiFi Connected!");
-            Serial.print("   IP address: ");
-            Serial.println(WiFi.localIP());
 #endif
+            // 👇 NUEVO: Apagamos el AP interno para que la antena descanse
+            WiFi.mode(WIFI_STA);
 
             if (MDNS.begin("cameracar"))
                 MDNS.addService("http", "tcp", 80);
@@ -384,16 +423,26 @@ void initWiFi()
 #ifdef DEBUG
             Serial.println("\n❌ WiFi connection failed. AP Mode is active.");
 #endif
+            // 👇 NUEVO: Solo encendemos el AP si falló la red principal
+            WiFi.mode(WIFI_AP);
+            WiFi.setTxPower(WIFI_POWER_15dBm);
+            WiFi.softAP("ESP-CAMERA-CAR", "carbondioxide");
+#ifdef DEBUG
+            Serial.print("AP IP address: ");
+            Serial.println(WiFi.softAPIP());
+#endif
         }
     }
-
-    // Configura el AP como respaldo y para configuración
-    WiFi.setTxPower(WIFI_POWER_15dBm);
-    WiFi.softAP("ESP-CAMERA-CAR", "carbondioxide");
+    else
+    {
+        // 👇 EL BLINDAJE FINAL: Si la memoria está vacía (Primer arranque)
 #ifdef DEBUG
-    Serial.print("AP IP address: ");
-    Serial.println(WiFi.softAPIP());
+        Serial.println("\n⚠️ No SSID saved. Forcing AP Mode.");
 #endif
+        WiFi.mode(WIFI_AP);
+        WiFi.setTxPower(WIFI_POWER_15dBm);
+        WiFi.softAP("ESP-CAMERA-CAR", "carbondioxide");
+    }
 
     // Rutas del Servidor Web
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
@@ -471,10 +520,10 @@ void initWiFi()
     server.begin();
 
     // Optimizaciones de energía
-    WiFi.setSleep(false);
+    // WiFi.setSleep(false);
     btStop();
     esp_bt_controller_disable();
 
     // Reactivar protección de voltaje para evitar corrupción de flash
-   // WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 1);
+    // WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 1);
 }
