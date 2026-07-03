@@ -35,18 +35,30 @@ Motor::Motor(int In1pin, int In2pin, int PWMpin, int offset, int STBYpin)
   Standby = STBYpin;
   Offset = offset;
 
-#ifdef PCF8574_ON
-  pcf8574.pinMode(In1, OUTPUT);
-  pcf8574.pinMode(In2, OUTPUT);
-  pinMode(PWM, OUTPUT);
-  pcf8574.pinMode(Standby, OUTPUT);
+  #ifdef PCF8574_ON
+    pcf8574.pinMode(In1, OUTPUT);
+    pcf8574.pinMode(In2, OUTPUT);
+   // pinMode(PWM, OUTPUT);
+    pcf8574.pinMode(Standby, OUTPUT);
 
-#else
-  pinMode(In1, OUTPUT);
-  pinMode(In2, OUTPUT);
-  pinMode(PWM, OUTPUT);
-  pinMode(Standby, OUTPUT);
-#endif
+  #else
+    pinMode(In1, OUTPUT);
+    pinMode(In2, OUTPUT);
+   // pinMode(PWM, OUTPUT);
+    pinMode(Standby, OUTPUT);
+  #endif
+
+  // 🔥 BLINDAJE DE FRECUENCIA PARA ESP32 🔥
+  // Aislamos los pines 1 y 3 de los servos, dándoles 5000Hz puros
+  if (PWM == 1) {
+      ledcSetup(5, 5000, 8); // Canal 5, 5000Hz, 8-bits (0-255)
+      ledcAttachPin(PWM, 5);
+  } else if (PWM == 3) {
+      ledcSetup(6, 5000, 8); // Canal 6, 5000Hz, 8-bits (0-255)
+      ledcAttachPin(PWM, 6);
+  } else {
+      pinMode(PWM, OUTPUT);
+  }
 }
 
 void Motor::drive(int speed)
@@ -77,7 +89,10 @@ void Motor::fwd(int speed)
   digitalWrite(In1, HIGH);
   digitalWrite(In2, LOW);
 #endif
-  analogWrite(PWM, speed);
+  // Enviamos la potencia directamente al canal LEDC aislado
+  if (PWM == 1) ledcWrite(5, speed);
+  else if (PWM == 3) ledcWrite(6, speed);
+  else analogWrite(PWM, speed);
 }
 
 void Motor::rev(int speed)
@@ -89,7 +104,9 @@ void Motor::rev(int speed)
   digitalWrite(In1, LOW);
   digitalWrite(In2, HIGH);
 #endif
-  analogWrite(PWM, speed);
+  if (PWM == 1) ledcWrite(5, speed);
+  else if (PWM == 3) ledcWrite(6, speed);
+  else analogWrite(PWM, speed);
 }
 
 void Motor::brake()
@@ -103,7 +120,9 @@ void Motor::brake()
   digitalWrite(In1, HIGH);
   digitalWrite(In2, HIGH);
 #endif
-  analogWrite(PWM, 0);
+  if (PWM == 1) ledcWrite(5, 0);
+  else if (PWM == 3) ledcWrite(6, 0);
+  else analogWrite(PWM, 0);
 }
 
 void Motor::standby()

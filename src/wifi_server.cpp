@@ -88,7 +88,7 @@ void servoControlTask(void *parameters)
             lastSpeed = currentSpd;
         }
 
-        vTaskDelay(pdMS_TO_TICKS(30)); // Bajamos a 30ms para compensar la suavidad de los pasos
+        vTaskDelay(pdMS_TO_TICKS(20)); // Bajamos a 30ms para compensar la suavidad de los pasos
     }
 }
 

@@ -55,6 +55,7 @@ void setup()
 void loop()
 {
     ArduinoOTA.handle();
+    static int lastSpeed = -1; // Recuperamos el rastreador de velocidad
     static int lastDirection = -1;
 
     // 👇 AÑADE ESTE BLOQUE PARA EVITAR QUE LA RAM EXPLOTE
@@ -74,10 +75,11 @@ void loop()
         targetDirection = STOP;
     }
 
-    // Ejecutamos el movimiento (permitirá la reversa porque no será filtrada arriba)
-    if (targetDirection != lastDirection) {
+    // Ahora actualiza el hardware si cambias la dirección O la velocidad
+    if (targetDirection != lastDirection || motorSpeed != lastSpeed) {
         moveCar(targetDirection);
         lastDirection = targetDirection;
+        lastSpeed = motorSpeed; // Guardamos la nueva velocidad
     }
 
     vTaskDelay(pdMS_TO_TICKS(10));

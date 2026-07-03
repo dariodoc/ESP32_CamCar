@@ -79,7 +79,7 @@
 
     <script>
         /////////////////////////VARIABLES//////////////////////////////////////////////
-
+        let cameraWatchdog; // Temporizador para el video
         let width, height, radius, x_orig, y_orig;
         let coord = { x: 0, y: 0 };
         let paint = false;
@@ -92,7 +92,7 @@
         let isLightOn = false;
         let isObstacleAvoidanceOn = false;
         let currentDirection = 0;
-        let servoSpeed = 80;
+        let servoSpeed = 50;
         let panServoCounter = 75;
         let tiltServoCounter = 90;
 
@@ -125,14 +125,34 @@
 
         //////////////////////////////////FUNCTIONS////////////////////////////////
 
-
+        function resetCameraWatchdog() {
+            clearTimeout(cameraWatchdog);
+            // Si pasan 3 segundos sin recibir un fotograma, consideramos que se congeló
+            cameraWatchdog = setTimeout(function () {
+                console.log("Video congelado. Forzando reconexión...");
+                if (websocketCamera && websocketCamera.readyState !== WebSocket.CLOSED) {
+                    websocketCamera.close(); // Esto disparará el evento onclose automáticamente
+                }
+            }, 3000);
+        }
 
         function initCameraWebSocket() {
             websocketCamera = new WebSocket(webSocketCameraUrl);
             websocketCamera.binaryType = 'blob';
-            websocketCamera.onopen = function (event) { console.log('Camera WebSocket connected'); };
-            websocketCamera.onclose = function (event) { setTimeout(initCameraWebSocket, 2000); };
+
+            websocketCamera.onopen = function (event) {
+                console.log('Camera WebSocket connected');
+                resetCameraWatchdog(); // 1. Arranca el temporizador al conectar
+            };
+
+            websocketCamera.onclose = function (event) {
+                clearTimeout(cameraWatchdog); // 2. Detiene el temporizador si se cierra
+                setTimeout(initCameraWebSocket, 2000);
+            };
+
             websocketCamera.onmessage = function (event) {
+                resetCameraWatchdog(); // 3. Resetea el tiempo de vida con CADA fotograma nuevo
+
                 // Liberar la imagen anterior de la RAM del navegador
                 if (lastCameraUrl) {
                     URL.revokeObjectURL(lastCameraUrl);
@@ -149,6 +169,7 @@
                 // Al conectar, envía la posición inicial de los servos
                 sendCommand('P', panServoCounter);
                 sendCommand('T', tiltServoCounter);
+                sendCommand('S', document.getElementById("Speed").value);
             };
             websocketCarInput.onclose = function (event) { setTimeout(initCarInputWebSocket, 2000); };
             // NUEVO: Escucha la telemetría enviada por el coche
@@ -395,9 +416,9 @@
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             background();
             joystick(width / 2, height / 2);
-            
+
             // Pasamos 'true' para forzar el frenado inmediato saltándose el temporizador
-            processAndSend(0, 0, true); 
+            processAndSend(0, 0, true);
         }
 
 
