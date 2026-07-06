@@ -6,9 +6,7 @@
 #include "camera_setup.h"
 #include <esp_camera.h>
 
-TaskHandle_t arduinoOTATask;
 TaskHandle_t sendCameraPictureTask;
-TaskHandle_t cleanupWSClientsTask;
 extern TaskHandle_t servoControlTaskHandle;
 extern void servoControlTask(void *parameters);
 // --- Variables globales para controlar los tiempos en el Loop ---
@@ -21,7 +19,7 @@ void initTasks()
     // xTaskCreatePinnedToCore(sendTelemetryTask, "Telemetry", 2048, NULL, 0, NULL, 0);
 
     xTaskCreatePinnedToCore(sendCameraPicture, "sendCameraPicture", 1024 * 8, NULL, 2, &sendCameraPictureTask, 0);
-  // --- NUEVO: Tarea de Servos ---
+    // --- NUEVO: Tarea de Servos ---
     xTaskCreatePinnedToCore(servoControlTask, "ServoControl", 1024 * 8, NULL, 1, &servoControlTaskHandle, CONFIG_ARDUINO_RUNNING_CORE);
 
     // --- NUEVO: Instanciar tareas de periféricos de forma permanente ---
@@ -32,7 +30,7 @@ void initTasks()
 
 void setup()
 {
-    WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); // Deshabilitar brownout detector
+    // WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); // Deshabilitar brownout detector
 
 #ifdef DEBUG
     Serial.begin(115200);
@@ -61,7 +59,8 @@ void loop()
     // 👇 AÑADE ESTE BLOQUE PARA EVITAR QUE LA RAM EXPLOTE
     static unsigned long lastCleanupTime = 0;
     unsigned long currentMillis = millis();
-    if (currentMillis - lastCleanupTime >= 2000) {
+    if (currentMillis - lastCleanupTime >= 2000)
+    {
         lastCleanupTime = currentMillis;
         wsCamera.cleanupClients();
         wsCarInput.cleanupClients();
@@ -70,13 +69,15 @@ void loop()
 
     // --- FILTRO INTELIGENTE DE OBSTÁCULOS ---
     // Si hay un obstáculo Y el usuario intenta ir hacia adelante, forzamos un STOP
-    if (obstacleFound && (targetDirection == FORWARD || targetDirection == FORWARDLEFT || targetDirection == FORWARDRIGHT)) {
+    if (obstacleFound && (targetDirection == FORWARD || targetDirection == FORWARDLEFT || targetDirection == FORWARDRIGHT))
+    {
         toneToPlay(buzzerPin, buzzerChannel, NOTE_G5, 200);
         targetDirection = STOP;
     }
 
     // Ahora actualiza el hardware si cambias la dirección O la velocidad
-    if (targetDirection != lastDirection || motorSpeed != lastSpeed) {
+    if (targetDirection != lastDirection || motorSpeed != lastSpeed)
+    {
         moveCar(targetDirection);
         lastDirection = targetDirection;
         lastSpeed = motorSpeed; // Guardamos la nueva velocidad

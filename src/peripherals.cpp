@@ -4,7 +4,9 @@
 #include "PCF8574.h"
 
 // Definición de objetos y variables de periféricos
-PCF8574 pcf8574(0x20, 14, 15);
+PCF8574 motorcontrolpcf8574(&Wire, 0x20);
+PCF8574 peripheralspcf8574(&Wire, 0x24);
+
 Servo panServo;
 Servo tiltServo;
 
@@ -16,32 +18,96 @@ volatile bool obstacleFound = false;
 TaskHandle_t playMelodyTask;
 TaskHandle_t obstacleAvoidanceModeTask;
 
+void scanI2C()
+{
+    byte error, address;
+    int nDevices = 0;
+
+    Serial.println("Escaneando bus I2C...");
+
+    for (address = 1; address < 127; address++)
+    {
+        Wire.beginTransmission(address);
+        error = Wire.endTransmission();
+
+        if (error == 0)
+        {
+            Serial.print("Dispositivo I2C encontrado en direccion 0x");
+            if (address < 16)
+                Serial.print("0");
+            Serial.print(address, HEX);
+            Serial.println(" !");
+            nDevices++;
+        }
+        else if (error == 4)
+        {
+            Serial.print("Error desconocido en direccion 0x");
+            if (address < 16)
+                Serial.print("0");
+            Serial.println(address, HEX);
+        }
+    }
+    if (nDevices == 0)
+        Serial.println("No se encontraron dispositivos I2C\n");
+    else
+        Serial.println("Escaneo completado.\n");
+}
+
 void setupPeripherals()
 {
     pinMode(builtinLedPin, OUTPUT);
     digitalWrite(builtinLedPin, HIGH); // LED OFF
-
+    pinMode(lightPin, OUTPUT);
+    digitalWrite(lightPin, LOW); // Nos aseguramos de que inicie apagado
     ledcDetachPin(buzzerPin);
+
+    motorcontrolpcf8574.pinMode(P3, OUTPUT);
+    motorcontrolpcf8574.pinMode(P4, OUTPUT);
+    // motorcontrolpcf8574.pinMode(P6, OUTPUT);
+    motorcontrolpcf8574.pinMode(P2, OUTPUT);
+    motorcontrolpcf8574.pinMode(P1, OUTPUT);
+    motorcontrolpcf8574.pinMode(P0, OUTPUT);
+    // motorcontrolpcf8574.pinMode(P7, OUTPUT);
+
+    peripheralspcf8574.pinMode(P5, INPUT);
+    peripheralspcf8574.pinMode(P7, OUTPUT);
+    peripheralspcf8574.pinMode(P6, OUTPUT);
+
+    Wire.begin(14, 15);
+    vTaskDelay(pdMS_TO_TICKS(500)); // Esperamos un poco para que el bus I2C se estabilice
+
+    scanI2C();
+
+    // Diagnóstico para el primer PCF (0x20)
+    if (motorcontrolpcf8574.begin())
+    {
+        //  Serial.println("PCF8574 (0x20) inicializado correctamente.");
+    }
+    else
+    {
+        //   Serial.println("ERROR: No se pudo inicializar PCF8574 (0x20).");
+    }
+
+    // Diagnóstico para el segundo PCF (0x24)
+    if (peripheralspcf8574.begin())
+    {
+
+        //  Serial.println("PCF8574 (0x24) inicializado correctamente.");
+    }
+    else
+    {
+        // Serial.println("ERROR: No se pudo inicializar PCF8574 (0x24).");
+    }
+
+    // --- NUEVO: Blindaje del Bus I2C ---
+    // Como el PCF ya inició el bus con los pines correctos, ahora sí le ponemos el límite
+    Wire.setTimeOut(50);
 
     panServo.attach(panPin);
     tiltServo.attach(tiltPin);
     panServo.write(panCenter);
     tiltServo.write(tiltCenter);
 
-    pcf8574.pinMode(P5, INPUT);  // Sensor de distancia
-    pcf8574.pinMode(P6, OUTPUT); // LED trasero izquierdo
-    pcf8574.pinMode(P7, OUTPUT); // LED trasero derecho
-    pinMode(lightPin, OUTPUT);   // Luces frontales
-
-    if (!pcf8574.begin())
-    {
-#ifdef DEBUG
-        Serial.println("PCF8574 FAILED");
-#endif
-    }
-    // --- NUEVO: Blindaje del Bus I2C ---
-    // Como el PCF ya inició el bus con los pines correctos, ahora sí le ponemos el límite
-    Wire.setTimeOut(50);
     ledIndicator(3, 250);
 }
 
@@ -63,12 +129,12 @@ void ledIndicator(int state)
 
 void leftBackLed(int state)
 {
-    pcf8574.digitalWrite(P6, !state); // LOW enciende el LED
+    peripheralspcf8574.digitalWrite(P7, !state); // LOW enciende el LED
 }
 
 void rightBackLed(int state)
 {
-    pcf8574.digitalWrite(P7, !state); // LOW enciende el LED
+    peripheralspcf8574.digitalWrite(P6, !state); // LOW enciende el LED
 }
 
 void playMelody(void *parameters)
@@ -101,7 +167,7 @@ void obstacleAvoidanceMode(void *parameters)
             ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
         }
 
-        int detect = pcf8574.digitalRead(P5);
+        int detect = peripheralspcf8574.digitalRead(P5);
 
         // 1. Simplemente actualizamos la bandera indicando si hay pared
         obstacleFound = (detect == LOW);

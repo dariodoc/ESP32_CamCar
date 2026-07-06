@@ -4,7 +4,10 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include "AsyncTCP.h"
+
+#define WS_MAX_QUEUED_MESSAGES 1
 #include "ESPAsyncWebServer.h"
+
 #include <sstream>
 #include <ArduinoOTA.h>
 #include "ESP32Servo.h"
@@ -14,7 +17,6 @@
 #include <soc/rtc_cntl_reg.h>
 #include <SPIFFS.h>
 #include <ESPmDNS.h>
-#include <atomic>
 
 // #define DEBUG // Descomenta para habilitar el monitor Serial
 
@@ -72,8 +74,7 @@ extern int cameraClientId;
 extern Servo panServo;
 extern Servo tiltServo;
 
-// Motores y PCF8574
-// extern PCF8574 pcf8574;
+
 extern Motor leftMotor;
 extern Motor rightMotor;
 

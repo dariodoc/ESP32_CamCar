@@ -24,7 +24,6 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
 String readFile(fs::FS &fs, const char *path);
 void writeFile(fs::FS &fs, const char *path, const char *message);
 void scanAndConnectToBestAP(const char *targetSSID, const char *password);
-void cleanupWSClients_task(void *parameters);
 void servoControlTask(void *parameters);
 
 volatile int targetPan = 75;
@@ -39,8 +38,6 @@ void servoControlTask(void *parameters)
     // Inicializamos las posiciones actuales en el centro al arrancar
     static int currentPan = 75;
     static int currentTilt = 90;
-    static int lastDirection = -1;
-    static int lastSpeed = -1;
 
     // Configura cuántos grados máximo se puede mover el servo por ciclo (menor número = más suave y menos consumo)
     const int maxStep = 2;
@@ -77,39 +74,7 @@ void servoControlTask(void *parameters)
             tiltServo.write(currentTilt);
         }
 
-        int currentDir = targetDirection; // Lectura rápida
-        int currentSpd = motorSpeed;      // Lectura rápida
-
-        // Si cambia la dirección O la velocidad, le mandamos la orden al hardware
-        if (currentDir != lastDirection || currentSpd != lastSpeed)
-        {
-            // moveCar(currentDir);
-            lastDirection = currentDir;
-            lastSpeed = currentSpd;
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(20)); // Bajamos a 30ms para compensar la suavidad de los pasos
-    }
-}
-
-// --- Tareas de Red (OTA, Limpieza, Telemetría) ---
-void arduinoOTA_task(void *parameters)
-{
-
-    for (;;)
-    {
-        ArduinoOTA.handle();
-        vTaskDelay(pdMS_TO_TICKS(10));
-    }
-}
-
-void cleanupWSClients_task(void *parameters)
-{
-    for (;;)
-    {
-        wsCamera.cleanupClients();
-        wsCarInput.cleanupClients();
-        vTaskDelay(pdMS_TO_TICKS(2000));
+        vTaskDelay(pdMS_TO_TICKS(20)); // Bajamos a 20ms para compensar la suavidad de los pasos
     }
 }
 
@@ -135,6 +100,7 @@ void sendTelemetryTask(void *parameters)
         vTaskDelay(pdMS_TO_TICKS(2000));
     }
 }
+
 // --- Handlers de WebSocket ---
 void onCameraWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len)
 {

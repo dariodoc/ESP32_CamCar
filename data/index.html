@@ -394,8 +394,8 @@
 
             if (newDirection !== currentDirection) {
                 let currentTime = Date.now();
-                // BLINDAJE: Solo enviamos si pasaron 150ms, o si forzamos el STOP (al soltar el clic)
-                if (force || (currentTime - lastSendTime > 150)) {
+                // BLINDAJE: Solo enviamos si pasaron 50ms, o si forzamos el STOP (al soltar el clic)
+                if (force || (currentTime - lastSendTime > 50)) {
                     currentDirection = newDirection;
                     sendCommand('M', currentDirection);
                     lastSendTime = currentTime;

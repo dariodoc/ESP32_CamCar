@@ -24,7 +24,7 @@ Developed with ROB-9457
 #define PCF8574_ON // Uncomment to use PCF8574 by including "PCF8574.h"
 #ifdef PCF8574_ON
 #include <PCF8574.h>
-extern PCF8574 pcf8574;
+extern PCF8574 motorcontrolpcf8574;
 #endif
 
 Motor::Motor(int In1pin, int In2pin, int PWMpin, int offset, int STBYpin)
@@ -35,21 +35,10 @@ Motor::Motor(int In1pin, int In2pin, int PWMpin, int offset, int STBYpin)
   Standby = STBYpin;
   Offset = offset;
 
-  #ifdef PCF8574_ON
-    pcf8574.pinMode(In1, OUTPUT);
-    pcf8574.pinMode(In2, OUTPUT);
-   // pinMode(PWM, OUTPUT);
-    pcf8574.pinMode(Standby, OUTPUT);
-
-  #else
-    pinMode(In1, OUTPUT);
-    pinMode(In2, OUTPUT);
-   // pinMode(PWM, OUTPUT);
-    pinMode(Standby, OUTPUT);
-  #endif
+ 
 
   // 🔥 BLINDAJE DE FRECUENCIA PARA ESP32 🔥
-  // Aislamos los pines 1 y 3 de los servos, dándoles 5000Hz puros
+ // Aislamos los pines 1 y 3 de los servos, dándoles 5000Hz puros
   if (PWM == 1) {
       ledcSetup(5, 5000, 8); // Canal 5, 5000Hz, 8-bits (0-255)
       ledcAttachPin(PWM, 5);
@@ -64,7 +53,7 @@ Motor::Motor(int In1pin, int In2pin, int PWMpin, int offset, int STBYpin)
 void Motor::drive(int speed)
 {
 #ifdef PCF8574_ON
-  pcf8574.digitalWrite(Standby, HIGH);
+  motorcontrolpcf8574.digitalWrite(Standby, HIGH);
 #else
   digitalWrite(Standby, HIGH);
 #endif
@@ -83,38 +72,39 @@ void Motor::drive(int speed, int duration)
 void Motor::fwd(int speed)
 {
 #ifdef PCF8574_ON
-  pcf8574.digitalWrite(In1, HIGH);
-  pcf8574.digitalWrite(In2, LOW);
+  motorcontrolpcf8574.digitalWrite(In1, HIGH);
+  motorcontrolpcf8574.digitalWrite(In2, LOW);
+ // motorcontrolpcf8574.digitalWrite(PWM, HIGH);
 #else
   digitalWrite(In1, HIGH);
   digitalWrite(In2, LOW);
 #endif
-  // Enviamos la potencia directamente al canal LEDC aislado
+   // Enviamos la potencia directamente al canal LEDC aislado
   if (PWM == 1) ledcWrite(5, speed);
   else if (PWM == 3) ledcWrite(6, speed);
-  else analogWrite(PWM, speed);
 }
 
 void Motor::rev(int speed)
 {
 #ifdef PCF8574_ON
-  pcf8574.digitalWrite(In1, LOW);
-  pcf8574.digitalWrite(In2, HIGH);
+  motorcontrolpcf8574.digitalWrite(In1, LOW);
+  motorcontrolpcf8574.digitalWrite(In2, HIGH);
+ // motorcontrolpcf8574.digitalWrite(PWM, HIGH);
 #else
   digitalWrite(In1, LOW);
   digitalWrite(In2, HIGH);
 #endif
   if (PWM == 1) ledcWrite(5, speed);
   else if (PWM == 3) ledcWrite(6, speed);
-  else analogWrite(PWM, speed);
 }
 
 void Motor::brake()
 {
 #ifdef PCF8574_ON
-  pcf8574.digitalWrite(Standby, LOW);
-  pcf8574.digitalWrite(In1, HIGH);
-  pcf8574.digitalWrite(In2, HIGH);
+  motorcontrolpcf8574.digitalWrite(Standby, LOW);
+  motorcontrolpcf8574.digitalWrite(In1, HIGH);
+  motorcontrolpcf8574.digitalWrite(In2, HIGH);
+//  motorcontrolpcf8574.digitalWrite(PWM, LOW);
 #else
   digitalWrite(Standby, LOW);
   digitalWrite(In1, HIGH);
@@ -122,13 +112,12 @@ void Motor::brake()
 #endif
   if (PWM == 1) ledcWrite(5, 0);
   else if (PWM == 3) ledcWrite(6, 0);
-  else analogWrite(PWM, 0);
 }
 
 void Motor::standby()
 {
 #ifdef PCF8574_ON
-  pcf8574.digitalWrite(Standby, LOW);
+  motorcontrolpcf8574.digitalWrite(Standby, LOW);
 #else
   digitalWrite(Standby, LOW);
 #endif
