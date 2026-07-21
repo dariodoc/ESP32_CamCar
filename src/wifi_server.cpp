@@ -25,10 +25,7 @@ String readFile(fs::FS &fs, const char *path);
 void writeFile(fs::FS &fs, const char *path, const char *message);
 void scanAndConnectToBestAP(const char *targetSSID, const char *password);
 
-
-
 volatile int targetDirection = 0; // 0 es STOP
-
 
 void sendTelemetryTask(void *parameters)
 {

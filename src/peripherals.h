@@ -3,6 +3,10 @@
 
 #include <Arduino.h>
 
+// En peripherals.h
+extern volatile int targetPan;
+extern volatile int targetTilt;
+
 // Handlers de Tareas de Periféricos
 extern TaskHandle_t playMelodyTask;
 extern TaskHandle_t obstacleAvoidanceModeTask;

@@ -10,9 +10,7 @@
 
 #include <sstream>
 #include <ArduinoOTA.h>
-#include "ESP32Servo.h"
-#include "SparkFun_TB6612.h"
-#include "Melodies.h"
+
 #include <soc/soc.h>
 #include <soc/rtc_cntl_reg.h>
 #include <SPIFFS.h>
@@ -69,13 +67,6 @@ extern AsyncWebServer server;
 extern AsyncWebSocket wsCamera;
 extern AsyncWebSocket wsCarInput;
 extern int cameraClientId;
-
-// Servos
-extern Servo panServo;
-extern Servo tiltServo;
-
-extern Motor leftMotor;
-extern Motor rightMotor;
 
 extern volatile bool melodyOn;
 extern volatile int motorSpeed;

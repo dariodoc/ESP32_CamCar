@@ -2,6 +2,7 @@
 #include "motor_control.h"
 #include "peripherals.h" // Necesita las funciones de los LEDs traseros
 #include "PCF8574.h"
+#include "SparkFun_TB6612.h"
 
 // Definición de los objetos motor y variables relacionadas
 Motor leftMotor(P3, P4, 1, 1, P2);

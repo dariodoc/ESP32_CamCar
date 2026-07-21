@@ -4,6 +4,7 @@
 #include "peripherals.h"
 #include "wifi_server.h"
 #include <esp_camera.h>
+#include "Melodies.h"
 
 TaskHandle_t sendCameraPictureTask;
 

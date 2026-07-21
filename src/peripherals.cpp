@@ -2,6 +2,8 @@
 #include "peripherals.h"
 #include "motor_control.h"
 #include "PCF8574.h"
+#include "ESP32Servo.h"
+#include "Melodies.h"
 
 // Definición de objetos y variables de periféricos
 PCF8574 motorcontrolpcf8574(&Wire, 0x20);
@@ -210,19 +212,24 @@ void servoControlTask(void *parameters)
 void obstacleAvoidanceMode(void *parameters)
 {
     TickType_t lastWakeTime = xTaskGetTickCount();
+    int lastDetect = -1;
 
     for (;;)
     {
         if (!enableObstacleAvoidance)
         {
             ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+            lastDetect = -1; // Reset al reactivar
         }
 
         int detect = peripheralspcf8574.digitalRead(P5);
 
-        // 1. Simplemente actualizamos la bandera indicando si hay pared
-        obstacleFound = (detect == LOW);
+        if (detect != lastDetect)
+        {
+            obstacleFound = (detect == LOW);
+            lastDetect = detect;
+        }
 
-        vTaskDelayUntil(&lastWakeTime, pdMS_TO_TICKS(30));
+        vTaskDelayUntil(&lastWakeTime, pdMS_TO_TICKS(50));
     }
 }

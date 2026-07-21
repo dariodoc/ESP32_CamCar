@@ -122,6 +122,7 @@ void sendCameraPicture(void *parameters)
         blockedCounter = 0;
 
         // --- CAPTURA ---
+        // En camera_setup.cpp dentro de sendCameraPicture:
         fb = esp_camera_fb_get();
         if (!fb)
         {
@@ -132,8 +133,8 @@ void sendCameraPicture(void *parameters)
                 if (s)
                     s->reset(s);
                 consecutiveFailures = 0;
-                vTaskDelay(pdMS_TO_TICKS(100));
             }
+            vTaskDelay(pdMS_TO_TICKS(50)); // 👈 SIEMPRE pausa ante un fallo de frame
             continue;
         }
 
