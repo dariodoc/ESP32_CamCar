@@ -181,14 +181,18 @@ void servoControlTask(void *parameters)
 
     for (;;)
     {
-        bool updated = false;
+        if (currentPan == targetPan && currentTilt == targetTilt)
+        {
+            // Si los servos ya llegaron a su destino, dormir 100ms para liberar CPU
+            vTaskDelay(pdMS_TO_TICKS(100));
+            continue;
+        }
 
         if (currentPan != targetPan)
         {
             int diff = targetPan - currentPan;
             currentPan += (abs(diff) <= maxStep) ? diff : ((diff > 0) ? maxStep : -maxStep);
             panServo.write(currentPan);
-            updated = true;
         }
 
         if (currentTilt != targetTilt)
@@ -196,7 +200,6 @@ void servoControlTask(void *parameters)
             int diff = targetTilt - currentTilt;
             currentTilt += (abs(diff) <= maxStep) ? diff : ((diff > 0) ? maxStep : -maxStep);
             tiltServo.write(currentTilt);
-            updated = true;
         }
 
         vTaskDelay(pdMS_TO_TICKS(20));

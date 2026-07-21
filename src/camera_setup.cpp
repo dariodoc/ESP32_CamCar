@@ -105,9 +105,10 @@ void sendCameraPicture(void *parameters)
 
         blockedCounter = 0; // Si puede enviar, reseteamos el contador
 
-        // 3. Protección de RAM crítica (umbral ajustado a 30KB)
-        if (ESP.getFreeHeap() < 30000)
+        // 3. Protección de RAM crítica (umbral ajustado a 40KB)
+        if (ESP.getFreeHeap() < 40000)
         {
+            //wsCamera.cleanupClients(); // Forzar purga de memoria
             vTaskDelay(pdMS_TO_TICKS(100));
             continue;
         }
