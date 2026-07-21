@@ -1,6 +1,6 @@
 #include "config.h"
 #include "peripherals.h"
-#include "motor_control.h" // Para llamar a moveCar(STOP)
+#include "motor_control.h"
 #include "PCF8574.h"
 
 // Definición de objetos y variables de periféricos
@@ -15,8 +15,13 @@ volatile bool melodyOn = false;
 volatile bool enableObstacleAvoidance = false;
 volatile bool obstacleFound = false;
 
-TaskHandle_t playMelodyTask;
-TaskHandle_t obstacleAvoidanceModeTask;
+// Variables de posición objetivo (actualizadas por eventos WS)
+volatile int targetPan = 75;
+volatile int targetTilt = 90;
+
+TaskHandle_t playMelodyTask = NULL;
+TaskHandle_t obstacleAvoidanceModeTask = NULL;
+TaskHandle_t servoControlTaskHandle = NULL;
 
 void scanI2C()
 {
@@ -153,6 +158,52 @@ void playMelody(void *parameters)
 
         // Silenciamos el canal en lugar de destruir la configuración del hardware
         ledcWriteTone(buzzerChannel, 0);
+    }
+}
+
+// --- NUEVO: Tarea dedicada para mover los servos de forma síncrona ---
+void servoControlTask(void *parameters)
+{
+    // Inicializamos las posiciones actuales en el centro al arrancar
+    static int currentPan = 75;
+    static int currentTilt = 90;
+
+    // Configura cuántos grados máximo se puede mover el servo por ciclo (menor número = más suave y menos consumo)
+    const int maxStep = 2;
+
+    for (;;)
+    {
+        // --- Suavizado de PASO para PAN ---
+        if (currentPan != targetPan)
+        {
+            int diff = targetPan - currentPan;
+            if (abs(diff) <= maxStep)
+            {
+                currentPan = targetPan; // Si está muy cerca, llega al objetivo
+            }
+            else
+            {
+                currentPan += (diff > 0) ? maxStep : -maxStep; // Se mueve a pasos sutiles
+            }
+            panServo.write(currentPan);
+        }
+
+        // --- Suavizado de PASO para TILT ---
+        if (currentTilt != targetTilt)
+        {
+            int diff = targetTilt - currentTilt;
+            if (abs(diff) <= maxStep)
+            {
+                currentTilt = targetTilt;
+            }
+            else
+            {
+                currentTilt += (diff > 0) ? maxStep : -maxStep;
+            }
+            tiltServo.write(currentTilt);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(20)); // Bajamos a 20ms para compensar la suavidad de los pasos
     }
 }
 

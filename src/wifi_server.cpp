@@ -24,59 +24,11 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
 String readFile(fs::FS &fs, const char *path);
 void writeFile(fs::FS &fs, const char *path, const char *message);
 void scanAndConnectToBestAP(const char *targetSSID, const char *password);
-void servoControlTask(void *parameters);
 
-volatile int targetPan = 75;
-volatile int targetTilt = 90;
+
+
 volatile int targetDirection = 0; // 0 es STOP
 
-TaskHandle_t servoControlTaskHandle = NULL;
-
-// --- NUEVO: Tarea dedicada para mover los servos de forma síncrona ---
-void servoControlTask(void *parameters)
-{
-    // Inicializamos las posiciones actuales en el centro al arrancar
-    static int currentPan = 75;
-    static int currentTilt = 90;
-
-    // Configura cuántos grados máximo se puede mover el servo por ciclo (menor número = más suave y menos consumo)
-    const int maxStep = 2;
-
-    for (;;)
-    {
-        // --- Suavizado de PASO para PAN ---
-        if (currentPan != targetPan)
-        {
-            int diff = targetPan - currentPan;
-            if (abs(diff) <= maxStep)
-            {
-                currentPan = targetPan; // Si está muy cerca, llega al objetivo
-            }
-            else
-            {
-                currentPan += (diff > 0) ? maxStep : -maxStep; // Se mueve a pasos sutiles
-            }
-            panServo.write(currentPan);
-        }
-
-        // --- Suavizado de PASO para TILT ---
-        if (currentTilt != targetTilt)
-        {
-            int diff = targetTilt - currentTilt;
-            if (abs(diff) <= maxStep)
-            {
-                currentTilt = targetTilt;
-            }
-            else
-            {
-                currentTilt += (diff > 0) ? maxStep : -maxStep;
-            }
-            tiltServo.write(currentTilt);
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(20)); // Bajamos a 20ms para compensar la suavidad de los pasos
-    }
-}
 
 void sendTelemetryTask(void *parameters)
 {
@@ -99,6 +51,12 @@ void sendTelemetryTask(void *parameters)
         }
         vTaskDelay(pdMS_TO_TICKS(2000));
     }
+}
+
+void cleanupWSClients()
+{
+    wsCamera.cleanupClients();
+    wsCarInput.cleanupClients();
 }
 
 // --- Handlers de WebSocket ---

@@ -2,10 +2,7 @@
 #define WIFI_SERVER_H
 
 void initWiFi();
-void arduinoOTA_task(void *parameters); 
-void cleanupWSClients_task(void *parameters); 
+void cleanupWSClients();
 void sendTelemetryTask(void *parameters);
-void servoControlTask(void *parameters);
-
 
 #endif // WIFI_SERVER_H

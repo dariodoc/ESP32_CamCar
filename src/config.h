@@ -74,15 +74,12 @@ extern int cameraClientId;
 extern Servo panServo;
 extern Servo tiltServo;
 
-
 extern Motor leftMotor;
 extern Motor rightMotor;
 
 extern volatile bool melodyOn;
 extern volatile int motorSpeed;
 extern volatile int currentDirection;
-
-
 
 // Estado del coche
 extern volatile bool enableLight;
