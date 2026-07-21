@@ -5,6 +5,7 @@
 #include "peripherals.h"
 #include "esp_bt.h" // Para apagar Bluetooth
 #include <Update.h>
+#include "SparkFun_TB6612.h"
 
 // --- Definición de variables y objetos del servidor ---
 AsyncWebServer server(80);
@@ -114,6 +115,7 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
 #ifdef DEBUG
         Serial.printf("WS Control client #%u connected\n", client->id());
 #endif
+        setMotorsStandby(true);
     }
     else if (type == WS_EVT_DISCONNECT)
     {
@@ -143,6 +145,7 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
             enableObstacleAvoidance = false;
             obstacleFound = false;
         }
+        setMotorsStandby(false);
     }
     else if (type == WS_EVT_DATA && len > 0)
     {
