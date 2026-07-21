@@ -83,7 +83,7 @@ void setupPeripherals()
     Wire.begin(14, 15);
     vTaskDelay(pdMS_TO_TICKS(500)); // Esperamos un poco para que el bus I2C se estabilice
 
-    scanI2C();
+    // scanI2C();
 
     // Diagnóstico para el primer PCF (0x20)
     if (motorcontrolpcf8574.begin())

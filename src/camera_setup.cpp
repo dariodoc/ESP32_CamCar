@@ -76,74 +76,65 @@ void sendCameraPicture(void *parameters)
 {
     camera_fb_t *fb = nullptr;
     int consecutiveFailures = 0;
-    int blockedCounter = 0; // NUEVO: Contador de tiempo bloqueado
+    int blockedCounter = 0;
 
     for (;;)
     {
+        // 1. Si no hay cliente activo, esperamos
         if (cameraClientId == 0)
         {
-            blockedCounter = 0; // Reiniciamos si no hay nadie conectado
+            blockedCounter = 0;
             vTaskDelay(pdMS_TO_TICKS(100));
             continue;
         }
 
         AsyncWebSocketClient *client = wsCamera.client(cameraClientId);
 
-        // --- BLINDAJE DE MEMORIA SEGURO ---
+        // 2. Si el cliente existe pero su cola de envío está llena
         if (!client || !client->canSend())
         {
             blockedCounter++;
-
-            // Si lleva más de 2 segundos bloqueado (100 intentos de 20ms)
-            if (blockedCounter > 100)
+            if (blockedCounter > 40) // Si se atora más de 800ms
             {
-                // ❌ NUNCA llamar a client->close() desde esta tarea.
-                // ✅ Solo reseteamos nuestra variable. El servidor cerrará el socket inactivo por su cuenta.
-                cameraClientId = 0;
+                wsCamera.cleanupClients(); // Forzamos limpieza de buffers pendientes
                 blockedCounter = 0;
-
-#ifdef DEBUG
-                Serial.println("Cliente trabado. Suspendiendo envío de video...");
-#endif
             }
-
             vTaskDelay(pdMS_TO_TICKS(20));
             continue;
         }
 
-        if (ESP.getFreeHeap() < 50000 || ESP.getMaxAllocHeap() < 30000)
+        blockedCounter = 0; // Si puede enviar, reseteamos el contador
+
+        // 3. Protección de RAM crítica (umbral ajustado a 20KB)
+        if (ESP.getFreeHeap() < 20000)
         {
-            // El procesador está asfixiado de basura digital.
-            // Pausamos la tarea un cuarto de segundo para que FreeRTOS desfragmente la RAM.
-            vTaskDelay(pdMS_TO_TICKS(250));
+            vTaskDelay(pdMS_TO_TICKS(100));
             continue;
         }
-        // Si el cliente sí puede recibir, reiniciamos el contador de bloqueos
-        blockedCounter = 0;
 
-        // --- CAPTURA ---
-        // En camera_setup.cpp dentro de sendCameraPicture:
+        // 4. Captura de Frame
         fb = esp_camera_fb_get();
         if (!fb)
         {
             consecutiveFailures++;
-            if (consecutiveFailures >= 15)
+            if (consecutiveFailures >= 10)
             {
                 sensor_t *s = esp_camera_sensor_get();
                 if (s)
                     s->reset(s);
                 consecutiveFailures = 0;
             }
-            vTaskDelay(pdMS_TO_TICKS(50)); // 👈 SIEMPRE pausa ante un fallo de frame
+            vTaskDelay(pdMS_TO_TICKS(50));
             continue;
         }
 
         consecutiveFailures = 0;
 
-        // --- ENVÍO ---
+        // 5. Envío de Frame y liberación de memoria
         client->binary(fb->buf, fb->len);
         esp_camera_fb_return(fb);
 
-        vTaskDelay(pdMS_TO_TICKS(100));
+        // Ritmo de transmisión estable (~8 FPS)
+        vTaskDelay(pdMS_TO_TICKS(125));
     }
 }

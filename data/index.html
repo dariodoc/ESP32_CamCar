@@ -78,16 +78,21 @@
     </table>
 
     <script>
-        /////////////////////////VARIABLES//////////////////////////////////////////////
-        let cameraWatchdog; // Temporizador para el video
+        ///////////////////////// VARIABLES //////////////////////////////
+        let cameraWatchdog;
         let width, height, radius, x_orig, y_orig;
         let coord = { x: 0, y: 0 };
         let paint = false;
+
         let webSocketCameraUrl = "ws://" + window.location.hostname + "/Camera";
         let webSocketCarInputUrl = "ws://" + window.location.hostname + "/CarInput";
         let websocketCamera;
         let websocketCarInput;
-        let timer;
+
+        // Temporizadores separados para evitar fugas de memoria y bucles infinitos
+        let panTimer = null;
+        let tiltTimer = null;
+
         let isMelodyOn = false;
         let isLightOn = false;
         let isObstacleAvoidanceOn = false;
@@ -95,6 +100,9 @@
         let servoSpeed = 50;
         let panServoCounter = 75;
         let tiltServoCounter = 90;
+
+        let lastCameraUrl = null;
+        let lastSendTime = 0;
 
         const btnObstacleAvoidance = document.getElementById("btnObstacleAvoidance");
         const btnLight = document.getElementById("btnLight");
@@ -111,27 +119,17 @@
         const btnTiltUp = document.getElementById("btnTiltUp");
         const btnTiltDown = document.getElementById("btnTiltDown");
 
-        const FORWARD = 1;
-        const BACKWARD = 2;
-        const LEFT = 3;
-        const RIGHT = 4;
-        const STOP = 0;
-        const FORWARDLEFT = 5;
-        const FORWARDRIGHT = 6;
-        const BACKLEFT = 7;
-        const BACKRIGHT = 8;
+        const FORWARD = 1, BACKWARD = 2, LEFT = 3, RIGHT = 4, STOP = 0;
+        const FORWARDLEFT = 5, FORWARDRIGHT = 6, BACKLEFT = 7, BACKRIGHT = 8;
 
-        let lastCameraUrl = null; // Añade esta variable global arriba
-
-        //////////////////////////////////FUNCTIONS////////////////////////////////
+        ////////////////////////////////// WEBSOCKET CAMERA ////////////////////////////////
 
         function resetCameraWatchdog() {
             clearTimeout(cameraWatchdog);
-            // Si pasan 3 segundos sin recibir un fotograma, consideramos que se congeló
             cameraWatchdog = setTimeout(function () {
-                console.log("Video congelado. Forzando reconexión...");
-                if (websocketCamera && websocketCamera.readyState !== WebSocket.CLOSED) {
-                    websocketCamera.close(); // Esto disparará el evento onclose automáticamente
+                console.warn("Video congelado. Forzando reconexión...");
+                if (websocketCamera) {
+                    websocketCamera.close();
                 }
             }, 3000);
         }
@@ -140,158 +138,169 @@
             websocketCamera = new WebSocket(webSocketCameraUrl);
             websocketCamera.binaryType = 'blob';
 
-            websocketCamera.onopen = function (event) {
+            websocketCamera.onopen = function () {
                 console.log('Camera WebSocket connected');
-                resetCameraWatchdog(); // 1. Arranca el temporizador al conectar
+                resetCameraWatchdog();
             };
 
-            websocketCamera.onclose = function (event) {
-                clearTimeout(cameraWatchdog); // 2. Detiene el temporizador si se cierra
+            websocketCamera.onclose = function () {
+                clearTimeout(cameraWatchdog);
                 setTimeout(initCameraWebSocket, 2000);
             };
 
             websocketCamera.onmessage = function (event) {
-                resetCameraWatchdog(); // 3. Resetea el tiempo de vida con CADA fotograma nuevo
+                resetCameraWatchdog();
 
-                // Liberar la imagen anterior de la RAM del navegador
-                if (lastCameraUrl) {
-                    URL.revokeObjectURL(lastCameraUrl);
-                }
-                lastCameraUrl = URL.createObjectURL(event.data);
-                cameraImage.src = lastCameraUrl;
+                // Gestión correcta de blobs en memoria para evitar congelación del motor gráfico
+                const newUrl = URL.createObjectURL(event.data);
+
+                cameraImage.onload = function () {
+                    if (lastCameraUrl) {
+                        URL.revokeObjectURL(lastCameraUrl);
+                    }
+                    lastCameraUrl = newUrl;
+                };
+
+                cameraImage.src = newUrl;
             };
         }
 
+        ////////////////////////////////// WEBSOCKET CAR INPUT ////////////////////////////////
+
         function initCarInputWebSocket() {
             websocketCarInput = new WebSocket(webSocketCarInputUrl);
-            websocketCarInput.onopen = function (event) {
+
+            websocketCarInput.onopen = function () {
                 console.log('CarInput WebSocket connected');
-                // Al conectar, envía la posición inicial de los servos
                 sendCommand('P', panServoCounter);
                 sendCommand('T', tiltServoCounter);
                 sendCommand('S', document.getElementById("Speed").value);
             };
-            websocketCarInput.onclose = function (event) { setTimeout(initCarInputWebSocket, 2000); };
-            // NUEVO: Escucha la telemetría enviada por el coche
+
+            websocketCarInput.onclose = function () {
+                setTimeout(initCarInputWebSocket, 2000);
+            };
+
             websocketCarInput.onmessage = function (event) {
                 try {
                     const telemetry = JSON.parse(event.data);
-                    if (telemetry.rssi !== undefined) {
-                        rssi.innerText = telemetry.rssi;
-                    }
+                    if (telemetry.rssi !== undefined) rssi.innerText = telemetry.rssi;
                     if (telemetry.obstacle !== undefined) {
-                        // Indicador visual de obstáculo
                         canvas.style.border = telemetry.obstacle ? "3px solid red" : "none";
                     }
-                } catch (e) {
-                    // Ignora errores si el mensaje no es JSON
-                }
+                } catch (e) { }
             };
         }
 
-        // NUEVA FUNCIÓN OPTIMIZADA para enviar comandos
         function sendCommand(command, value) {
             if (websocketCarInput && websocketCarInput.readyState === WebSocket.OPEN) {
-                // Aseguramos que 'value' sea un entero (parseInt)
-                const data = new Uint8Array([command.charCodeAt(0), parseInt(value)]);
-                websocketCarInput.send(data);
+                // Evita saturar el búfer del WebSocket si la red se ralentiza
+                if (websocketCarInput.bufferedAmount < 1024) {
+                    const data = new Uint8Array([command.charCodeAt(0), parseInt(value)]);
+                    websocketCarInput.send(data);
+                }
             }
         }
 
-        // Funciones de botones actualizadas para usar sendCommand
+        ////////////////// CONTROL DE SERVOS CORREGIDO //////////////////
+
         function CenterServos() {
             panServoCounter = 75;
             tiltServoCounter = 90;
-            sendCommand('C', 1); // Comando 'C' para centrar
-            window.navigator.vibrate(50);
+            sendCommand('C', 1);
+            if (navigator.vibrate) navigator.vibrate(50);
         }
 
         function ObstacleAvoidanceOnOff() {
             isObstacleAvoidanceOn = !isObstacleAvoidanceOn;
             btnObstacleAvoidance.style.backgroundColor = isObstacleAvoidanceOn ? "rgb(236 240 243)" : 'black';
-            sendCommand('O', 1); // Comando 'O' para Obstáculos
-            window.navigator.vibrate(50);
+            sendCommand('O', 1);
+            if (navigator.vibrate) navigator.vibrate(50);
         }
 
         function LightOnOff() {
             isLightOn = !isLightOn;
             btnLight.style.backgroundColor = isLightOn ? "rgb(236 240 243)" : 'black';
-            sendCommand('L', 1); // Comando 'L' para Luz
-            window.navigator.vibrate(50);
+            sendCommand('L', 1);
+            if (navigator.vibrate) navigator.vibrate(50);
         }
 
         function MelodyOnOff() {
             isMelodyOn = !isMelodyOn;
             btnMelody.style.backgroundColor = isMelodyOn ? "rgb(236 240 243)" : 'black';
-            sendCommand('H', 1); // Comando 'H' para Horn (Melodía)
-            window.navigator.vibrate(50);
+            sendCommand('H', 1);
+            if (navigator.vibrate) navigator.vibrate(50);
         }
 
-        ////////////////// FUNCIONES DE CONTROL DE SERVOS BLINDADAS //////////////////
-
         function PanLeft() {
-            if (timer) clearTimeout(timer); // Mata cualquier bucle duplicado previo
+            stopPan();
             btnPanLeft.style.backgroundColor = "rgb(236 240 243)";
             if (panServoCounter < 180) {
                 panServoCounter++;
                 sendCommand("P", panServoCounter);
-                timer = setTimeout(PanLeft, servoSpeed);
+                panTimer = setTimeout(PanLeft, servoSpeed);
             }
         }
 
         function PanRight() {
-            if (timer) clearTimeout(timer); // Mata cualquier bucle duplicado previo
+            stopPan();
             btnPanRight.style.backgroundColor = "rgb(236 240 243)";
             if (panServoCounter > 0) {
                 panServoCounter--;
                 sendCommand("P", panServoCounter);
-                timer = setTimeout(PanRight, servoSpeed);
+                panTimer = setTimeout(PanRight, servoSpeed);
             }
         }
 
         function TiltUp() {
-            if (timer) clearTimeout(timer); // Mata cualquier bucle duplicado previo
+            stopTilt();
             btnTiltUp.style.backgroundColor = "rgb(236 240 243)";
             if (tiltServoCounter > 0) {
                 tiltServoCounter--;
                 sendCommand("T", tiltServoCounter);
-                timer = setTimeout(TiltUp, servoSpeed);
+                tiltTimer = setTimeout(TiltUp, servoSpeed);
             }
         }
 
         function TiltDown() {
-            if (timer) clearTimeout(timer); // Mata cualquier bucle duplicado previo
+            stopTilt();
             btnTiltDown.style.backgroundColor = "rgb(236 240 243)";
             if (tiltServoCounter < 180) {
                 tiltServoCounter++;
                 sendCommand("T", tiltServoCounter);
-                timer = setTimeout(TiltDown, servoSpeed);
+                tiltTimer = setTimeout(TiltDown, servoSpeed);
             }
         }
 
-        function stopIncrement() {
-            clearTimeout(timer);
-            timer = null; // Resetea la variable para seguridad
+        function stopPan() {
+            if (panTimer) clearTimeout(panTimer);
+            panTimer = null;
             btnPanLeft.style.backgroundColor = 'black';
-            btnTiltUp.style.backgroundColor = 'black';
+            btnPanRight.style.backgroundColor = 'black';
         }
 
-        function stopDecrement() {
-            clearTimeout(timer);
-            timer = null; // Resetea la variable para seguridad
-            btnPanRight.style.backgroundColor = 'black';
+        function stopTilt() {
+            if (tiltTimer) clearTimeout(tiltTimer);
+            tiltTimer = null;
+            btnTiltUp.style.backgroundColor = 'black';
             btnTiltDown.style.backgroundColor = 'black';
         }
 
-        // Slider de velocidad actualizado
+        function stopIncrement() {
+            stopPan();
+            stopTilt();
+        }
+
+        function stopDecrement() {
+            stopPan();
+            stopTilt();
+        }
+
         document.getElementById("Speed").onchange = function () {
             sendCommand('S', this.value);
         };
 
-
-
-        ////////////////////FUNCTIONS RELATED WITH JOYSTICK////////////////////////////
-        // (Esta sección no necesita cambios, pero se mantiene para que todo funcione)
+        //////////////////// JOYSTICK ////////////////////////////
 
         function background() {
             x_orig = width / 2;
@@ -302,9 +311,9 @@
             ctx.fill();
         }
 
-        function joystick(width, height) {
+        function joystick(w, h) {
             ctx.beginPath();
-            ctx.arc(width, height, radius, 0, Math.PI * 2, true);
+            ctx.arc(w, h, radius, 0, Math.PI * 2, true);
             ctx.fillStyle = '#e31414';
             ctx.fill();
             ctx.strokeStyle = '#F6ABAB';
@@ -322,21 +331,12 @@
             joystick(width / 2, height / 2);
         }
 
-        /////////////////////// JOYSTICK FUNCTIONS CORREGIDAS ///////////////////////
-
-        let lastSendTime = 0; // NUEVO: Control de tiempo para no saturar al ESP32
-
         function getPosition(event) {
             const rect = canvas.getBoundingClientRect();
             const mouse_x = event.clientX || (event.touches && event.touches[0].clientX);
             const mouse_y = event.clientY || (event.touches && event.touches[0].clientY);
             coord.x = mouse_x - rect.left;
             coord.y = mouse_y - rect.top;
-        }
-
-        function is_it_in_the_circle() {
-            const current_radius = Math.sqrt(Math.pow(coord.x - x_orig, 2) + Math.pow(coord.y - y_orig, 2));
-            return radius >= current_radius;
         }
 
         function Draw(event) {
@@ -370,15 +370,12 @@
             joystick(x, y);
 
             let speed = Math.round(100 * Math.min(distance, radius) / radius);
-
-            // Pasamos 'false' porque es un movimiento continuo, debe respetar el límite de tiempo
             processAndSend(speed, angle, false);
         }
 
         function processAndSend(speed, angle, force = false) {
             let newDirection = STOP;
 
-            // Aumentamos ligeramente la zona muerta a 15 para evitar los temblores del mouse
             if (speed < 15) {
                 newDirection = STOP;
             } else {
@@ -392,9 +389,8 @@
                 else if (angle >= 22.5 && angle < 67.5) newDirection = FORWARDLEFT;
             }
 
-            if (newDirection !== currentDirection) {
+            if (newDirection !== currentDirection || force) {
                 let currentTime = Date.now();
-                // BLINDAJE: Solo enviamos si pasaron 50ms, o si forzamos el STOP (al soltar el clic)
                 if (force || (currentTime - lastSendTime > 50)) {
                     currentDirection = newDirection;
                     sendCommand('M', currentDirection);
@@ -404,7 +400,7 @@
         }
 
         function startDrawing(event) {
-            if (event.cancelable) event.preventDefault(); // Evita scroll
+            if (event.cancelable) event.preventDefault();
             paint = true;
             getPosition(event);
             Draw(event);
@@ -416,11 +412,8 @@
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             background();
             joystick(width / 2, height / 2);
-
-            // Pasamos 'true' para forzar el frenado inmediato saltándose el temporizador
             processAndSend(0, 0, true);
         }
-
 
         function initFunction() {
             resize();
@@ -437,11 +430,10 @@
             canvas.addEventListener('touchmove', Draw);
             window.addEventListener('resize', resize);
 
-            // --- SEGURO GLOBAL MEJORADO ---
             window.addEventListener('mouseup', function (e) {
                 stopIncrement();
                 stopDecrement();
-                stopDrawing(e); // Obliga a frenar aunque sueltes el clic fuera de la pantalla
+                stopDrawing(e);
             });
             window.addEventListener('touchend', function (e) {
                 stopIncrement();
@@ -452,7 +444,7 @@
 
         window.onload = initFunction;
         mainTable.addEventListener("touchend", function (event) {
-            event.preventDefault()
+            event.preventDefault();
         });
     </script>
 </body>
