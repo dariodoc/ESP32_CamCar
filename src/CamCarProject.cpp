@@ -8,6 +8,24 @@
 
 TaskHandle_t sendCameraPictureTask;
 
+SemaphoreHandle_t i2cMutex = NULL;
+
+bool lockI2C(TickType_t timeoutMs)
+{
+    if (i2cMutex == NULL)
+        return false;
+    // Intentamos tomar el Mutex con un tiempo límite para evitar bloqueos infinitos
+    return (xSemaphoreTake(i2cMutex, pdMS_TO_TICKS(timeoutMs)) == pdTRUE);
+}
+
+void unlockI2C()
+{
+    if (i2cMutex != NULL)
+    {
+        xSemaphoreGive(i2cMutex);
+    }
+}
+
 void initTasks()
 {
     // Tarea de Streaming (Core 1 para dejar Core 0 exclusivo al stack WiFi)
@@ -31,6 +49,14 @@ void setup()
         Serial.println("Error montando SPIFFS");
 #endif
         ESP.restart();
+    }
+
+    // 1. Crear el Mutex ANTES de iniciar cualquier tarea o usar Wire
+    i2cMutex = xSemaphoreCreateMutex();
+
+    if (i2cMutex == NULL)
+    {
+        Serial.println("❌ Error crítico: No se pudo crear el Mutex de I2C");
     }
 
     setupPeripherals();

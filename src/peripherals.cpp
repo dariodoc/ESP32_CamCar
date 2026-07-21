@@ -25,6 +25,24 @@ TaskHandle_t playMelodyTask = NULL;
 TaskHandle_t obstacleAvoidanceModeTask = NULL;
 TaskHandle_t servoControlTaskHandle = NULL;
 
+void leftBackLed(int state)
+{
+    if (lockI2C(20))
+    {
+        peripheralspcf8574.digitalWrite(P7, !state);
+        unlockI2C();
+    }
+}
+
+void rightBackLed(int state)
+{
+    if (lockI2C(20))
+    {
+        peripheralspcf8574.digitalWrite(P6, !state);
+        unlockI2C();
+    }
+}
+
 void scanI2C()
 {
     byte error, address;
@@ -134,16 +152,6 @@ void ledIndicator(int state)
     digitalWrite(builtinLedPin, !state); // LOW enciende el LED
 }
 
-void leftBackLed(int state)
-{
-    peripheralspcf8574.digitalWrite(P7, !state); // LOW enciende el LED
-}
-
-void rightBackLed(int state)
-{
-    peripheralspcf8574.digitalWrite(P6, !state); // LOW enciende el LED
-}
-
 void playMelody(void *parameters)
 {
 #ifdef DEBUG
@@ -205,10 +213,22 @@ void obstacleAvoidanceMode(void *parameters)
         if (!enableObstacleAvoidance)
         {
             ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-            lastDetect = -1; // Reset al reactivar
+            lastDetect = -1;
         }
 
-        int detect = peripheralspcf8574.digitalRead(P5);
+        int detect = HIGH;
+
+        // === ZONA PROTEGIDA I2C ===
+        if (lockI2C(20))
+        { // Espera hasta 20ms por el bus
+            detect = peripheralspcf8574.digitalRead(P5);
+            unlockI2C(); // Siempre liberar la llave inmediatamente
+        }
+        else
+        {
+            Serial.println("⚠️ Bus I2C ocupado, se omitió lectura del sensor");
+        }
+        // ==========================
 
         if (detect != lastDetect)
         {

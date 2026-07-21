@@ -16,6 +16,16 @@
 #include <SPIFFS.h>
 #include <ESPmDNS.h>
 
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
+
+// Manejador del Mutex para proteger el bus I2C
+extern SemaphoreHandle_t i2cMutex;
+
+// Helper para intentar tomar el Mutex con un Timeout seguro (p. ej. 20ms)
+bool lockI2C(TickType_t timeoutMs = 20);
+void unlockI2C();
+
 // #define DEBUG // Descomenta para habilitar el monitor Serial
 
 // --- PINES DE LA CÁMARA ESP32-CAM ---
