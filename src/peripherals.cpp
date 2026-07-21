@@ -164,48 +164,34 @@ void playMelody(void *parameters)
 }
 
 // --- NUEVO: Tarea dedicada para mover los servos de forma síncrona ---
+// peripherals.cpp
 void servoControlTask(void *parameters)
 {
-    // Inicializamos las posiciones actuales en el centro al arrancar
-    static int currentPan = 75;
-    static int currentTilt = 90;
-
-    // Configura cuántos grados máximo se puede mover el servo por ciclo (menor número = más suave y menos consumo)
+    static int currentPan = panCenter;
+    static int currentTilt = tiltCenter;
     const int maxStep = 2;
 
     for (;;)
     {
-        // --- Suavizado de PASO para PAN ---
+        bool updated = false;
+
         if (currentPan != targetPan)
         {
             int diff = targetPan - currentPan;
-            if (abs(diff) <= maxStep)
-            {
-                currentPan = targetPan; // Si está muy cerca, llega al objetivo
-            }
-            else
-            {
-                currentPan += (diff > 0) ? maxStep : -maxStep; // Se mueve a pasos sutiles
-            }
+            currentPan += (abs(diff) <= maxStep) ? diff : ((diff > 0) ? maxStep : -maxStep);
             panServo.write(currentPan);
+            updated = true;
         }
 
-        // --- Suavizado de PASO para TILT ---
         if (currentTilt != targetTilt)
         {
             int diff = targetTilt - currentTilt;
-            if (abs(diff) <= maxStep)
-            {
-                currentTilt = targetTilt;
-            }
-            else
-            {
-                currentTilt += (diff > 0) ? maxStep : -maxStep;
-            }
+            currentTilt += (abs(diff) <= maxStep) ? diff : ((diff > 0) ? maxStep : -maxStep);
             tiltServo.write(currentTilt);
+            updated = true;
         }
 
-        vTaskDelay(pdMS_TO_TICKS(20)); // Bajamos a 20ms para compensar la suavidad de los pasos
+        vTaskDelay(pdMS_TO_TICKS(20));
     }
 }
 
