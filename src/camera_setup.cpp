@@ -37,8 +37,8 @@ void setupCamera()
     {
         config.fb_location = CAMERA_FB_IN_PSRAM;
         config.frame_size = FRAMESIZE_HVGA;
-        config.jpeg_quality = 24;
-        config.fb_count = 2;
+        config.jpeg_quality = 12;
+        config.fb_count = 1;
         config.grab_mode = CAMERA_GRAB_LATEST;
         heap_caps_malloc_extmem_enable(psramLimit);
     }
@@ -75,67 +75,51 @@ void setupCamera()
 void sendCameraPicture(void *parameters)
 {
     camera_fb_t *fb = nullptr;
-    int consecutiveFailures = 0;
-    int blockedCounter = 0;
 
     for (;;)
     {
         // 1. Si no hay cliente activo, esperamos
         if (cameraClientId == 0)
         {
-            blockedCounter = 0;
             vTaskDelay(pdMS_TO_TICKS(100));
             continue;
         }
 
         AsyncWebSocketClient *client = wsCamera.client(cameraClientId);
 
-        // 2. Si el cliente existe pero su cola de envío está llena
+        // 2. Si la red está saturada o el cliente no puede recibir fotogramas...
         if (!client || !client->canSend())
         {
-            blockedCounter++;
-            if (blockedCounter > 40) // Si se atora más de 800ms
+            // ⚡ Leemos y liberamos el frame del sensor sin enviarlo para limpiar el buffer
+            fb = esp_camera_fb_get();
+            if (fb)
             {
-                wsCamera.cleanupClients(); // Forzamos limpieza de buffers pendientes
-                blockedCounter = 0;
+                esp_camera_fb_return(fb);
             }
-            vTaskDelay(pdMS_TO_TICKS(20));
+            vTaskDelay(pdMS_TO_TICKS(15)); // Pausa breve y reintentamos
             continue;
         }
 
-        blockedCounter = 0; // Si puede enviar, reseteamos el contador
-
-        // 3. Protección de RAM crítica (umbral ajustado a 40KB)
-        if (ESP.getFreeHeap() < 40000)
+        // 3. Protección de RAM crítica
+        if (ESP.getFreeHeap() < 30000)
         {
-            //wsCamera.cleanupClients(); // Forzar purga de memoria
-            vTaskDelay(pdMS_TO_TICKS(100));
-            continue;
-        }
-
-        // 4. Captura de Frame
-        fb = esp_camera_fb_get();
-        if (!fb)
-        {
-            consecutiveFailures++;
-            if (consecutiveFailures >= 10)
-            {
-                sensor_t *s = esp_camera_sensor_get();
-                if (s)
-                    s->reset(s);
-                consecutiveFailures = 0;
-            }
             vTaskDelay(pdMS_TO_TICKS(50));
             continue;
         }
 
-        consecutiveFailures = 0;
+        // 4. Captura del fotograma fresco
+        fb = esp_camera_fb_get();
+        if (!fb)
+        {
+            vTaskDelay(pdMS_TO_TICKS(20));
+            continue;
+        }
 
-        // 5. Envío de Frame y liberación de memoria
+        // 5. Envío síncrono ultra rápido
         client->binary(fb->buf, fb->len);
         esp_camera_fb_return(fb);
 
-        // Ritmo de transmisión estable (~8 FPS)
-        vTaskDelay(pdMS_TO_TICKS(125));
+        // ⚡ Ritmo constante (~15 a 20 FPS dinámicos)
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
 }

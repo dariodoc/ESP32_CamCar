@@ -99,6 +99,7 @@ void setupPeripherals()
     peripheralspcf8574.pinMode(P6, OUTPUT);
 
     Wire.begin(14, 15);
+    Wire.setClock(400000); // 🚀 Eleva el bus I2C a 400kHz para minimizar el tiempo de bloqueo
     vTaskDelay(pdMS_TO_TICKS(500)); // Esperamos un poco para que el bus I2C se estabilice
 
     // scanI2C();
