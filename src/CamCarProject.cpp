@@ -29,7 +29,7 @@ void unlockI2C()
 void initTasks()
 {
     // Tarea de Streaming (Core 1 para dejar Core 0 exclusivo al stack WiFi)
-    xTaskCreatePinnedToCore(sendCameraPicture, "sendCameraPicture", 1024 * 8, NULL, 2, &sendCameraPictureTask, 1);
+    xTaskCreatePinnedToCore(sendCameraPicture, "sendCameraPicture", 1024 * 8, NULL, 2, &sendCameraPictureTask, 0);
 
     // Tareas de Periféricos y Actuadores (Core 1)
     xTaskCreatePinnedToCore(servoControlTask, "ServoControl", 1024 * 2, NULL, 1, &servoControlTaskHandle, CONFIG_ARDUINO_RUNNING_CORE);
@@ -82,19 +82,24 @@ void loop()
         cleanupWSClients();
     }
 
+    // 🔒 Copia atómica para evitar Race Conditions con la tarea de WebSocket
+    int currentTargetDir = targetDirection;
+    int currentMotorSpeed = motorSpeed;
+
     // Filtro inteligente de obstáculos
-    if (obstacleFound && (targetDirection == FORWARD || targetDirection == FORWARDLEFT || targetDirection == FORWARDRIGHT))
+    if (obstacleFound && (currentTargetDir == FORWARD || currentTargetDir == FORWARDLEFT || currentTargetDir == FORWARDRIGHT))
     {
         toneToPlay(buzzerPin, buzzerChannel, NOTE_G5, 200);
+        currentTargetDir = STOP;
         targetDirection = STOP;
     }
 
-    // Actualización de motores
-    if (targetDirection != lastDirection || motorSpeed != lastSpeed)
+    // Actualización de motores con copia local segura
+    if (currentTargetDir != lastDirection || currentMotorSpeed != lastSpeed)
     {
-        moveCar(targetDirection);
-        lastDirection = targetDirection;
-        lastSpeed = motorSpeed;
+        moveCar(currentTargetDir);
+        lastDirection = currentTargetDir; // Garantiza coincidencia exacta con lo que se envió a los motores
+        lastSpeed = currentMotorSpeed;
     }
 
     vTaskDelay(pdMS_TO_TICKS(10));

@@ -341,7 +341,7 @@
 
         function Draw(event) {
             if (event.cancelable) event.preventDefault();
-            if (!paint) return;
+            if (!paint) return; // 🛑 Si no está presionando, NO procesa ni envía nada
 
             const rect = canvas.getBoundingClientRect();
             const mouseX = event.clientX || (event.touches && event.touches[0].clientX);
@@ -373,7 +373,12 @@
             processAndSend(speed, angle, false);
         }
 
+        let pendingTimeout = null;
+
         function processAndSend(speed, angle, force = false) {
+            // Si ya no estamos presionando el canvas, NO enviar movimientos
+            if (!paint && !force) return;
+
             let newDirection = STOP;
 
             if (speed < 15) {
@@ -389,12 +394,29 @@
                 else if (angle >= 22.5 && angle < 67.5) newDirection = FORWARDLEFT;
             }
 
+            if (pendingTimeout) {
+                clearTimeout(pendingTimeout);
+                pendingTimeout = null;
+            }
+
             if (newDirection !== currentDirection || force) {
                 let currentTime = Date.now();
-                if (force || (currentTime - lastSendTime > 50)) {
+                let timeElapsed = currentTime - lastSendTime;
+
+                if (newDirection === STOP || force || timeElapsed >= 50) {
                     currentDirection = newDirection;
                     sendCommand('M', currentDirection);
                     lastSendTime = currentTime;
+                } else {
+                    let delayNeeded = 50 - timeElapsed;
+                    pendingTimeout = setTimeout(() => {
+                        // Solo enviar si aún sigue presionando la pantalla
+                        if (paint) {
+                            currentDirection = newDirection;
+                            sendCommand('M', currentDirection);
+                            lastSendTime = Date.now();
+                        }
+                    }, delayNeeded);
                 }
             }
         }
@@ -408,11 +430,31 @@
 
         function stopDrawing(event) {
             if (event && event.cancelable) event.preventDefault();
+
+            // 1. Apagamos la bandera de dibujo INMEDIATAMENTE
             paint = false;
+
+            // 2. Limpiamos cualquier envío diferido pendiente
+            if (pendingTimeout) {
+                clearTimeout(pendingTimeout);
+                pendingTimeout = null;
+            }
+
+            // 3. Dibujamos el joystick al centro
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             background();
             joystick(width / 2, height / 2);
-            processAndSend(0, 0, true);
+
+            // 4. Enviar STOP Inmediato
+            currentDirection = STOP;
+            sendCommand('M', STOP);
+            lastSendTime = Date.now();
+
+            // 5. 🛡️ RESPALDO ANTI-CONGESTIÓN:
+            // Si fue un toque ultra rápido, reenviamos el STOP a los 40ms por si el primer paquete chocó
+            setTimeout(() => {
+                sendCommand('M', STOP);
+            }, 40);
         }
 
         function initFunction() {
