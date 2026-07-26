@@ -37,8 +37,8 @@ void setupCamera()
     {
         config.fb_location = CAMERA_FB_IN_PSRAM;
         config.frame_size = FRAMESIZE_HVGA;
-        config.jpeg_quality = 18;
-        config.fb_count = 1;
+        config.jpeg_quality = 12;
+        config.fb_count = 2;
         config.grab_mode = CAMERA_GRAB_LATEST;
         heap_caps_malloc_extmem_enable(psramLimit);
     }
