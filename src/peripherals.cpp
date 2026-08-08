@@ -83,58 +83,38 @@ void setupPeripherals()
     pinMode(builtinLedPin, OUTPUT);
     digitalWrite(builtinLedPin, HIGH); // LED OFF
     pinMode(lightPin, OUTPUT);
-    digitalWrite(lightPin, LOW); // Nos aseguramos de que inicie apagado
+    digitalWrite(lightPin, LOW); 
     ledcDetachPin(buzzerPin);
 
+    // 1. INICIALIZAR EL BUS I2C PRIMERO QUE NADA
+    Wire.begin(14, 15);
+    Wire.setClock(400000); 
+    vTaskDelay(pdMS_TO_TICKS(100)); // Breve pausa para estabilizar las líneas SDA/SCL
+
+    // 2. AHORA SÍ INICIALIZAR LOS EXPANDIDORES PCF8574
+    motorcontrolpcf8574.begin();
+    peripheralspcf8574.begin();
+
+    // 3. CONFIGURAR LOS PINES DEL PCF8574
     motorcontrolpcf8574.pinMode(P3, OUTPUT);
     motorcontrolpcf8574.pinMode(P4, OUTPUT);
-    // motorcontrolpcf8574.pinMode(P6, OUTPUT);
     motorcontrolpcf8574.pinMode(P2, OUTPUT);
     motorcontrolpcf8574.pinMode(P1, OUTPUT);
     motorcontrolpcf8574.pinMode(P0, OUTPUT);
-    // motorcontrolpcf8574.pinMode(P7, OUTPUT);
 
     peripheralspcf8574.pinMode(P5, INPUT);
     peripheralspcf8574.pinMode(P7, OUTPUT);
     peripheralspcf8574.pinMode(P6, OUTPUT);
 
-    Wire.begin(14, 15);
-    Wire.setClock(400000); // 🚀 Eleva el bus I2C a 400kHz para minimizar el tiempo de bloqueo
-    vTaskDelay(pdMS_TO_TICKS(500)); // Esperamos un poco para que el bus I2C se estabilice
-
-    // scanI2C();
-
-    // Diagnóstico para el primer PCF (0x20)
-    if (motorcontrolpcf8574.begin())
-    {
-        //  Serial.println("PCF8574 (0x20) inicializado correctamente.");
-    }
-    else
-    {
-        //   Serial.println("ERROR: No se pudo inicializar PCF8574 (0x20).");
-    }
-
-    // Diagnóstico para el segundo PCF (0x24)
-    if (peripheralspcf8574.begin())
-    {
-
-        //  Serial.println("PCF8574 (0x24) inicializado correctamente.");
-    }
-    else
-    {
-        // Serial.println("ERROR: No se pudo inicializar PCF8574 (0x24).");
-    }
-
-    // --- NUEVO: Blindaje del Bus I2C ---
-    // Como el PCF ya inició el bus con los pines correctos, ahora sí le ponemos el límite
     Wire.setTimeOut(50);
 
+    // 4. ATCHAR SERVOS Y POSICIÓN INICIAL
     panServo.attach(panPin);
     tiltServo.attach(tiltPin);
     panServo.write(panCenter);
     tiltServo.write(tiltCenter);
 
-    ledIndicator(3, 250);
+    ledIndicator(3, 100);
 }
 
 void ledIndicator(int blinkTimes, int delayTimeMS)

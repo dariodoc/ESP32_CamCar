@@ -1,82 +1,102 @@
-    .arrows {
-      font-size: 30px;
-      color: red;
-    }
+/* ======================================================
+   ESTILOS DE INTERFAZ Y BLOQUEO TÁCTIL (ESP32-CAM)
+   ====================================================== */
 
-    td.button {
-      background-color: black;
-      border-radius: 25%;
-      box-shadow: 1px 1px #888888;
-    }
+/* 1. Bloqueo de gestos no deseados en navegadores móviles */
+html, body {
+  touch-action: none; /* Desactiva scroll, zoom y pull-to-refresh */
+  overscroll-behavior: none;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  background-color: white;
+  text-align: center;
+  position: relative;
+}
 
-    td.button:active {
-      transform: translate(2px, 2px);
-      box-shadow: none;
-    }
+#Canvas {
+  touch-action: none; /* Control directo sin retraso de eventos táctiles */
+}
 
-    .noselect {
-      -webkit-touch-callout: none;
-      /* iOS Safari */
-      -webkit-user-select: none;
-      /* Safari */
-      -khtml-user-select: none;
-      /* Konqueror HTML */
-      -moz-user-select: none;
-      /* Firefox */
-      -ms-user-select: none;
-      /* Internet Explorer/Edge */
-      user-select: none;
-      /* Non-prefixed version, currently
-                                      supported by Chrome and Opera */
-    }
+/* 2. Botones y Flechas */
+.arrows {
+  font-size: 30px;
+  color: red;
+}
 
-    .slidecontainer {
-      width: 100%;
-    }
+td.button {
+  background-color: black;
+  border-radius: 25%;
+  box-shadow: 1px 1px #888888;
+  cursor: pointer;
+}
 
-    .slider {
-      -webkit-appearance: none;
-      width: 100%;
-      height: 10px;
-      border-radius: 5px;
-      background: #d3d3d3;
-      outline: none;
-      opacity: 0.7;
-      -webkit-transition: .2s;
-      transition: opacity .2s;
-    }
+td.button:active {
+  transform: translate(2px, 2px);
+  box-shadow: none;
+}
 
-    .slider:hover {
-      opacity: 1;
-    }
+/* 3. Prevenir selección de texto/elementos */
+.noselect {
+  -webkit-touch-callout: none; /* iOS Safari */
+  -webkit-user-select: none;   /* Safari */
+  -khtml-user-select: none;    /* Konqueror HTML */
+  -moz-user-select: none;      /* Firefox */
+  -ms-user-select: none;       /* IE / Edge */
+  user-select: none;           /* Estándar */
+}
 
-    .slider::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      appearance: none;
-      width: 20px;
-      height: 20px;
-      border-radius: 50%;
-      background: red;
-      cursor: pointer;
-    }
+/* 4. Controles del Slider de Velocidad */
+.slidecontainer {
+  width: 100%;
+}
 
-    .slider::-moz-range-thumb {
-      width: 25px;
-      height: 25px;
-      border-radius: 50%;
-      background: red;
-      cursor: pointer;
-    }
+.slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 10px;
+  border-radius: 5px;
+  background: #d3d3d3;
+  outline: none;
+  opacity: 0.7;
+  -webkit-transition: .2s;
+  transition: opacity .2s;
+}
 
-    Regla para la alineación vertical
-    .label-cell {
-      vertical-align: middle;
-    }
+.slider:hover {
+  opacity: 1;
+}
 
-    img {
-      overflow-clip-margin: content-box;
-      overflow: clip;
-      width: 345px;
-      height: 200px;
-      border-radius: 5%;
-    }
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: red;
+  cursor: pointer;
+}
+
+.slider::-moz-range-thumb {
+  width: 25px;
+  height: 25px;
+  border-radius: 50%;
+  background: red;
+  cursor: pointer;
+}
+
+/* 5. Alineación de etiquetas (Corregida sintaxis de comentario) */
+.label-cell {
+  vertical-align: middle;
+}
+
+/* 6. Formato de la Cámara MJPEG */
+img {
+  overflow-clip-margin: content-box;
+  overflow: clip;
+  width: 345px;
+  height: 200px;
+  border-radius: 5%;
+  object-fit: cover;
+}

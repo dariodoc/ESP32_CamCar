@@ -5,17 +5,57 @@
 #include "wifi_server.h"
 #include <esp_camera.h>
 #include "Melodies.h"
+#include <Wire.h> // 👈 1. Necesario para declarar 'Wire' en este archivo
 
-TaskHandle_t sendCameraPictureTask;
+// 👈 2. Declaramos que estos objetos existen en peripherals.cpp
+#include "PCF8574.h"
+extern PCF8574 motorcontrolpcf8574;
+extern PCF8574 peripheralspcf8574;
+
+//TaskHandle_t sendCameraPictureTask;
 
 SemaphoreHandle_t i2cMutex = NULL;
+
+// En CamCarProject.cpp
+static int i2cFailCounter = 0;
 
 bool lockI2C(TickType_t timeoutMs)
 {
     if (i2cMutex == NULL)
         return false;
-    // Intentamos tomar el Mutex con un tiempo límite para evitar bloqueos infinitos
-    return (xSemaphoreTake(i2cMutex, pdMS_TO_TICKS(timeoutMs)) == pdTRUE);
+
+    // Intentamos tomar el Mutex
+    if (xSemaphoreTake(i2cMutex, pdMS_TO_TICKS(timeoutMs)) == pdTRUE)
+    {
+        i2cFailCounter = 0; // Operación exitosa, reseteamos contador
+        return true;
+    }
+
+    // Si no pudimos tomar el Mutex tras el timeout (bus colgado por ruido)
+    i2cFailCounter++;
+#ifdef DEBUG
+    Serial.printf("⚠️ Fallo de acceso a I2C (%d/3)\n", i2cFailCounter);
+#endif
+
+    // Si falla 3 veces consecutivas, reseteamos el hardware I2C automáticamente
+    if (i2cFailCounter >= 3)
+    {
+#ifdef DEBUG
+        Serial.println("🔄 Reseteando hardware I2C por congelamiento de bus...");
+#endif
+        Wire.end();
+        vTaskDelay(pdMS_TO_TICKS(10));
+        Wire.begin(14, 15);
+        Wire.setClock(400000);
+        Wire.setTimeOut(50);
+
+        motorcontrolpcf8574.begin();
+        peripheralspcf8574.begin();
+
+        i2cFailCounter = 0;
+    }
+
+    return false;
 }
 
 void unlockI2C()
@@ -29,7 +69,7 @@ void unlockI2C()
 void initTasks()
 {
     // Tarea de Streaming (Core 1 para dejar Core 0 exclusivo al stack WiFi)
-    xTaskCreatePinnedToCore(sendCameraPicture, "sendCameraPicture", 1024 * 8, NULL, 2, &sendCameraPictureTask, 0);
+   // xTaskCreatePinnedToCore(sendCameraPicture, "sendCameraPicture", 1024 * 8, NULL, 2, &sendCameraPictureTask, 0);
 
     // Tareas de Periféricos y Actuadores (Core 1)
     xTaskCreatePinnedToCore(servoControlTask, "ServoControl", 1024 * 2, NULL, 1, &servoControlTaskHandle, CONFIG_ARDUINO_RUNNING_CORE);
@@ -43,15 +83,13 @@ void setup()
     Serial.begin(115200);
 #endif
 
-    if (!SPIFFS.begin(true))
+    if (!SPIFFS.begin(true)) // El parámetro 'true' formatea SPIFFS si falla al montar
     {
 #ifdef DEBUG
-        Serial.println("Error montando SPIFFS");
+        Serial.println("Error montando SPIFFS, pero continuando...");
 #endif
-        ESP.restart();
     }
 
-    // 1. Crear el Mutex ANTES de iniciar cualquier tarea o usar Wire
     i2cMutex = xSemaphoreCreateMutex();
 
     if (i2cMutex == NULL)

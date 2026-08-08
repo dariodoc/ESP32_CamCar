@@ -2,6 +2,6 @@
 #define CAMERA_SETUP_H
 
 void setupCamera();
-void sendCameraPicture(void *parameters);
+//void sendCameraPicture(void *parameters);
 
 #endif // CAMERA_SETUP_H

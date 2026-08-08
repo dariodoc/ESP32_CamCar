@@ -1,12 +1,104 @@
+#include <Arduino.h>
+
+// Remapeamos los nombres de http_parser.h antes de que se incluyan para evitar la colisión con ESPAsyncWebServer
+#define HTTP_GET ESP_HTTP_GET
+#define HTTP_POST ESP_HTTP_POST
+#define HTTP_DELETE ESP_HTTP_DELETE
+#define HTTP_PUT ESP_HTTP_PUT
+#define HTTP_PATCH ESP_HTTP_PATCH
+#define HTTP_HEAD ESP_HTTP_HEAD
+#define HTTP_OPTIONS ESP_HTTP_OPTIONS
+
+#include <esp_camera.h>
+#include <esp_http_server.h>
+
+// Restauramos el estado de los macros
+#undef HTTP_GET
+#undef HTTP_POST
+#undef HTTP_DELETE
+#undef HTTP_PUT
+#undef HTTP_PATCH
+#undef HTTP_HEAD
+#undef HTTP_OPTIONS
+
 #include "config.h"
 #include "camera_setup.h"
-#include <esp_camera.h>
 
 const static int psramLimit = 4096;
+httpd_handle_t stream_httpd = NULL;
+
+#define PART_BOUNDARY "123456789000000000000987654321"
+static const char* _STREAM_CONTENT_TYPE = "multipart/x-mixed-replace;boundary=" PART_BOUNDARY;
+static const char* _STREAM_BOUNDARY = "\r\n--" PART_BOUNDARY "\r\n";
+static const char* _STREAM_PART = "Content-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n";
+
+static esp_err_t stream_handler(httpd_req_t *req) {
+    camera_fb_t * fb = NULL;
+    esp_err_t res = ESP_OK;
+    size_t _jpg_buf_len = 0;
+    uint8_t * _jpg_buf = NULL;
+    char part_buf[64];
+
+    res = httpd_resp_set_type(req, _STREAM_CONTENT_TYPE);
+    if (res != ESP_OK) {
+        return res;
+    }
+
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+
+    while (true) {
+        fb = esp_camera_fb_get();
+        if (!fb) {
+            vTaskDelay(pdMS_TO_TICKS(10));
+            continue;
+        }
+
+        _jpg_buf_len = fb->len;
+        _jpg_buf = fb->buf;
+
+        if (res == ESP_OK) {
+            res = httpd_resp_send_chunk(req, _STREAM_BOUNDARY, strlen(_STREAM_BOUNDARY));
+        }
+        if (res == ESP_OK) {
+            size_t hlen = snprintf(part_buf, 64, _STREAM_PART, _jpg_buf_len);
+            res = httpd_resp_send_chunk(req, part_buf, hlen);
+        }
+        if (res == ESP_OK) {
+            res = httpd_resp_send_chunk(req, (const char *)_jpg_buf, _jpg_buf_len);
+        }
+
+        esp_camera_fb_return(fb);
+        fb = NULL;
+
+        if (res != ESP_OK) {
+            break;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(40)); // ~30 FPS
+    }
+
+    return res;
+}
+
+void startCameraServer() {
+    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+    config.server_port = 81;
+    config.ctrl_port = 81;
+
+    httpd_uri_t stream_uri = {
+        .uri       = "/stream",
+        .method    = (httpd_method_t)ESP_HTTP_GET,
+        .handler   = stream_handler,
+        .user_ctx  = NULL
+    };
+
+    if (httpd_start(&stream_httpd, &config) == ESP_OK) {
+        httpd_register_uri_handler(stream_httpd, &stream_uri);
+    }
+}
 
 void setupCamera()
 {
-
 #ifdef DEBUG
     Serial.printf("setupCamera() running on core: %d\n", xPortGetCoreID());
 #endif
@@ -46,7 +138,7 @@ void setupCamera()
     {
         config.fb_location = CAMERA_FB_IN_DRAM;
         config.frame_size = FRAMESIZE_QVGA;
-        config.jpeg_quality = 24; // <--- ✅ SUBIR A 24 PARA EVITAR COLAPSO
+        config.jpeg_quality = 24;
         config.fb_count = 1;
         config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
     }
@@ -55,78 +147,21 @@ void setupCamera()
     if (err != ESP_OK)
     {
 #ifdef DEBUG
-        Serial.printf("Camera init failed with error 0x%x", err);
+        Serial.printf("Camera init failed with error 0x%x\n", err);
 #endif
         return;
     }
+
     sensor_t *s = esp_camera_sensor_get();
     if (s != NULL)
     {
-        s->set_whitebal(s, 1); // Auto balance de blancos
+        s->set_whitebal(s, 1);
         s->set_awb_gain(s, 1);
         s->set_wb_mode(s, 0);
-        s->set_exposure_ctrl(s, 1); // Auto exposición
-        s->set_aec2(s, 0);          // Deshabilitar algoritmo DSP extra para ganar CPU
-        s->set_bpc(s, 1);           // Corrección de pixeles negros
-        s->set_wpc(s, 1);           // Corrección de pixeles blancos
+        s->set_exposure_ctrl(s, 1);
+        s->set_aec2(s, 0);
+        s->set_bpc(s, 1);
+        s->set_wpc(s, 1);
     }
-}
-
-void sendCameraPicture(void *parameters)
-{
-    camera_fb_t *fb = nullptr;
-
-    for (;;)
-    {
-        // 1. Si no hay cliente activo, esperamos
-        if (cameraClientId == 0)
-        {
-            vTaskDelay(pdMS_TO_TICKS(100));
-            continue;
-        }
-
-        AsyncWebSocketClient *client = wsCamera.client(cameraClientId);
-
-        // 2. Si el cliente se desconectó o la cola de red está saturada...
-        if (!client || !client->canSend())
-        {
-            // ⚡ Drenamos el buffer del sensor para que no se atranque el hardware
-            fb = esp_camera_fb_get();
-            if (fb)
-            {
-                esp_camera_fb_return(fb);
-            }
-            // 💡 40ms en lugar de 15ms le da tiempo al buffer de red para desahogarse
-            vTaskDelay(pdMS_TO_TICKS(40));
-            continue;
-        }
-
-        // 3. Protección de RAM crítica (CORREGIDA)
-        if (ESP.getFreeHeap() < 30000)
-        {
-            // ⚠️ CORRECCIÓN: Drenar el buffer del sensor antes de pausar por baja memoria
-            fb = esp_camera_fb_get();
-            if (fb)
-            {
-                esp_camera_fb_return(fb);
-            }
-            vTaskDelay(pdMS_TO_TICKS(50));
-            continue;
-        }
-
-        // 4. Captura del fotograma fresco
-        fb = esp_camera_fb_get();
-        if (!fb)
-        {
-            vTaskDelay(pdMS_TO_TICKS(20));
-            continue;
-        }
-
-        // 5. Envío directo del frame por WebSocket
-        client->binary(fb->buf, fb->len);
-        esp_camera_fb_return(fb);
-
-        // ⚡ Ritmo constante (~20 FPS)
-        vTaskDelay(pdMS_TO_TICKS(45));
-    }
+    // 🛑 REMOVIDO: startCameraServer() se llama después del WiFi en wifi_server.cpp
 }

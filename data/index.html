@@ -6,8 +6,7 @@
     <link rel="stylesheet" type="text/css" href="style.css">
 </head>
 
-<body scroll="no" class="noselect"
-    style="background-color:white; position:relative; overflow:auto; text-align: center;">
+<body scroll="no" class="noselect" style="background-color:white; position:relative; overflow:auto; text-align: center;">
 
     <img id="CameraImage" src="" style="width:345px;height:250px">
 
@@ -29,36 +28,24 @@
         <tr>
             <td style="text-align:left"><b>Pan:</b></td>
 
-            <td class="button" id="btnPanLeft" onmousedown='PanLeft();' onmouseup=stopIncrement();
-                ontouchstart='PanLeft();' ontouchend='stopIncrement();'><span class="arrows">&#9664;</span>
-            </td>
-            <td class="button" id="btnPanRight" onmousedown='PanRight();' onmouseup=stopDecrement();
-                ontouchstart='PanRight();' ontouchend='stopDecrement();'><span class="arrows">&#9654;</span>
-            </td>
+            <td class="button" id="btnPanLeft"><span class="arrows">&#9664;</span></td>
+            <td class="button" id="btnPanRight"><span class="arrows">&#9654;</span></td>
 
         </tr>
         <tr>
             <td style="text-align:left"><b>Tilt:</b></td>
 
-            <td class="button" id="btnTiltUp" onmousedown='TiltUp();' onmouseup=stopIncrement();
-                ontouchstart='TiltUp();' ontouchend='stopIncrement();'><span class="arrows">&#9650;</span>
-            </td>
-            <td class="button" id="btnTiltDown" onmousedown='TiltDown();' onmouseup=stopDecrement();
-                ontouchstart='TiltDown();' ontouchend='stopDecrement();'><span class="arrows">&#9660;</span>
-            </td>
+            <td class="button" id="btnTiltUp"><span class="arrows">&#9650;</span></td>
+            <td class="button" id="btnTiltDown"><span class="arrows">&#9660;</span></td>
         </tr>
         <tr>
-            <td class="button" id="btnLight" onmousedown='LightOnOff();' ontouchstart='LightOnOff();'><span
-                    class="arrows">&#128262;</span></td>
-            <td class="button" id="btnCenterServos" onmousedown='CenterServos();' ontouchstart='CenterServos();'><span
-                    class="arrows">&#9678;</span></td>
-            <td class="button" id="btnMelody" onmousedown='MelodyOnOff();' ontouchstart='MelodyOnOff();'><span
-                    class="arrows">&#127925;</span></td>
+            <td class="button" id="btnLight"><span class="arrows">&#128262;</span></td>
+            <td class="button" id="btnCenterServos"><span class="arrows">&#9678;</span></td>
+            <td class="button" id="btnMelody"><span class="arrows">&#127925;</span></td>
         </tr>
         <tr>
             <td></td>
-            <td class="button" id="btnObstacleAvoidance" onmousedown='ObstacleAvoidanceOnOff();' ontouchstart='
-        ObstacleAvoidanceOnOff();'><span class="arrows">&#128225;</span></td>
+            <td class="button" id="btnObstacleAvoidance"><span class="arrows">&#128225;</span></td>
             <td></td>
         </tr>
 
@@ -66,17 +53,13 @@
 
     <script>
         ///////////////////////// VARIABLES //////////////////////////////
-        let cameraWatchdog;
         let width, height, radius, x_orig, y_orig;
         let coord = { x: 0, y: 0 };
         let paint = false;
 
-        let webSocketCameraUrl = "ws://" + window.location.hostname + "/Camera";
         let webSocketCarInputUrl = "ws://" + window.location.hostname + "/CarInput";
-        let websocketCamera;
         let websocketCarInput;
 
-        // Temporizadores separados para evitar fugas de memoria y bucles infinitos
         let panTimer = null;
         let tiltTimer = null;
 
@@ -88,7 +71,6 @@
         let panServoCounter = 75;
         let tiltServoCounter = 90;
 
-        let lastCameraUrl = null;
         let lastSendTime = 0;
 
         const btnObstacleAvoidance = document.getElementById("btnObstacleAvoidance");
@@ -108,50 +90,46 @@
         const FORWARD = 1, BACKWARD = 2, LEFT = 3, RIGHT = 4, STOP = 0;
         const FORWARDLEFT = 5, FORWARDRIGHT = 6, BACKLEFT = 7, BACKRIGHT = 8;
 
-        ////////////////////////////////// WEBSOCKET CAMERA ////////////////////////////////
+   //////////////////////////////// CAMARA MJPEG CON WATCHDOG ////////////////////////////////
 
-        function resetCameraWatchdog() {
-            clearTimeout(cameraWatchdog);
-            cameraWatchdog = setTimeout(function () {
-                console.warn("Video congelado. Forzando reconexión...");
-                if (websocketCamera) {
-                    websocketCamera.close();
-                }
-            }, 3000);
+let cameraWatchdogTimer = null;
+let lastImageLoadTime = Date.now();
+
+function initCameraStream() {
+    const streamUrl = "http://" + window.location.hostname + ":81/stream";
+
+    // 1. Evento cuando la imagen recibe un nuevo cuadro del stream MJPEG
+    cameraImage.onload = function () {
+        lastImageLoadTime = Date.now();
+    };
+
+    // 2. Evento por si el navegador detecta un error explícito de red
+    cameraImage.onerror = function () {
+        reconnectCameraStream();
+    };
+
+    // Iniciar la transmisión
+    cameraImage.src = streamUrl;
+
+    // 3. Watchdog: Revisa cada 2 segundos si la imagen se congeló
+    if (cameraWatchdogTimer) clearInterval(cameraWatchdogTimer);
+    cameraWatchdogTimer = setInterval(() => {
+        // Si han pasado más de 3.5 segundos sin recibir un nuevo fotograma
+        if (Date.now() - lastImageLoadTime > 3500) {
+            console.warn("Cámara congelada. Reconectando...");
+            reconnectCameraStream();
         }
+    }, 2000);
+}
 
-        function initCameraWebSocket() {
-            websocketCamera = new WebSocket(webSocketCameraUrl);
-            websocketCamera.binaryType = 'blob';
+function reconnectCameraStream() {
+    lastImageLoadTime = Date.now(); // Reseteamos el contador para evitar bucles rápidos
+    const streamUrl = "http://" + window.location.hostname + ":81/stream";
+    // El 't=' obliga al navegador a ignorar la caché y abrir un nuevo socket HTTP
+    cameraImage.src = streamUrl + "?t=" + new Date().getTime();
+}
 
-            websocketCamera.onopen = function () {
-                console.log('Camera WebSocket connected');
-                resetCameraWatchdog();
-            };
-
-            websocketCamera.onclose = function () {
-                clearTimeout(cameraWatchdog);
-                setTimeout(initCameraWebSocket, 2000);
-            };
-
-            websocketCamera.onmessage = function (event) {
-                resetCameraWatchdog();
-
-                // Gestión correcta de blobs en memoria para evitar congelación del motor gráfico
-                const newUrl = URL.createObjectURL(event.data);
-
-                cameraImage.onload = function () {
-                    if (lastCameraUrl) {
-                        URL.revokeObjectURL(lastCameraUrl);
-                    }
-                    lastCameraUrl = newUrl;
-                };
-
-                cameraImage.src = newUrl;
-            };
-        }
-
-        ////////////////////////////////// WEBSOCKET CAR INPUT ////////////////////////////////
+        //////////////////////////////// WEBSOCKET CAR INPUT ////////////////////////////////
 
         function initCarInputWebSocket() {
             websocketCarInput = new WebSocket(webSocketCarInputUrl);
@@ -179,7 +157,6 @@
 
         function sendCommand(command, value) {
             if (websocketCarInput && websocketCarInput.readyState === WebSocket.OPEN) {
-                // Evita saturar el búfer del WebSocket si la red se ralentiza
                 if (websocketCarInput.bufferedAmount < 1024) {
                     const data = new Uint8Array([command.charCodeAt(0), parseInt(value)]);
                     websocketCarInput.send(data);
@@ -220,41 +197,53 @@
         function PanLeft() {
             stopPan();
             btnPanLeft.style.backgroundColor = "rgb(236 240 243)";
-            if (panServoCounter < 180) {
-                panServoCounter++;
-                sendCommand("P", panServoCounter);
-                panTimer = setTimeout(PanLeft, servoSpeed);
+            function step() {
+                if (panServoCounter < 180) {
+                    panServoCounter++;
+                    sendCommand("P", panServoCounter);
+                    panTimer = setTimeout(step, servoSpeed);
+                }
             }
+            step();
         }
 
         function PanRight() {
             stopPan();
             btnPanRight.style.backgroundColor = "rgb(236 240 243)";
-            if (panServoCounter > 0) {
-                panServoCounter--;
-                sendCommand("P", panServoCounter);
-                panTimer = setTimeout(PanRight, servoSpeed);
+            function step() {
+                if (panServoCounter > 0) {
+                    panServoCounter--;
+                    sendCommand("P", panServoCounter);
+                    panTimer = setTimeout(step, servoSpeed);
+                }
             }
+            step();
         }
 
         function TiltUp() {
             stopTilt();
             btnTiltUp.style.backgroundColor = "rgb(236 240 243)";
-            if (tiltServoCounter > 0) {
-                tiltServoCounter--;
-                sendCommand("T", tiltServoCounter);
-                tiltTimer = setTimeout(TiltUp, servoSpeed);
+            function step() {
+                if (tiltServoCounter > 0) {
+                    tiltServoCounter--;
+                    sendCommand("T", tiltServoCounter);
+                    tiltTimer = setTimeout(step, servoSpeed);
+                }
             }
+            step();
         }
 
         function TiltDown() {
             stopTilt();
             btnTiltDown.style.backgroundColor = "rgb(236 240 243)";
-            if (tiltServoCounter < 180) {
-                tiltServoCounter++;
-                sendCommand("T", tiltServoCounter);
-                tiltTimer = setTimeout(TiltDown, servoSpeed);
+            function step() {
+                if (tiltServoCounter < 180) {
+                    tiltServoCounter++;
+                    sendCommand("T", tiltServoCounter);
+                    tiltTimer = setTimeout(step, servoSpeed);
+                }
             }
+            step();
         }
 
         function stopPan() {
@@ -271,14 +260,37 @@
             btnTiltDown.style.backgroundColor = 'black';
         }
 
-        function stopIncrement() {
+        function stopAllServos() {
             stopPan();
             stopTilt();
         }
 
-        function stopDecrement() {
-            stopPan();
-            stopTilt();
+        function setupButtonEvents(element, startFn, isToggle = false) {
+            if (isToggle) {
+                const handlePress = (e) => {
+                    e.preventDefault();
+                    startFn();
+                };
+                element.addEventListener('touchstart', handlePress, { passive: false });
+                element.addEventListener('mousedown', handlePress);
+            } else {
+                const handleStart = (e) => {
+                    e.preventDefault();
+                    startFn();
+                };
+                const handleEnd = (e) => {
+                    e.preventDefault();
+                    stopAllServos();
+                };
+
+                element.addEventListener('touchstart', handleStart, { passive: false });
+                element.addEventListener('touchend', handleEnd, { passive: false });
+                element.addEventListener('touchcancel', handleEnd, { passive: false });
+
+                element.addEventListener('mousedown', handleStart);
+                element.addEventListener('mouseup', handleEnd);
+                element.addEventListener('mouseleave', handleEnd);
+            }
         }
 
         document.getElementById("Speed").onchange = function () {
@@ -326,7 +338,7 @@
 
         function Draw(event) {
             if (event.cancelable) event.preventDefault();
-            if (!paint) return; // 🛑 Si no está presionando, NO procesa ni envía nada
+            if (!paint) return;
 
             const rect = canvas.getBoundingClientRect();
             const mouseX = event.clientX || (event.touches && event.touches[0].clientX);
@@ -361,7 +373,6 @@
         let pendingTimeout = null;
 
         function processAndSend(speed, angle, force = false) {
-            // Si ya no estamos presionando el canvas, NO enviar movimientos
             if (!paint && !force) return;
 
             let newDirection = STOP;
@@ -395,7 +406,6 @@
                 } else {
                     let delayNeeded = 50 - timeElapsed;
                     pendingTimeout = setTimeout(() => {
-                        // Solo enviar si aún sigue presionando la pantalla
                         if (paint) {
                             currentDirection = newDirection;
                             sendCommand('M', currentDirection);
@@ -416,27 +426,21 @@
         function stopDrawing(event) {
             if (event && event.cancelable) event.preventDefault();
 
-            // 1. Apagamos la bandera de dibujo INMEDIATAMENTE
             paint = false;
 
-            // 2. Limpiamos cualquier envío diferido pendiente
             if (pendingTimeout) {
                 clearTimeout(pendingTimeout);
                 pendingTimeout = null;
             }
 
-            // 3. Dibujamos el joystick al centro
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             background();
             joystick(width / 2, height / 2);
 
-            // 4. Enviar STOP Inmediato
             currentDirection = STOP;
             sendCommand('M', STOP);
             lastSendTime = Date.now();
 
-            // 5. 🛡️ RESPALDO ANTI-CONGESTIÓN:
-            // Si fue un toque ultra rápido, reenviamos el STOP a los 40ms por si el primer paquete chocó
             setTimeout(() => {
                 sendCommand('M', STOP);
             }, 40);
@@ -444,35 +448,36 @@
 
         function initFunction() {
             resize();
-            initCameraWebSocket();
+            initCameraStream();
             initCarInputWebSocket();
+
+            setupButtonEvents(btnPanLeft, PanLeft);
+            setupButtonEvents(btnPanRight, PanRight);
+            setupButtonEvents(btnTiltUp, TiltUp);
+            setupButtonEvents(btnTiltDown, TiltDown);
+
+            setupButtonEvents(btnLight, LightOnOff, true);
+            setupButtonEvents(btnCenterServos, CenterServos, true);
+            setupButtonEvents(btnMelody, MelodyOnOff, true);
+            setupButtonEvents(btnObstacleAvoidance, ObstacleAvoidanceOnOff, true);
 
             canvas.addEventListener('mousedown', startDrawing);
             canvas.addEventListener('mouseup', stopDrawing);
             canvas.addEventListener('mousemove', Draw);
 
-            canvas.addEventListener('touchstart', startDrawing);
-            canvas.addEventListener('touchend', stopDrawing);
-            canvas.addEventListener('touchcancel', stopDrawing);
-            canvas.addEventListener('touchmove', Draw);
+            canvas.addEventListener('touchstart', startDrawing, { passive: false });
+            canvas.addEventListener('touchend', stopDrawing, { passive: false });
+            canvas.addEventListener('touchcancel', stopDrawing, { passive: false });
+            canvas.addEventListener('touchmove', Draw, { passive: false });
+
             window.addEventListener('resize', resize);
 
-            window.addEventListener('mouseup', function (e) {
-                stopIncrement();
-                stopDecrement();
-                stopDrawing(e);
-            });
-            window.addEventListener('touchend', function (e) {
-                stopIncrement();
-                stopDecrement();
-                stopDrawing(e);
-            });
+            window.addEventListener('mouseup', stopAllServos);
+            window.addEventListener('touchend', stopAllServos);
+            window.addEventListener('touchcancel', stopAllServos);
         }
 
         window.onload = initFunction;
-        mainTable.addEventListener("touchend", function (event) {
-            event.preventDefault();
-        });
     </script>
 </body>
 
