@@ -87,22 +87,29 @@ void sendCameraPicture(void *parameters)
 
         AsyncWebSocketClient *client = wsCamera.client(cameraClientId);
 
-        // 2. Si la red está saturada o el cliente no puede recibir fotogramas...
+        // 2. Si el cliente se desconectó o la cola de red está saturada...
         if (!client || !client->canSend())
         {
-            // ⚡ Leemos y liberamos el frame del sensor sin enviarlo para limpiar el buffer
+            // ⚡ Drenamos el buffer del sensor para que no se atranque el hardware
             fb = esp_camera_fb_get();
             if (fb)
             {
                 esp_camera_fb_return(fb);
             }
-            vTaskDelay(pdMS_TO_TICKS(15)); // Pausa breve y reintentamos
+            // 💡 40ms en lugar de 15ms le da tiempo al buffer de red para desahogarse
+            vTaskDelay(pdMS_TO_TICKS(40));
             continue;
         }
 
-        // 3. Protección de RAM crítica
+        // 3. Protección de RAM crítica (CORREGIDA)
         if (ESP.getFreeHeap() < 30000)
         {
+            // ⚠️ CORRECCIÓN: Drenar el buffer del sensor antes de pausar por baja memoria
+            fb = esp_camera_fb_get();
+            if (fb)
+            {
+                esp_camera_fb_return(fb);
+            }
             vTaskDelay(pdMS_TO_TICKS(50));
             continue;
         }
@@ -115,11 +122,11 @@ void sendCameraPicture(void *parameters)
             continue;
         }
 
-        // 5. Envío síncrono ultra rápido
+        // 5. Envío directo del frame por WebSocket
         client->binary(fb->buf, fb->len);
         esp_camera_fb_return(fb);
 
-        // ⚡ Ritmo constante (~15 a 20 FPS dinámicos)
-        vTaskDelay(pdMS_TO_TICKS(50));
+        // ⚡ Ritmo constante (~20 FPS)
+        vTaskDelay(pdMS_TO_TICKS(45));
     }
 }

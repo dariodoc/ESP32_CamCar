@@ -6,21 +6,10 @@
     <link rel="stylesheet" type="text/css" href="style.css">
 </head>
 
-
 <body scroll="no" class="noselect"
     style="background-color:white; position:relative; overflow:auto; text-align: center;">
 
-
     <img id="CameraImage" src="" style="width:345px;height:250px">
-
-    <!--
-    <p style="text-align: center;">
-    X: <span id="x_coordinate"> </span>
-    Y: <span id="y_coordinate"> </span>
-    Speed: <span id="speed"> </span> %
-    Angle: <span id="angle"> </span>
-  </p>  
-  -->
 
     <br>
 
@@ -29,15 +18,13 @@
     <table id="MainTable" style="width:345px; margin:auto; table-layout:fixed" cellspacing=10>
 
         <tr>
-            <td style="text-align:left"><b>RSSI: </b><b id="Rssi"></b></td>
-            <td colspan=1 style="text-align:left"><b>Speed:</b></td>
-            <td>
+            <td style="text-align:left"><b>Speed:</b></td>
+            <td colspan="2">
                 <div class="slidecontainer">
-                    <input type="range" min="1" max="5" value="5" class="slider" id="Speed">
+                    <input type="range" min="1" max="5" value="5" class="slider" id="Speed" style="width: 100%;">
                 </div>
             </td>
         </tr>
-
 
         <tr>
             <td style="text-align:left"><b>Pan:</b></td>
@@ -110,7 +97,6 @@
         const btnCenterServos = document.getElementById("btnCenterServos");
         const canvas = document.getElementById("Canvas");
         const ctx = canvas.getContext("2d");
-        const rssi = document.getElementById("Rssi");
         const mainTable = document.getElementById("MainTable");
         const cameraImage = document.getElementById("CameraImage");
 
@@ -184,7 +170,6 @@
             websocketCarInput.onmessage = function (event) {
                 try {
                     const telemetry = JSON.parse(event.data);
-                    if (telemetry.rssi !== undefined) rssi.innerText = telemetry.rssi;
                     if (telemetry.obstacle !== undefined) {
                         canvas.style.border = telemetry.obstacle ? "3px solid red" : "none";
                     }
@@ -202,7 +187,7 @@
             }
         }
 
-        ////////////////// CONTROL DE SERVOS CORREGIDO //////////////////
+        //////////////// CONTROL DE SERVOS CORREGIDO //////////////////
 
         function CenterServos() {
             panServoCounter = 75;

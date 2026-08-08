@@ -28,31 +28,53 @@ extern SemaphoreHandle_t i2cMutex;
 bool lockI2C(TickType_t timeoutMs = 20);
 void unlockI2C();
 
-// --- PINES DE LA CÁMARA ESP32-CAM ---
-#define PWDN_GPIO_NUM 32
-#define RESET_GPIO_NUM -1
-#define XCLK_GPIO_NUM 0
-#define SIOD_GPIO_NUM 26
-#define SIOC_GPIO_NUM 27
-#define Y9_GPIO_NUM 35
-#define Y8_GPIO_NUM 34
-#define Y7_GPIO_NUM 39
-#define Y6_GPIO_NUM 36
-#define Y5_GPIO_NUM 21
-#define Y4_GPIO_NUM 19
-#define Y3_GPIO_NUM 18
-#define Y2_GPIO_NUM 5
-#define VSYNC_GPIO_NUM 25
-#define HREF_GPIO_NUM 23
-#define PCLK_GPIO_NUM 22
+// // --- PINES DE LA CÁMARA ESP32-CAM ---
+// #define PWDN_GPIO_NUM 32
+// #define RESET_GPIO_NUM -1
+// #define XCLK_GPIO_NUM 0
+// #define SIOD_GPIO_NUM 26
+// #define SIOC_GPIO_NUM 27
+// #define Y9_GPIO_NUM 35
+// #define Y8_GPIO_NUM 34
+// #define Y7_GPIO_NUM 39
+// #define Y6_GPIO_NUM 36
+// #define Y5_GPIO_NUM 21
+// #define Y4_GPIO_NUM 19
+// #define Y3_GPIO_NUM 18
+// #define Y2_GPIO_NUM 5
+// #define VSYNC_GPIO_NUM 25
+// #define HREF_GPIO_NUM 23
+// #define PCLK_GPIO_NUM 22
+
+// ======================================================
+// CONFIGURACIÓN DE PINES PARA FREENOVE ESP32-WROVER
+// ======================================================
+#define PWDN_GPIO_NUM    -1
+#define RESET_GPIO_NUM   -1
+#define XCLK_GPIO_NUM    21
+#define SIOD_GPIO_NUM    26
+#define SIOC_GPIO_NUM    27
+
+#define Y9_GPIO_NUM      35
+#define Y8_GPIO_NUM      34
+#define Y7_GPIO_NUM      39
+#define Y6_GPIO_NUM      36
+#define Y5_GPIO_NUM      19
+#define Y4_GPIO_NUM      18
+#define Y3_GPIO_NUM      5
+#define Y2_GPIO_NUM      4
+
+#define VSYNC_GPIO_NUM   25
+#define HREF_GPIO_NUM    23
+#define PCLK_GPIO_NUM    22
 
 // --- PINES Y CONSTANTES DE PERIFÉRICOS ---
 const int builtinLedPin = 33;
-const int lightPin = 4;
-const int buzzerPin = 13;
+const int lightPin = 2;
+const int buzzerPin = 32;
 const int buzzerChannel = 3;
 const int panPin = 12;
-const int tiltPin = 2;
+const int tiltPin = 13;
 const int panCenter = 75;
 const int tiltCenter = 90;
 

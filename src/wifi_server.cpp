@@ -349,7 +349,7 @@ void initWiFi()
 #endif
             // 👇 NUEVO: Solo encendemos el AP si falló la red principal
             WiFi.mode(WIFI_AP);
-            WiFi.setTxPower(WIFI_POWER_15dBm);
+            WiFi.setTxPower(WIFI_POWER_19_5dBm); // Máxima potencia para el AP
             WiFi.softAP("ESP-CAMERA-CAR", "carbondioxide");
 #ifdef DEBUG
             Serial.print("AP IP address: ");
