@@ -6,7 +6,8 @@
     <link rel="stylesheet" type="text/css" href="style.css">
 </head>
 
-<body scroll="no" class="noselect" style="background-color:white; position:relative; overflow:auto; text-align: center;">
+<body scroll="no" class="noselect"
+    style="background-color:white; position:relative; overflow:auto; text-align: center;">
 
     <img id="CameraImage" src="" style="width:345px;height:250px">
 
@@ -90,44 +91,44 @@
         const FORWARD = 1, BACKWARD = 2, LEFT = 3, RIGHT = 4, STOP = 0;
         const FORWARDLEFT = 5, FORWARDRIGHT = 6, BACKLEFT = 7, BACKRIGHT = 8;
 
-   //////////////////////////////// CAMARA MJPEG CON WATCHDOG ////////////////////////////////
+        //////////////////////////////// CAMARA MJPEG CON WATCHDOG ////////////////////////////////
 
-let cameraWatchdogTimer = null;
-let lastImageLoadTime = Date.now();
+        let cameraWatchdogTimer = null;
+        let lastImageLoadTime = Date.now();
 
-function initCameraStream() {
-    const streamUrl = "http://" + window.location.hostname + ":81/stream";
+        function initCameraStream() {
+            const streamUrl = "http://" + window.location.hostname + ":81/stream";
 
-    // 1. Evento cuando la imagen recibe un nuevo cuadro del stream MJPEG
-    cameraImage.onload = function () {
-        lastImageLoadTime = Date.now();
-    };
+            // 1. Evento cuando la imagen recibe un nuevo cuadro del stream MJPEG
+            cameraImage.onload = function () {
+                lastImageLoadTime = Date.now();
+            };
 
-    // 2. Evento por si el navegador detecta un error explícito de red
-    cameraImage.onerror = function () {
-        reconnectCameraStream();
-    };
+            // 2. Evento por si el navegador detecta un error explícito de red
+            cameraImage.onerror = function () {
+                reconnectCameraStream();
+            };
 
-    // Iniciar la transmisión
-    cameraImage.src = streamUrl;
+            // Iniciar la transmisión
+            cameraImage.src = streamUrl;
 
-    // 3. Watchdog: Revisa cada 2 segundos si la imagen se congeló
-    if (cameraWatchdogTimer) clearInterval(cameraWatchdogTimer);
-    cameraWatchdogTimer = setInterval(() => {
-        // Si han pasado más de 3.5 segundos sin recibir un nuevo fotograma
-        if (Date.now() - lastImageLoadTime > 3500) {
-            console.warn("Cámara congelada. Reconectando...");
-            reconnectCameraStream();
+            // 3. Watchdog: Revisa cada 2 segundos si la imagen se congeló
+            if (cameraWatchdogTimer) clearInterval(cameraWatchdogTimer);
+            cameraWatchdogTimer = setInterval(() => {
+                // Si han pasado más de 3.5 segundos sin recibir un nuevo fotograma
+                if (Date.now() - lastImageLoadTime > 3500) {
+                    console.warn("Cámara congelada. Reconectando...");
+                    reconnectCameraStream();
+                }
+            }, 2000);
         }
-    }, 2000);
-}
 
-function reconnectCameraStream() {
-    lastImageLoadTime = Date.now(); // Reseteamos el contador para evitar bucles rápidos
-    const streamUrl = "http://" + window.location.hostname + ":81/stream";
-    // El 't=' obliga al navegador a ignorar la caché y abrir un nuevo socket HTTP
-    cameraImage.src = streamUrl + "?t=" + new Date().getTime();
-}
+        function reconnectCameraStream() {
+            lastImageLoadTime = Date.now(); // Reseteamos el contador para evitar bucles rápidos
+            const streamUrl = "http://" + window.location.hostname + ":81/stream";
+            // El 't=' obliga al navegador a ignorar la caché y abrir un nuevo socket HTTP
+            cameraImage.src = streamUrl + "?t=" + new Date().getTime();
+        }
 
         //////////////////////////////// WEBSOCKET CAR INPUT ////////////////////////////////
 

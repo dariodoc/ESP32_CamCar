@@ -3,8 +3,10 @@
    ====================================================== */
 
 /* 1. Bloqueo de gestos no deseados en navegadores móviles */
-html, body {
-  touch-action: none; /* Desactiva scroll, zoom y pull-to-refresh */
+html,
+body {
+  touch-action: none;
+  /* Desactiva scroll, zoom y pull-to-refresh */
   overscroll-behavior: none;
   overflow: hidden;
   margin: 0;
@@ -15,7 +17,8 @@ html, body {
 }
 
 #Canvas {
-  touch-action: none; /* Control directo sin retraso de eventos táctiles */
+  touch-action: none;
+  /* Control directo sin retraso de eventos táctiles */
 }
 
 /* 2. Botones y Flechas */
@@ -38,12 +41,18 @@ td.button:active {
 
 /* 3. Prevenir selección de texto/elementos */
 .noselect {
-  -webkit-touch-callout: none; /* iOS Safari */
-  -webkit-user-select: none;   /* Safari */
-  -khtml-user-select: none;    /* Konqueror HTML */
-  -moz-user-select: none;      /* Firefox */
-  -ms-user-select: none;       /* IE / Edge */
-  user-select: none;           /* Estándar */
+  -webkit-touch-callout: none;
+  /* iOS Safari */
+  -webkit-user-select: none;
+  /* Safari */
+  -khtml-user-select: none;
+  /* Konqueror HTML */
+  -moz-user-select: none;
+  /* Firefox */
+  -ms-user-select: none;
+  /* IE / Edge */
+  user-select: none;
+  /* Estándar */
 }
 
 /* 4. Controles del Slider de Velocidad */

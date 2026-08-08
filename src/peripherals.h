@@ -2,24 +2,30 @@
 #define PERIPHERALS_H
 
 #include <Arduino.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
-// En peripherals.h
+// Variables Compartidas
 extern volatile int targetPan;
 extern volatile int targetTilt;
+extern volatile bool enableLight;
+extern volatile bool melodyOn;
+extern volatile bool enableObstacleAvoidance;
+extern volatile bool obstacleFound;
 
-// Handlers de Tareas de Periféricos
+// Handlers de Tareas
 extern TaskHandle_t playMelodyTask;
 extern TaskHandle_t obstacleAvoidanceModeTask;
 extern TaskHandle_t servoControlTaskHandle;
 
-// Prototypes
+// Prototipos de Periféricos y LEDs
 void setupPeripherals();
 void ledIndicator(int blinkTimes, int delayTimeMS);
 void ledIndicator(int state);
 void leftBackLed(int state);
 void rightBackLed(int state);
 
-// Tareas FreeRTOS de Periféricos
+// Tareas FreeRTOS
 void playMelody(void *parameters);
 void obstacleAvoidanceMode(void *parameters);
 void servoControlTask(void *parameters);
