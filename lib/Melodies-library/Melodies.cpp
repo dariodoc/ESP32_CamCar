@@ -1,7 +1,6 @@
 
 #include <Arduino.h>
 #include "Melodies.h"
-#include <atomic> // Necesario para leer la variable atómica
 
 ////////////////////////////////////////////////////////////////////////
 //
@@ -14,7 +13,7 @@
 ////////////////////////////////////////////////////////////////////////
 
 // Declaración externa: enlaza esta librería con la variable global de tu programa principal
-extern std::atomic<bool> melodyOn;
+extern volatile bool melodyOn;
 
 const static int buzzFrequency = 5000;
 const static int buzzResolution = 12;

@@ -82,7 +82,7 @@ static esp_err_t stream_handler(httpd_req_t *req)
             break;
         }
 
-        vTaskDelay(pdMS_TO_TICKS(40)); // ~30 FPS
+        vTaskDelay(pdMS_TO_TICKS(5)); // ~30 FPS
     }
 
     return res;
@@ -138,7 +138,7 @@ void setupCamera()
     {
         config.fb_location = CAMERA_FB_IN_PSRAM;
         config.frame_size = FRAMESIZE_HVGA;
-        config.jpeg_quality = 12;
+        config.jpeg_quality = 14;
         config.fb_count = 2;
         config.grab_mode = CAMERA_GRAB_LATEST;
         heap_caps_malloc_extmem_enable(psramLimit);
