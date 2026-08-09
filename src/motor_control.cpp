@@ -8,8 +8,8 @@
 extern PCF8574 motorcontrolpcf8574;
 
 // Definición de los objetos motor y variables de velocidad
-Motor leftMotor(P3, P4, 1, 1, P2);
-Motor rightMotor(P1, P0, 3, 1, P2);
+Motor leftMotor(In1pinleftMotor1, In2pinleftMotor1, PWMPinleftMotor, offset, STBYpin);
+Motor rightMotor(In1pinrightMotor2, In2pinrightMotor2, PWMPinrightMotor, offset, STBYpin);
 
 volatile int motorSpeed = 255;
 volatile int currentDirection = STOP;
@@ -18,7 +18,7 @@ void setCarMotorsStandby(bool enable)
 {
     if (lockI2C(20))
     {
-        motorcontrolpcf8574.digitalWrite(P2, enable ? HIGH : LOW);
+        motorcontrolpcf8574.digitalWrite(STBYpin, enable ? HIGH : LOW);
         unlockI2C();
     }
 }

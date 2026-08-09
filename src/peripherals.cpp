@@ -59,11 +59,11 @@ void setupPeripherals()
     motorcontrolpcf8574.begin();
     peripheralspcf8574.begin();
 
-    motorcontrolpcf8574.pinMode(P3, OUTPUT);
-    motorcontrolpcf8574.pinMode(P4, OUTPUT);
-    motorcontrolpcf8574.pinMode(P2, OUTPUT);
-    motorcontrolpcf8574.pinMode(P1, OUTPUT);
-    motorcontrolpcf8574.pinMode(P0, OUTPUT);
+    motorcontrolpcf8574.pinMode(In1pinleftMotor1, OUTPUT);
+    motorcontrolpcf8574.pinMode(In2pinleftMotor1, OUTPUT);
+    motorcontrolpcf8574.pinMode(STBYpin, OUTPUT);
+    motorcontrolpcf8574.pinMode(In1pinrightMotor2, OUTPUT);
+    motorcontrolpcf8574.pinMode(In2pinrightMotor2, OUTPUT);
 
     peripheralspcf8574.pinMode(P5, INPUT);
     peripheralspcf8574.pinMode(P7, OUTPUT);

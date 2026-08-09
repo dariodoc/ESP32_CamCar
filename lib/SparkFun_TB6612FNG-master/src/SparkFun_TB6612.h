@@ -86,6 +86,4 @@ void forwardright(Motor &left, Motor &right, int speed);
 void backleft(Motor &left, Motor &right, int speed);
 void backright(Motor &left, Motor &right, int speed);
 
-void setMotorsStandby(bool enable);
-
 #endif

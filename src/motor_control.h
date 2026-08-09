@@ -7,6 +7,5 @@ extern volatile int motorSpeed;
 extern volatile int currentDirection;
 
 void moveCar(int inputValue);
-void setCarMotorsStandby(bool enable); // 👈 Nombre actualizado para evitar conflicto de librerías
-
+void setCarMotorsStandby(bool enable);
 #endif // MOTOR_CONTROL_H

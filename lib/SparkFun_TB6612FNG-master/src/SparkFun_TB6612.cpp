@@ -21,8 +21,8 @@ Motor::Motor(int In1pin, int In2pin, int PWMpin, int offset, int STBYpin)
   In1 = In1pin;
   In2 = In2pin;
   PWM = PWMpin;
-  Standby = STBYpin;
   Offset = offset;
+  Standby = STBYpin;
 
   // 🔥 BLINDAJE DE FRECUENCIA PARA ESP32 🔥
   if (PWM == 1)
@@ -41,23 +41,8 @@ Motor::Motor(int In1pin, int In2pin, int PWMpin, int offset, int STBYpin)
   }
 }
 
-void setMotorsStandby(bool enable)
-{
-#ifdef PCF8574_ON
-  if (lockI2C(20))
-  {
-    // Supongamos que P2 es tu pin de Standby en el PCF
-    motorcontrolpcf8574.digitalWrite(P2, enable ? HIGH : LOW);
-    unlockI2C();
-  }
-#else
-  digitalWrite(STANDBY_PIN, enable ? HIGH : LOW);
-#endif
-}
-
 void Motor::drive(int speed)
 {
-  // Ya NO tomamos Mutex aquí para Standby
   speed = speed * Offset;
   if (speed >= 0)
     fwd(speed);
@@ -68,10 +53,8 @@ void Motor::drive(int speed)
 void Motor::fwd(int speed)
 {
 #ifdef PCF8574_ON
-  // Tomamos el Mutex UNA SOLA VEZ para levantar Standby y los pines de dirección
   if (lockI2C(20))
   {
-
     motorcontrolpcf8574.digitalWrite(In1, HIGH);
     motorcontrolpcf8574.digitalWrite(In2, LOW);
     unlockI2C();
@@ -86,21 +69,21 @@ void Motor::fwd(int speed)
     ledcWrite(5, speed);
   else if (PWM == 3)
     ledcWrite(6, speed);
+  else
+    analogWrite(PWM, speed);
 }
 
-// void Motor::drive(int speed, int duration)
-// {
-//   drive(speed);
-//   delay(duration);
-// }
+void Motor::drive(int speed, int duration)
+{
+  drive(speed);
+  delay(duration);
+}
 
 void Motor::rev(int speed)
 {
 #ifdef PCF8574_ON
-  // 🔒 Un solo bloqueo para Standby + In1 + In2
   if (lockI2C(20))
   {
-
     motorcontrolpcf8574.digitalWrite(In1, LOW);
     motorcontrolpcf8574.digitalWrite(In2, HIGH);
     unlockI2C();
@@ -111,17 +94,17 @@ void Motor::rev(int speed)
   digitalWrite(In2, HIGH);
 #endif
 
-  // PWM directo por hardware (fuera del bus I2C)
   if (PWM == 1)
     ledcWrite(5, speed);
   else if (PWM == 3)
     ledcWrite(6, speed);
+  else
+    analogWrite(PWM, speed);
 }
 
 void Motor::brake()
 {
 #ifdef PCF8574_ON
-  // Bloqueamos I2C una sola vez para las 3 salidas del PCF8574
   if (lockI2C(20))
   {
 
@@ -139,20 +122,22 @@ void Motor::brake()
     ledcWrite(5, 0);
   else if (PWM == 3)
     ledcWrite(6, 0);
+  else
+    analogWrite(PWM, 0);
 }
 
-// void Motor::standby()
-// {
-// #ifdef PCF8574_ON
-//   if (lockI2C(20))
-//   {
-//     motorcontrolpcf8574.digitalWrite(Standby, LOW);
-//     unlockI2C();
-//   }
-// #else
-//   digitalWrite(Standby, LOW);
-// #endif
-// }
+void Motor::standby()
+{
+#ifdef PCF8574_ON
+  if (lockI2C(20))
+  {
+    motorcontrolpcf8574.digitalWrite(Standby, LOW);
+    unlockI2C();
+  }
+#else
+  digitalWrite(Standby, LOW);
+#endif
+}
 
 void forward(Motor &motor1, Motor &motor2, int speed)
 {

@@ -172,5 +172,4 @@ void setupCamera()
         s->set_bpc(s, 1);
         s->set_wpc(s, 1);
     }
-    // 🛑 REMOVIDO: startCameraServer() se llama después del WiFi en wifi_server.cpp
 }

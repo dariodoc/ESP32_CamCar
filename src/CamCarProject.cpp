@@ -17,6 +17,9 @@ void initTasks()
 
 void setup()
 {
+    // Forzar explícitamente los 240 MHz desde el arranque
+    setCpuFrequencyMhz(240);
+    
 #ifdef DEBUG
     Serial.begin(115200);
 #endif
