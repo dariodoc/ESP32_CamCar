@@ -9,7 +9,7 @@
 <body scroll="no" class="noselect"
     style="background-color:white; position:relative; overflow:auto; text-align: center;">
 
-    <img id="CameraImage" src="" style="width:345px;height:250px">
+    <img id="CameraImage" src="">
 
     <br>
 
@@ -91,42 +91,46 @@
         const FORWARD = 1, BACKWARD = 2, LEFT = 3, RIGHT = 4, STOP = 0;
         const FORWARDLEFT = 5, FORWARDRIGHT = 6, BACKLEFT = 7, BACKRIGHT = 8;
 
-        //////////////////////////////// CÁMARA MJPEG SIN LATENCIA ACUMULADA ////////////////////////////////
+        //////////////////////////////// CÁMARA WEBSOCKET BINARIO (LATENCIA CERO) ////////////////////////////////
 
-        let cameraWatchdogTimer = null;
-        let lastImageLoadTime = Date.now();
+        let websocketCamera;
+        let currentFrameUrl = null;
 
         function initCameraStream() {
-            const streamUrl = "http://" + window.location.hostname + ":81/stream";
+            const wsCameraUrl = "ws://" + window.location.hostname + "/CameraStream";
+            websocketCamera = new WebSocket(wsCameraUrl);
 
-            cameraImage.onload = function () {
-                lastImageLoadTime = Date.now();
+            // Importante: indicar al cliente que recibirá un búfer binario puro de la RAM
+            websocketCamera.binaryType = "arraybuffer";
+
+            websocketCamera.onopen = function () {
+                console.log("Camera WebSocket connected");
             };
 
-            cameraImage.onerror = function () {
-                reconnectCameraStream();
-            };
+            websocketCamera.onmessage = function (event) {
+                // Convierte los bytes JPEG directos del ESP32 en un objeto Blob
+                const blob = new Blob([event.data], { type: "image/jpeg" });
 
-            // La clave para eliminar el lag acumulado: forzar al navegador a descartar el caché
-            cameraImage.src = streamUrl + "?t=" + Date.now();
-
-            if (cameraWatchdogTimer) clearInterval(cameraWatchdogTimer);
-
-            // Watchdog más agresivo: Si se retrasa más de 1.5 segundos, resetea la conexión
-            cameraWatchdogTimer = setInterval(() => {
-                if (Date.now() - lastImageLoadTime > 1500) {
-                    console.warn("Retraso/Congelamiento en streaming. Reseteando flujo...");
-                    reconnectCameraStream();
+                // Revoca la URL anterior para evitar fugas de memoria en la RAM del navegador
+                if (currentFrameUrl) {
+                    URL.revokeObjectURL(currentFrameUrl);
                 }
-            }, 1000);
+
+                // Genera la URL local e insértala de forma instantánea en el elemento img
+                currentFrameUrl = URL.createObjectURL(blob);
+                cameraImage.src = currentFrameUrl;
+            };
+
+            websocketCamera.onclose = function () {
+                // Reconexión automática si el socket se rompe
+                setTimeout(initCameraStream, 1000);
+            };
+
+            websocketCamera.onerror = function (err) {
+                if (websocketCamera) websocketCamera.close();
+            };
         }
 
-        function reconnectCameraStream() {
-            lastImageLoadTime = Date.now();
-            const streamUrl = "http://" + window.location.hostname + ":81/stream";
-            // Forzar la creación de un nuevo Socket HTTP limpio ignorando el buffer del navegador
-            cameraImage.src = streamUrl + "?t=" + Date.now();
-        }
         //////////////////////////////// WEBSOCKET CAR INPUT ////////////////////////////////
 
         function initCarInputWebSocket() {

@@ -1,10 +1,10 @@
 #ifndef CAMERA_SETUP_H
 #define CAMERA_SETUP_H
 
+#include <Arduino.h>
+
 void setupCamera();
-void startCameraServerTask(void *pvParameters);
-
-extern TaskHandle_t CameraServerTaskHandle;
-
+void initCameraWebSocket();
+void streamCameraFrame();
 
 #endif // CAMERA_SETUP_H

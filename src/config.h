@@ -26,8 +26,8 @@
 #define PCLK_GPIO_NUM 22
 
 // --- PINES DE PERIFÉRICOS ---
-const int builtinLedPin = 33;
-const int lightPin = 2;
+const int builtinLedPin = 2;
+const int lightPin = 33;
 const int buzzerPin = 32;
 const int buzzerChannel = 3;
 const int panPin = 12;

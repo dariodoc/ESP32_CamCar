@@ -95,17 +95,22 @@ td.button:active {
   cursor: pointer;
 }
 
-/* 5. Alineación de etiquetas (Corregida sintaxis de comentario) */
+/* 5. Alineación de etiquetas */
 .label-cell {
   vertical-align: middle;
 }
 
-/* 6. Formato de la Cámara MJPEG */
-img {
+/* 6. Formato de la Cámara WebSocket (HVGA 3:2 Responsivo) */
+img,
+img#CameraImage {
+  width: 92vw;               /* Ocupa el 92% del ancho de la pantalla del celular */
+  max-width: 480px;          /* Limite en pixeles reales de la resolución HVGA */
+  height: auto;              /* Altura automática calculada según aspecto */
+  aspect-ratio: 3 / 2;       /* Relación de aspecto nativa 3:2 (HVGA 480x320) */
+  border-radius: 12px;       /* Esquinas redondeadas */
+  object-fit: cover;         /* Ajuste limpio sin deformar la geometría */
+  display: block;
+  margin: 8px auto;          /* Centrado automático con margen vertical bajo */
   overflow-clip-margin: content-box;
   overflow: clip;
-  width: 345px;
-  height: 200px;
-  border-radius: 5%;
-  object-fit: cover;
 }

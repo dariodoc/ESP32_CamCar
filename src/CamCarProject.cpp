@@ -13,8 +13,7 @@ void initTasks()
     xTaskCreatePinnedToCore(servoControlTask, "ServoControl", 1024 * 2, NULL, 1, &servoControlTaskHandle, CONFIG_ARDUINO_RUNNING_CORE);
     xTaskCreatePinnedToCore(playMelody, "playMelody", STACK_SIZE, NULL, 1, &playMelodyTaskHandle, CONFIG_ARDUINO_RUNNING_CORE);
     xTaskCreatePinnedToCore(obstacleAvoidanceMode, "obstacleAvoidanceMode", 1024 * 2, NULL, 2, &obstacleAvoidanceModeTaskHandle, CONFIG_ARDUINO_RUNNING_CORE);
-    xTaskCreatePinnedToCore(startCameraServerTask, "CameraServerTask", STACK_SIZE, NULL, 5, &CameraServerTaskHandle, 0);
-}
+   }
 
 void setup()
 {

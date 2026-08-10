@@ -192,6 +192,9 @@ void initWiFi()
     wsCarInput.onEvent(onCarInputWebSocketEvent);
     server.addHandler(&wsCarInput);
 
+
+    initCameraWebSocket(); // Inicializa el WebSocket de la cámara
+
     server.begin();
 
     // Apagar Bluetooth libera RAM e impide interferencias en la antena de 2.4 GHz
