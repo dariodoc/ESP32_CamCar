@@ -91,7 +91,7 @@
         const FORWARD = 1, BACKWARD = 2, LEFT = 3, RIGHT = 4, STOP = 0;
         const FORWARDLEFT = 5, FORWARDRIGHT = 6, BACKLEFT = 7, BACKRIGHT = 8;
 
-        //////////////////////////////// CAMARA MJPEG CON WATCHDOG ////////////////////////////////
+        //////////////////////////////// CÁMARA MJPEG SIN LATENCIA ACUMULADA ////////////////////////////////
 
         let cameraWatchdogTimer = null;
         let lastImageLoadTime = Date.now();
@@ -99,37 +99,34 @@
         function initCameraStream() {
             const streamUrl = "http://" + window.location.hostname + ":81/stream";
 
-            // 1. Evento cuando la imagen recibe un nuevo cuadro del stream MJPEG
             cameraImage.onload = function () {
                 lastImageLoadTime = Date.now();
             };
 
-            // 2. Evento por si el navegador detecta un error explícito de red
             cameraImage.onerror = function () {
                 reconnectCameraStream();
             };
 
-            // Iniciar la transmisión
-            cameraImage.src = streamUrl;
+            // La clave para eliminar el lag acumulado: forzar al navegador a descartar el caché
+            cameraImage.src = streamUrl + "?t=" + Date.now();
 
-            // 3. Watchdog: Revisa cada 2 segundos si la imagen se congeló
             if (cameraWatchdogTimer) clearInterval(cameraWatchdogTimer);
+
+            // Watchdog más agresivo: Si se retrasa más de 1.5 segundos, resetea la conexión
             cameraWatchdogTimer = setInterval(() => {
-                // Si han pasado más de 3.5 segundos sin recibir un nuevo fotograma
-                if (Date.now() - lastImageLoadTime > 3500) {
-                    console.warn("Cámara congelada. Reconectando...");
+                if (Date.now() - lastImageLoadTime > 1500) {
+                    console.warn("Retraso/Congelamiento en streaming. Reseteando flujo...");
                     reconnectCameraStream();
                 }
-            }, 2000);
+            }, 1000);
         }
 
         function reconnectCameraStream() {
-            lastImageLoadTime = Date.now(); // Reseteamos el contador para evitar bucles rápidos
+            lastImageLoadTime = Date.now();
             const streamUrl = "http://" + window.location.hostname + ":81/stream";
-            // El 't=' obliga al navegador a ignorar la caché y abrir un nuevo socket HTTP
-            cameraImage.src = streamUrl + "?t=" + new Date().getTime();
+            // Forzar la creación de un nuevo Socket HTTP limpio ignorando el buffer del navegador
+            cameraImage.src = streamUrl + "?t=" + Date.now();
         }
-
         //////////////////////////////// WEBSOCKET CAR INPUT ////////////////////////////////
 
         function initCarInputWebSocket() {

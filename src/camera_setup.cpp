@@ -26,6 +26,7 @@
 
 const static int psramLimit = 4096;
 httpd_handle_t stream_httpd = NULL;
+TaskHandle_t CameraServerTaskHandle = NULL;
 
 #define PART_BOUNDARY "123456789000000000000987654321"
 static const char *_STREAM_CONTENT_TYPE = "multipart/x-mixed-replace;boundary=" PART_BOUNDARY;
@@ -42,18 +43,17 @@ static esp_err_t stream_handler(httpd_req_t *req)
 
     res = httpd_resp_set_type(req, _STREAM_CONTENT_TYPE);
     if (res != ESP_OK)
-    {
         return res;
-    }
 
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
 
     while (true)
     {
+        // Pide la imagen más reciente
         fb = esp_camera_fb_get();
         if (!fb)
         {
-            vTaskDelay(pdMS_TO_TICKS(10));
+            vTaskDelay(pdMS_TO_TICKS(1));
             continue;
         }
 
@@ -74,36 +74,21 @@ static esp_err_t stream_handler(httpd_req_t *req)
             res = httpd_resp_send_chunk(req, (const char *)_jpg_buf, _jpg_buf_len);
         }
 
+        // Devolver el buffer inmediatamente
         esp_camera_fb_return(fb);
         fb = NULL;
 
+        // Si la conexión falla o el cliente se desconecta, romper el bucle
         if (res != ESP_OK)
         {
             break;
         }
 
-        vTaskDelay(pdMS_TO_TICKS(5)); // ~30 FPS
+        // Ceder el control un instante a la pila TCP/IP del Core 0
+        taskYIELD();
     }
 
     return res;
-}
-
-void startCameraServer()
-{
-    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-    config.server_port = 81;
-    config.ctrl_port = 81;
-
-    httpd_uri_t stream_uri = {
-        .uri = "/stream",
-        .method = (httpd_method_t)ESP_HTTP_GET,
-        .handler = stream_handler,
-        .user_ctx = NULL};
-
-    if (httpd_start(&stream_httpd, &config) == ESP_OK)
-    {
-        httpd_register_uri_handler(stream_httpd, &stream_uri);
-    }
 }
 
 void setupCamera()
@@ -137,9 +122,9 @@ void setupCamera()
     if (psramFound())
     {
         config.fb_location = CAMERA_FB_IN_PSRAM;
-        config.frame_size = FRAMESIZE_HVGA;
-        config.jpeg_quality = 14;
-        config.fb_count = 2;
+        config.frame_size = FRAMESIZE_QVGA;
+        config.jpeg_quality = 10;
+        config.fb_count = 3;
         config.grab_mode = CAMERA_GRAB_LATEST;
         heap_caps_malloc_extmem_enable(psramLimit);
     }
@@ -168,8 +153,35 @@ void setupCamera()
         s->set_awb_gain(s, 1);
         s->set_wb_mode(s, 0);
         s->set_exposure_ctrl(s, 1);
-        s->set_aec2(s, 0);
-        s->set_bpc(s, 1);
-        s->set_wpc(s, 1);
+
+        // Desactivar funciones pesadas de post-procesamiento del sensor OV2640
+        s->set_aec2(s, 1);     // Desactiva Control Automático de Exposición avanzado
+        s->set_ae_level(s, 1); // Nivel de exposición neutro
+        s->set_bpc(s, 1);      // Desactiva Corrección de Píxeles Negros
+        s->set_wpc(s, 1);      // Desactiva Corrección de Píxeles Blancos
+        s->set_raw_gma(s, 1);  // Desactiva Gamma nativo para acelerar la matriz de lectura
+        s->set_lenc(s, 1);     // Desactiva Corrección de Lente (Ahorra procesamiento interno en el OV2640)
     }
+}
+
+// Función auxiliar que se ejecuta una sola vez en el Core 0
+void startCameraServerTask(void *pvParameters)
+{
+    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+    config.server_port = 81;
+    config.ctrl_port = 81;
+
+    httpd_uri_t stream_uri = {
+        .uri = "/stream",
+        .method = (httpd_method_t)ESP_HTTP_GET,
+        .handler = stream_handler,
+        .user_ctx = NULL};
+
+    if (httpd_start(&stream_httpd, &config) == ESP_OK)
+    {
+        httpd_register_uri_handler(stream_httpd, &stream_uri);
+    }
+
+    // Una vez iniciado el servidor en Core 0, eliminamos la tarea de inicialización
+    vTaskDelete(NULL);
 }

@@ -2,6 +2,9 @@
 #define CAMERA_SETUP_H
 
 void setupCamera();
-void startCameraServer();
+void startCameraServerTask(void *pvParameters);
+
+extern TaskHandle_t CameraServerTaskHandle;
+
 
 #endif // CAMERA_SETUP_H

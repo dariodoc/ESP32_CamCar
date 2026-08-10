@@ -21,8 +21,8 @@ volatile bool obstacleFound = false;
 volatile int targetPan = 75;
 volatile int targetTilt = 90;
 
-TaskHandle_t playMelodyTask = NULL;
-TaskHandle_t obstacleAvoidanceModeTask = NULL;
+TaskHandle_t playMelodyTaskHandle = NULL;
+TaskHandle_t obstacleAvoidanceModeTaskHandle = NULL;
 TaskHandle_t servoControlTaskHandle = NULL;
 
 // --- Control de LEDs Traseros ---

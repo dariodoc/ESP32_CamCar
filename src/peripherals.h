@@ -14,8 +14,8 @@ extern volatile bool enableObstacleAvoidance;
 extern volatile bool obstacleFound;
 
 // Handlers de Tareas
-extern TaskHandle_t playMelodyTask;
-extern TaskHandle_t obstacleAvoidanceModeTask;
+extern TaskHandle_t playMelodyTaskHandle;
+extern TaskHandle_t obstacleAvoidanceModeTaskHandle;
 extern TaskHandle_t servoControlTaskHandle;
 
 // Prototipos de Periféricos y LEDs

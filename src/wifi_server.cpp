@@ -98,14 +98,14 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
         case 'H':
             melodyOn = !melodyOn;
             if (melodyOn)
-                xTaskNotifyGive(playMelodyTask);
+                xTaskNotifyGive(playMelodyTaskHandle);
             else
                 ledcWriteTone(buzzerChannel, 0);
             break;
         case 'O':
             enableObstacleAvoidance = !enableObstacleAvoidance;
             if (enableObstacleAvoidance)
-                xTaskNotifyGive(obstacleAvoidanceModeTask);
+                xTaskNotifyGive(obstacleAvoidanceModeTaskHandle);
             else
             {
                 obstacleFound = false;
@@ -193,7 +193,6 @@ void initWiFi()
     server.addHandler(&wsCarInput);
 
     server.begin();
-    startCameraServer();
 
     // Apagar Bluetooth libera RAM e impide interferencias en la antena de 2.4 GHz
     btStop();
