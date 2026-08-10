@@ -35,7 +35,7 @@ void cameraStreamTask(void *pvParameters)
     {
         streamCameraFrame();
         // Cede brevemente el control a la pila Wi-Fi en Core 0
-        vTaskDelay(pdMS_TO_TICKS(10));
+        taskYIELD();
     }
 }
 
@@ -77,7 +77,7 @@ void setupCamera()
     config.pin_sccb_scl = SIOC_GPIO_NUM;
     config.pin_pwdn = PWDN_GPIO_NUM;
     config.pin_reset = RESET_GPIO_NUM;
-    config.xclk_freq_hz = 20000000;
+    config.xclk_freq_hz = 24000000;
     config.pixel_format = PIXFORMAT_JPEG;
 
     if (psramFound())

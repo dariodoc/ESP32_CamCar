@@ -1,6 +1,6 @@
 #include "config.h"
 #include "wifi_server.h"
-#include "camera_setup.h" // 👈 Proporciona la declaración de startCameraServer()
+#include "camera_setup.h"
 #include "motor_control.h"
 #include "peripherals.h"
 #include <WiFi.h>
@@ -17,18 +17,84 @@ AsyncWebServer server(80);
 AsyncWebSocket wsCarInput("/CarInput");
 
 int carInputClientId = 0;
-// unsigned long lastCommandReceived = 0;
 volatile int targetDirection = STOP;
 
+// Parámetros de la interfaz web
+const char *PARAM_INPUT_1 = "ssid";
+const char *PARAM_INPUT_2 = "pass";
+const char *PARAM_INPUT_3 = "ip";
+const char *PARAM_INPUT_4 = "gateway";
+
 String ssid, pass, ip, gateway;
-const char *ssidPath = "/ssid.txt", *passPath = "/pass.txt", *ipPath = "/ip.txt", *gatewayPath = "/gateway.txt";
+const char *ssidPath = "/ssid.txt";
+const char *passPath = "/pass.txt";
+const char *ipPath = "/ip.txt";
+const char *gatewayPath = "/gateway.txt";
 
 void cleanupWSClients()
 {
     wsCarInput.cleanupClients();
 }
 
-// Optimización directa del manejador WebSocket
+// Escaneo BSSID para conectar al nodo con mejor señal en red mesh
+void scanAndConnectToBestAP(const char *targetSSID, const char *password)
+{
+    int8_t bestRSSI = -100;
+    uint8_t bestBSSID[6];
+    int bestChannel = 0;
+    bool found = false;
+
+#ifdef DEBUG
+    Serial.println(" Scanning networks...");
+#endif
+
+    // Escaneo asíncrono = false, incluir redes ocultas = true
+    int n = WiFi.scanNetworks(false, true);
+    if (n > 0)
+    {
+        for (int i = 0; i < n; ++i)
+        {
+            if (WiFi.SSID(i) == targetSSID)
+            {
+#ifdef DEBUG
+                Serial.printf(" Found: %s | Ch: %d | RSSI: %d dBm\n", WiFi.SSID(i).c_str(), WiFi.channel(i), WiFi.RSSI(i));
+#endif
+                if (WiFi.RSSI(i) > bestRSSI)
+                {
+                    bestRSSI = WiFi.RSSI(i);
+                    memcpy(bestBSSID, WiFi.BSSID(i), 6);
+                    bestChannel = WiFi.channel(i);
+                    found = true;
+                }
+            }
+        }
+    }
+
+    if (!found)
+    {
+#ifdef DEBUG
+        Serial.println(" Desired SSID not found. Trying standard connection...");
+#endif
+        WiFi.begin(targetSSID, password);
+    }
+    else
+    {
+#ifdef DEBUG
+        Serial.printf(" Connecting to best AP node (RSSI: %d dBm) on Ch %d\n", bestRSSI, bestChannel);
+#endif
+        WiFi.begin(targetSSID, password, bestChannel, bestBSSID);
+    }
+
+    unsigned long startAttempt = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 10000)
+    {
+        ledIndicator(1, 250);
+    }
+
+    WiFi.scanDelete(); // Libera la memoria RAM del escaneo
+}
+
+// Manejador del WebSocket para el Joystick / Motores
 void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len)
 {
     if (type == WS_EVT_CONNECT)
@@ -69,7 +135,6 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
         if (!(info->final && info->index == 0 && info->len == len))
             return;
 
-        // Lectura rápida sin asignaciones dinámicas
         const uint8_t cmd = data[0];
         const uint8_t val = (len > 1) ? data[1] : 0;
 
@@ -123,7 +188,7 @@ String readFile(fs::FS &fs, const char *path)
         return String();
 
     String fileContent = file.readStringUntil('\n');
-    fileContent.trim(); // 👈 Elimina \r, \n y espacios
+    fileContent.trim();
     file.close();
     return fileContent;
 }
@@ -140,60 +205,105 @@ void writeFile(fs::FS &fs, const char *path, const char *message)
 
 void initWiFi()
 {
-    // 1. Desactivar el ahorro de energía del Wi-Fi (Latencia ultra baja)
-    WiFi.setSleep(false);
+    if (!SPIFFS.begin(true))
+    {
+#ifdef DEBUG
+        Serial.println("Error mounting SPIFFS");
+#endif
+    }
 
-    // 2. Maximizar la potencia de transmisión del módulo Wi-Fi (20 dBm = 100 mW)
+    WiFi.setSleep(false); // Desactiva el ahorro de energía para latencia cero
     WiFi.setTxPower(WIFI_POWER_19_5dBm);
 
     ssid = readFile(SPIFFS, ssidPath);
     pass = readFile(SPIFFS, passPath);
+    ip = readFile(SPIFFS, ipPath);
+    gateway = readFile(SPIFFS, gatewayPath);
 
-    // Limpia espacios en blanco o saltos de línea leídos del archivo txt
-    ssid.trim();
-    pass.trim();
+    WiFi.mode(WIFI_AP_STA); // Modo dual para escaneo inicial o rescate
 
     if (!ssid.isEmpty())
     {
-        WiFi.mode(WIFI_STA); // Evita WIFI_AP_STA inicial si ya hay credenciales
-        WiFi.begin(ssid.c_str(), pass.c_str());
-
-        unsigned long startTime = millis();
-        while (WiFi.status() != WL_CONNECTED && millis() - startTime < 8000)
+        if (!ip.isEmpty() && !gateway.isEmpty())
         {
-            ledIndicator(1, 250);
+            IPAddress localIP, localGateway, subnet(255, 255, 255, 0);
+            localIP.fromString(ip);
+            localGateway.fromString(gateway);
+            WiFi.config(localIP, localGateway, subnet);
         }
+
+        scanAndConnectToBestAP(ssid.c_str(), pass.c_str());
+        WiFi.setAutoReconnect(true);
 
         if (WiFi.status() == WL_CONNECTED)
         {
+            WiFi.mode(WIFI_STA); // 🚀 APAGA el Access Point para liberar el canal de radio Wi-Fi
             if (MDNS.begin("cameracar"))
                 MDNS.addService("http", "tcp", 80);
             ledIndicator(5, 50);
         }
         else
         {
-            WiFi.mode(WIFI_AP);
             WiFi.softAP("ESP-CAMERA-CAR", "carbondioxide");
         }
     }
     else
     {
-        WiFi.mode(WIFI_AP);
         WiFi.softAP("ESP-CAMERA-CAR", "carbondioxide");
     }
 
-    // Configuración de rutas estáticas en Flash (Usando Gzip si es posible)
+    // ================= RUTAS DEL SERVIDOR WEB OPTIMIZADAS =================
+
+    // Interfaz Principal con Cache-Control de 1 día para acelerar cargas en el móvil
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
-              { request->send(SPIFFS, "/index.html", "text/html"); });
+              {
+        AsyncWebServerResponse *response = request->beginResponse(SPIFFS, "/index.html", "text/html");
+        response->addHeader("Cache-Control", "max-age=86400");
+        request->send(response); });
 
     server.on("/style.css", HTTP_GET, [](AsyncWebServerRequest *request)
-              { request->send(SPIFFS, "/style.css", "text/css"); });
+              {
+        AsyncWebServerResponse *response = request->beginResponse(SPIFFS, "/style.css", "text/css");
+        response->addHeader("Cache-Control", "max-age=86400");
+        request->send(response); });
 
+    // Gestor de Wi-Fi
+    server.on("/wifimanager", HTTP_GET, [](AsyncWebServerRequest *request)
+              {
+        AsyncWebServerResponse *response = request->beginResponse(SPIFFS, "/wifimanager.html", "text/html");
+        response->addHeader("Cache-Control", "max-age=86400");
+        request->send(response); });
+
+    server.on("/wifimanager.css", HTTP_GET, [](AsyncWebServerRequest *request)
+              {
+        AsyncWebServerResponse *response = request->beginResponse(SPIFFS, "/wifimanager.css", "text/css");
+        response->addHeader("Cache-Control", "max-age=86400");
+        request->send(response); });
+
+    // RUTA POST: Procesamiento directo sin variables intermedias y reinicio
+    server.on("/", HTTP_POST, [](AsyncWebServerRequest *request)
+              {
+        int params = request->params();
+        for (int i = 0; i < params; i++) {
+            AsyncWebParameter* p = request->getParam(i);
+            if (p->isPost()) {
+                if (p->name() == PARAM_INPUT_1) { writeFile(SPIFFS, ssidPath, p->value().c_str()); }
+                if (p->name() == PARAM_INPUT_2) { writeFile(SPIFFS, passPath, p->value().c_str()); }
+                if (p->name() == PARAM_INPUT_3) { writeFile(SPIFFS, ipPath, p->value().c_str()); }
+                if (p->name() == PARAM_INPUT_4) { writeFile(SPIFFS, gatewayPath, p->value().c_str()); }
+            }
+        }
+        request->send(200, "text/plain", "Credenciales guardadas. El ESP32 se reiniciara...");
+        vTaskDelay(pdMS_TO_TICKS(2000));
+        ESP.restart(); });
+
+    server.serveStatic("/", SPIFFS, "/");
+
+    // Handlers de WebSockets
     wsCarInput.onEvent(onCarInputWebSocketEvent);
     server.addHandler(&wsCarInput);
 
-
-    initCameraWebSocket(); // Inicializa el WebSocket de la cámara
+    initCameraWebSocket(); // Inicializa el WebSocket binario de la cámara
 
     server.begin();
 
