@@ -35,7 +35,7 @@ void cameraStreamTask(void *pvParameters)
     {
         streamCameraFrame();
         // Cede brevemente el control a la pila Wi-Fi en Core 0
-        taskYIELD();
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
 }
 
