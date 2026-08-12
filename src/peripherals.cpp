@@ -52,7 +52,7 @@ void setupPeripherals()
     digitalWrite(lightPin, LOW);
     ledcDetachPin(buzzerPin);
 
-    Wire.begin(14, 15);
+    Wire.begin(26, 27);
     Wire.setClock(400000);
     vTaskDelay(pdMS_TO_TICKS(100));
 

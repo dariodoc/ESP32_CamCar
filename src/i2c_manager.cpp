@@ -39,7 +39,7 @@ bool lockI2C(TickType_t timeoutMs)
 #endif
         Wire.end();
         vTaskDelay(pdMS_TO_TICKS(10));
-        Wire.begin(14, 15);
+        Wire.begin(26, 27);
         Wire.setClock(400000);
         Wire.setTimeOut(50);
 

@@ -35,8 +35,8 @@ void setup()
 #endif
 
     initI2CManager();
-    setupPeripherals();
     setupCamera();
+    setupPeripherals();
     initWiFi();
     initTasks();
     initArduinoOTA();

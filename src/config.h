@@ -36,8 +36,8 @@ const int panCenter = 75;
 const int tiltCenter = 90;
 
 // --- PINES DE LOS MOTORES ---
-const int PWMPinleftMotor = 1;   // Pin del esp32 para el motor izquierdo
-const int PWMPinrightMotor = 3;  // Pin del esp32 para el motor derecho
+const int PWMPinleftMotor = 14;   // Pin del esp32 para el motor izquierdo
+const int PWMPinrightMotor = 15;  // Pin del esp32 para el motor derecho
 const int In1pinleftMotor1 = 3;  // Pin de PCF8574 para el motor izquierdo
 const int In2pinleftMotor1 = 4;  // Pin de PCF8574 para el motor izquierdo
 const int In1pinrightMotor2 = 1; // Pin de PCF8574 para el motor derecho
