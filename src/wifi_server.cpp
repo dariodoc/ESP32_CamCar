@@ -18,6 +18,7 @@ AsyncWebSocket wsCarInput("/CarInput");
 
 int carInputClientId = 0;
 volatile int targetDirection = STOP;
+volatile unsigned long lastCommandTime = 0; // 👈 Inicialización
 
 // Parámetros de la interfaz web
 const char *PARAM_INPUT_1 = "ssid";
@@ -138,8 +139,14 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
         const uint8_t cmd = data[0];
         const uint8_t val = (len > 1) ? data[1] : 0;
 
+        // 🚀 Actualiza la marca de tiempo de vida con cualquier dato recibido
+        lastCommandTime = millis();
+
         switch (cmd)
         {
+        case 'K': // 👈 Comando Heartbeat
+            // Simplemente actualiza lastCommandTime sin hacer nada más
+            break;
         case 'M':
             targetDirection = val;
             break;

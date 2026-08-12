@@ -160,7 +160,9 @@
         function sendCommand(command, value) {
             if (websocketCarInput && websocketCarInput.readyState === WebSocket.OPEN) {
                 if (websocketCarInput.bufferedAmount < 1024) {
-                    const data = new Uint8Array([command.charCodeAt(0), parseInt(value)]);
+                    // Permite enviar 'K' u otros caracteres ASCII directamente
+                    const cmdChar = (typeof command === 'string') ? command.charCodeAt(0) : command;
+                    const data = new Uint8Array([cmdChar, parseInt(value)]);
                     websocketCarInput.send(data);
                 }
             }
@@ -452,6 +454,19 @@
             resize();
             initCameraStream();
             initCarInputWebSocket();
+
+            // 🚀 KEEP ALIVE: Envía 'K' cada 400 ms para mantener activa la conexión de seguridad
+            setInterval(() => {
+                sendCommand('K', currentDirection);
+            }, 400);
+
+            // 🛑 PARADA DE EMERGENCIA INSTANTÁNEA: Si se cierra la página o app
+            window.addEventListener('beforeunload', () => {
+                if (websocketCarInput) {
+                    sendCommand('M', STOP);
+                    websocketCarInput.close();
+                }
+            });
 
             setupButtonEvents(btnPanLeft, PanLeft);
             setupButtonEvents(btnPanRight, PanRight);

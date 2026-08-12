@@ -58,6 +58,16 @@ void loop()
         cleanupWSClients();
     }
 
+    // 🛑 CONTROL DE SEGURIDAD KEEP ALIVE (Timeout: 1000 ms)
+    // Si no se recibe latido ni datos en 1 segundo y el coche no está en STOP:
+    if (currentMillis - lastCommandTime > 1200 && targetDirection != STOP)
+    {
+        targetDirection = STOP;
+        #ifdef DEBUG
+        Serial.println("❌ Timeout de comunicación: Frenando por seguridad.");
+        #endif
+    }
+
     int currentTargetDir = targetDirection;
     int currentMotorSpeed = motorSpeed;
 
@@ -75,5 +85,5 @@ void loop()
         lastSpeed = currentMotorSpeed;
     }
 
-    vTaskDelay(pdMS_TO_TICKS(10));
+    vTaskDelay(pdMS_TO_TICKS(1));
 }

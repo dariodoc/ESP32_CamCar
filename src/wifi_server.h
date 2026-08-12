@@ -5,6 +5,7 @@
 
 extern int carInputClientId;
 extern volatile int targetDirection;
+extern volatile unsigned long lastCommandTime; // 👈 Marca de tiempo del último mensaje recibido
 
 void initWiFi();
 void cleanupWSClients();
