@@ -58,7 +58,7 @@ void loop()
         cleanupWSClients();
     }
 
-    // 🛑 CONTROL DE SEGURIDAD KEEP ALIVE (Timeout: 1000 ms)
+    // 🛑 CONTROL DE SEGURIDAD KEEP ALIVE (Timeout: 1200 ms)
     // Si no se recibe latido ni datos en 1 segundo y el coche no está en STOP:
     if (currentMillis - lastCommandTime > 1200 && targetDirection != STOP)
     {
