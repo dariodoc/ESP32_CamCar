@@ -63,9 +63,9 @@ void loop()
     if (currentMillis - lastCommandTime > 1200 && targetDirection != STOP)
     {
         targetDirection = STOP;
-        #ifdef DEBUG
+#ifdef DEBUG
         Serial.println("❌ Timeout de comunicación: Frenando por seguridad.");
-        #endif
+#endif
     }
 
     int currentTargetDir = targetDirection;
