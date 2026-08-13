@@ -24,21 +24,7 @@ Motor::Motor(int In1pin, int In2pin, int PWMpin, int offset, int STBYpin)
   Offset = offset;
   Standby = STBYpin;
 
-  // 🔥 BLINDAJE DE FRECUENCIA PARA ESP32 🔥
-  if (PWM == 14)
-  {
-    ledcSetup(5, 5000, 8); // Canal 5, 5000Hz, 8-bits (0-255)
-    ledcAttachPin(PWM, 5);
-  }
-  else if (PWM == 15)
-  {
-    ledcSetup(6, 5000, 8); // Canal 6, 5000Hz, 8-bits (0-255)
-    ledcAttachPin(PWM, 6);
-  }
-  else
-  {
-    pinMode(PWM, OUTPUT);
-  }
+  pinMode(PWM, OUTPUT);
 }
 
 void Motor::drive(int speed)
@@ -65,12 +51,7 @@ void Motor::fwd(int speed)
   digitalWrite(In2, LOW);
 #endif
 
-  if (PWM == 14)
-    ledcWrite(5, speed);
-  else if (PWM == 15)
-    ledcWrite(6, speed);
-  else
-    analogWrite(PWM, speed);
+  analogWrite(PWM, speed);
 }
 
 void Motor::drive(int speed, int duration)
@@ -94,12 +75,7 @@ void Motor::rev(int speed)
   digitalWrite(In2, HIGH);
 #endif
 
-  if (PWM == 14)
-    ledcWrite(5, speed);
-  else if (PWM == 15)
-    ledcWrite(6, speed);
-  else
-    analogWrite(PWM, speed);
+  analogWrite(PWM, speed);
 }
 
 void Motor::brake()
@@ -118,12 +94,7 @@ void Motor::brake()
   digitalWrite(In2, HIGH);
 #endif
 
-  if (PWM == 14)
-    ledcWrite(5, 0);
-  else if (PWM == 15)
-    ledcWrite(6, 0);
-  else
-    analogWrite(PWM, 0);
+  analogWrite(PWM, 0);
 }
 
 void Motor::standby()

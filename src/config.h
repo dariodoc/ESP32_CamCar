@@ -27,8 +27,8 @@
 
 // --- PINES DE PERIFÉRICOS ---
 const int builtinLedPin = 2;
-const int lightPin = 33;
-const int buzzerPin = 32;
+const int lightPin =0;
+const int buzzerPin = 33;
 const int buzzerChannel = 3;
 const int panPin = 12;
 const int tiltPin = 13;
