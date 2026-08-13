@@ -61,16 +61,13 @@
         let webSocketCarInputUrl = "ws://" + window.location.hostname + "/CarInput";
         let websocketCarInput;
 
-        let panTimer = null;
-        let tiltTimer = null;
-
         let isMelodyOn = false;
         let isLightOn = false;
         let isObstacleAvoidanceOn = false;
         let currentDirection = 0;
-        let servoSpeed = 50;
-        let panServoCounter = 75;
-        let tiltServoCounter = 90;
+
+        let panState = 0;  // -1: Izquierda, 0: Detenido, 1: Derecha
+        let tiltState = 0; // -1: Arriba,    0: Detenido, 1: Abajo
 
         let lastSendTime = 0;
 
@@ -91,7 +88,7 @@
         const FORWARD = 1, BACKWARD = 2, LEFT = 3, RIGHT = 4, STOP = 0;
         const FORWARDLEFT = 5, FORWARDRIGHT = 6, BACKLEFT = 7, BACKRIGHT = 8;
 
-        //////////////////////////////// CÁMARA WEBSOCKET BINARIO (LATENCIA CERO) ////////////////////////////////
+        //////////////////////////////// CÁMARA WEBSOCKET BINARIO ////////////////////////////////
 
         let websocketCamera;
         let currentFrameUrl = null;
@@ -100,7 +97,6 @@
             const wsCameraUrl = "ws://" + window.location.hostname + "/CameraStream";
             websocketCamera = new WebSocket(wsCameraUrl);
 
-            // Importante: indicar al cliente que recibirá un búfer binario puro de la RAM
             websocketCamera.binaryType = "arraybuffer";
 
             websocketCamera.onopen = function () {
@@ -108,21 +104,17 @@
             };
 
             websocketCamera.onmessage = function (event) {
-                // Convierte los bytes JPEG directos del ESP32 en un objeto Blob
                 const blob = new Blob([event.data], { type: "image/jpeg" });
 
-                // Revoca la URL anterior para evitar fugas de memoria en la RAM del navegador
                 if (currentFrameUrl) {
                     URL.revokeObjectURL(currentFrameUrl);
                 }
 
-                // Genera la URL local e insértala de forma instantánea en el elemento img
                 currentFrameUrl = URL.createObjectURL(blob);
                 cameraImage.src = currentFrameUrl;
             };
 
             websocketCamera.onclose = function () {
-                // Reconexión automática si el socket se rompe
                 setTimeout(initCameraStream, 1000);
             };
 
@@ -138,8 +130,6 @@
 
             websocketCarInput.onopen = function () {
                 console.log('CarInput WebSocket connected');
-                sendCommand('P', panServoCounter);
-                sendCommand('T', tiltServoCounter);
                 sendCommand('S', document.getElementById("Speed").value);
             };
 
@@ -160,7 +150,6 @@
         function sendCommand(command, value) {
             if (websocketCarInput && websocketCarInput.readyState === WebSocket.OPEN) {
                 if (websocketCarInput.bufferedAmount < 1024) {
-                    // Permite enviar 'K' u otros caracteres ASCII directamente
                     const cmdChar = (typeof command === 'string') ? command.charCodeAt(0) : command;
                     const data = new Uint8Array([cmdChar, parseInt(value)]);
                     websocketCarInput.send(data);
@@ -168,11 +157,65 @@
             }
         }
 
-        //////////////// CONTROL DE SERVOS CORREGIDO //////////////////
+        //////////////// CONTROL DE SERVOS OPTIMIZADO (OPCIÓN B) //////////////////
+
+        function PanLeftStart() {
+            if (panState !== 1) {
+                panState = 1;
+                btnPanLeft.style.backgroundColor = "rgb(236 240 243)";
+                sendCommand('P', 1); // 'P' 1 = Mover Izquierda
+            }
+        }
+
+        function PanRightStart() {
+            if (panState !== 2) {
+                panState = 2;
+                btnPanRight.style.backgroundColor = "rgb(236 240 243)";
+                sendCommand('P', 2); // 'P' 2 = Mover Derecha
+            }
+        }
+
+        function stopPan() {
+            if (panState !== 0) {
+                panState = 0;
+                btnPanLeft.style.backgroundColor = 'black';
+                btnPanRight.style.backgroundColor = 'black';
+                sendCommand('P', 0); // 'P' 0 = Detener
+            }
+        }
+
+        function TiltUpStart() {
+            if (tiltState !== 1) {
+                tiltState = 1;
+                btnTiltUp.style.backgroundColor = "rgb(236 240 243)";
+                sendCommand('T', 1); // 'T' 1 = Mover Arriba
+            }
+        }
+
+        function TiltDownStart() {
+            if (tiltState !== 2) {
+                tiltState = 2;
+                btnTiltDown.style.backgroundColor = "rgb(236 240 243)";
+                sendCommand('T', 2); // 'T' 2 = Mover Abajo
+            }
+        }
+
+        function stopTilt() {
+            if (tiltState !== 0) {
+                tiltState = 0;
+                btnTiltUp.style.backgroundColor = 'black';
+                btnTiltDown.style.backgroundColor = 'black';
+                sendCommand('T', 0); // 'T' 0 = Detener
+            }
+        }
+
+        function stopAllServos() {
+            stopPan();
+            stopTilt();
+        }
 
         function CenterServos() {
-            panServoCounter = 75;
-            tiltServoCounter = 90;
+            stopAllServos();
             sendCommand('C', 1);
             if (navigator.vibrate) navigator.vibrate(50);
         }
@@ -196,77 +239,6 @@
             btnMelody.style.backgroundColor = isMelodyOn ? "rgb(236 240 243)" : 'black';
             sendCommand('H', 1);
             if (navigator.vibrate) navigator.vibrate(50);
-        }
-
-        function PanLeft() {
-            stopPan();
-            btnPanLeft.style.backgroundColor = "rgb(236 240 243)";
-            function step() {
-                if (panServoCounter < 180) {
-                    panServoCounter++;
-                    sendCommand("P", panServoCounter);
-                    panTimer = setTimeout(step, servoSpeed);
-                }
-            }
-            step();
-        }
-
-        function PanRight() {
-            stopPan();
-            btnPanRight.style.backgroundColor = "rgb(236 240 243)";
-            function step() {
-                if (panServoCounter > 0) {
-                    panServoCounter--;
-                    sendCommand("P", panServoCounter);
-                    panTimer = setTimeout(step, servoSpeed);
-                }
-            }
-            step();
-        }
-
-        function TiltUp() {
-            stopTilt();
-            btnTiltUp.style.backgroundColor = "rgb(236 240 243)";
-            function step() {
-                if (tiltServoCounter > 0) {
-                    tiltServoCounter--;
-                    sendCommand("T", tiltServoCounter);
-                    tiltTimer = setTimeout(step, servoSpeed);
-                }
-            }
-            step();
-        }
-
-        function TiltDown() {
-            stopTilt();
-            btnTiltDown.style.backgroundColor = "rgb(236 240 243)";
-            function step() {
-                if (tiltServoCounter < 180) {
-                    tiltServoCounter++;
-                    sendCommand("T", tiltServoCounter);
-                    tiltTimer = setTimeout(step, servoSpeed);
-                }
-            }
-            step();
-        }
-
-        function stopPan() {
-            if (panTimer) clearTimeout(panTimer);
-            panTimer = null;
-            btnPanLeft.style.backgroundColor = 'black';
-            btnPanRight.style.backgroundColor = 'black';
-        }
-
-        function stopTilt() {
-            if (tiltTimer) clearTimeout(tiltTimer);
-            tiltTimer = null;
-            btnTiltUp.style.backgroundColor = 'black';
-            btnTiltDown.style.backgroundColor = 'black';
-        }
-
-        function stopAllServos() {
-            stopPan();
-            stopTilt();
         }
 
         function setupButtonEvents(element, startFn, isToggle = false) {
@@ -455,12 +427,12 @@
             initCameraStream();
             initCarInputWebSocket();
 
-            // 🚀 KEEP ALIVE: Envía 'K' cada 400 ms para mantener activa la conexión de seguridad
+            // 🚀 KEEP ALIVE: Envía 'K' cada 400 ms
             setInterval(() => {
                 sendCommand('K', currentDirection);
             }, 400);
 
-            // 🛑 PARADA DE EMERGENCIA INSTANTÁNEA: Si se cierra la página o app
+            // 🛑 PARADA DE EMERGENCIA INSTANTÁNEA
             window.addEventListener('beforeunload', () => {
                 if (websocketCarInput) {
                     sendCommand('M', STOP);
@@ -468,10 +440,10 @@
                 }
             });
 
-            setupButtonEvents(btnPanLeft, PanLeft);
-            setupButtonEvents(btnPanRight, PanRight);
-            setupButtonEvents(btnTiltUp, TiltUp);
-            setupButtonEvents(btnTiltDown, TiltDown);
+            setupButtonEvents(btnPanLeft, PanLeftStart);
+            setupButtonEvents(btnPanRight, PanRightStart);
+            setupButtonEvents(btnTiltUp, TiltUpStart);
+            setupButtonEvents(btnTiltDown, TiltDownStart);
 
             setupButtonEvents(btnLight, LightOnOff, true);
             setupButtonEvents(btnCenterServos, CenterServos, true);

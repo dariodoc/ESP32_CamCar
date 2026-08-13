@@ -27,7 +27,11 @@
 
 // --- PINES DE PERIFÉRICOS ---
 const int builtinLedPin = 2;
-const int lightPin = 0;
+const int laserPin = 5;
+const int leftRearLedPin = 7;
+const int rightRearLedPin = 6;
+const int obstacleDetectorPin = 5;
+
 const int buzzerPin = 33;
 const int buzzerChannel = 3;
 const int panPin = 12;

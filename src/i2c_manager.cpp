@@ -2,8 +2,8 @@
 #include <Wire.h>
 #include "PCF8574.h"
 
-extern PCF8574 motorcontrolpcf8574;
-extern PCF8574 peripheralspcf8574;
+extern PCF8574 leftmotorscontrolpcf8574;
+extern PCF8574 rightmotorscontrolpcf8574;
 
 static SemaphoreHandle_t i2cMutex = NULL;
 static int i2cFailCounter = 0;
@@ -43,8 +43,8 @@ bool lockI2C(TickType_t timeoutMs)
         Wire.setClock(400000);
         Wire.setTimeOut(50);
 
-        motorcontrolpcf8574.begin();
-        peripheralspcf8574.begin();
+        leftmotorscontrolpcf8574.begin();
+        rightmotorscontrolpcf8574.begin();
 
         i2cFailCounter = 0;
     }

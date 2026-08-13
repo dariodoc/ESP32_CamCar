@@ -7,39 +7,54 @@
 #include "Melodies.h"
 #include <Wire.h>
 
-PCF8574 motorcontrolpcf8574(&Wire, 0x20);
-PCF8574 peripheralspcf8574(&Wire, 0x24);
+PCF8574 leftmotorscontrolpcf8574(&Wire, 0x20);
+PCF8574 rightmotorscontrolpcf8574(&Wire, 0x24);
 
 Servo panServo;
 Servo tiltServo;
 
-volatile bool enableLight = false;
+volatile bool enableLaser = false;
 volatile bool melodyOn = false;
 volatile bool enableObstacleAvoidance = false;
 volatile bool obstacleFound = false;
 
-volatile int targetPan = 75;
-volatile int targetTilt = 90;
+volatile int panDirection = 0;
+volatile int tiltDirection = 0;
+
+// 🚀 Variables de posición global para mantener sincronía interna
+static int currentPan = panCenter;   // 75
+static int currentTilt = tiltCenter; // 90
 
 TaskHandle_t playMelodyTaskHandle = NULL;
 TaskHandle_t obstacleAvoidanceModeTaskHandle = NULL;
 TaskHandle_t servoControlTaskHandle = NULL;
 
+// 🚀 Función para centrar físicamente y actualizar contadores
+void centerServos()
+{
+    panDirection = 0;
+    tiltDirection = 0;
+    currentPan = panCenter;
+    currentTilt = tiltCenter;
+    panServo.write(panCenter);
+    tiltServo.write(tiltCenter);
+}
+
 // --- Control de LEDs Traseros ---
-void leftBackLed(int state)
+void leftRearLed(int state)
 {
     if (lockI2C(20))
     {
-        peripheralspcf8574.digitalWrite(P7, !state);
+        rightmotorscontrolpcf8574.digitalWrite(leftRearLedPin, !state);
         unlockI2C();
     }
 }
 
-void rightBackLed(int state)
+void rightRearLed(int state)
 {
     if (lockI2C(20))
     {
-        peripheralspcf8574.digitalWrite(P6, !state);
+        rightmotorscontrolpcf8574.digitalWrite(rightRearLedPin, !state);
         unlockI2C();
     }
 }
@@ -48,33 +63,33 @@ void setupPeripherals()
 {
     pinMode(builtinLedPin, OUTPUT);
     digitalWrite(builtinLedPin, HIGH); // LED OFF
-    pinMode(lightPin, OUTPUT);
-    digitalWrite(lightPin, LOW);
     ledcDetachPin(buzzerPin);
 
     Wire.begin(26, 27);
     Wire.setClock(400000);
     vTaskDelay(pdMS_TO_TICKS(100));
 
-    motorcontrolpcf8574.begin();
-    peripheralspcf8574.begin();
+    leftmotorscontrolpcf8574.begin();
+    rightmotorscontrolpcf8574.begin();
 
-    motorcontrolpcf8574.pinMode(In1pinleftMotor1, OUTPUT);
-    motorcontrolpcf8574.pinMode(In2pinleftMotor1, OUTPUT);
-    motorcontrolpcf8574.pinMode(STBYpin, OUTPUT);
-    motorcontrolpcf8574.pinMode(In1pinrightMotor2, OUTPUT);
-    motorcontrolpcf8574.pinMode(In2pinrightMotor2, OUTPUT);
+    leftmotorscontrolpcf8574.pinMode(In1pinleftMotor1, OUTPUT);
+    leftmotorscontrolpcf8574.pinMode(In2pinleftMotor1, OUTPUT);
+    leftmotorscontrolpcf8574.pinMode(STBYpin, OUTPUT);
+    leftmotorscontrolpcf8574.pinMode(In1pinrightMotor2, OUTPUT);
+    leftmotorscontrolpcf8574.pinMode(In2pinrightMotor2, OUTPUT);
 
-    peripheralspcf8574.pinMode(P5, INPUT);
-    peripheralspcf8574.pinMode(P7, OUTPUT);
-    peripheralspcf8574.pinMode(P6, OUTPUT);
+    leftmotorscontrolpcf8574.pinMode(laserPin, OUTPUT);
+
+    rightmotorscontrolpcf8574.pinMode(P5, INPUT);
+    rightmotorscontrolpcf8574.pinMode(P7, OUTPUT);
+    rightmotorscontrolpcf8574.pinMode(P6, OUTPUT);
 
     Wire.setTimeOut(50);
 
+    turnLaserOn(false);
     panServo.attach(panPin);
     tiltServo.attach(tiltPin);
-    panServo.write(panCenter);
-    tiltServo.write(tiltCenter);
+    centerServos();
 
     ledIndicator(3, 100);
 }
@@ -95,6 +110,15 @@ void ledIndicator(int state)
     digitalWrite(builtinLedPin, !state);
 }
 
+void turnLaserOn(bool state)
+{
+    if (lockI2C(20))
+    {
+        leftmotorscontrolpcf8574.digitalWrite(laserPin, !state);
+        unlockI2C();
+    }
+}
+
 void playMelody(void *parameters)
 {
     for (;;)
@@ -108,33 +132,49 @@ void playMelody(void *parameters)
 
 void servoControlTask(void *parameters)
 {
-    static int currentPan = panCenter;
-    static int currentTilt = tiltCenter;
-    const int maxStep = 2;
+    const int stepSize = 1;
 
     for (;;)
     {
-        if (currentPan == targetPan && currentTilt == targetTilt)
-        {
-            vTaskDelay(pdMS_TO_TICKS(100));
-            continue;
-        }
+        bool moved = false;
 
-        if (currentPan != targetPan)
-        {
-            int diff = targetPan - currentPan;
-            currentPan += (abs(diff) <= maxStep) ? diff : ((diff > 0) ? maxStep : -maxStep);
+        // --- Manejo Servo PAN ---
+        if (panDirection == 1 && currentPan < 180)
+        { // Mover Izquierda
+            currentPan += stepSize;
+            if (currentPan > 180)
+                currentPan = 180;
             panServo.write(currentPan);
+            moved = true;
+        }
+        else if (panDirection == 2 && currentPan > 0)
+        { // Mover Derecha
+            currentPan -= stepSize;
+            if (currentPan < 0)
+                currentPan = 0;
+            panServo.write(currentPan);
+            moved = true;
         }
 
-        if (currentTilt != targetTilt)
-        {
-            int diff = targetTilt - currentTilt;
-            currentTilt += (abs(diff) <= maxStep) ? diff : ((diff > 0) ? maxStep : -maxStep);
+        // --- Manejo Servo TILT ---
+        if (tiltDirection == 1 && currentTilt > 0)
+        { // Mover Arriba
+            currentTilt -= stepSize;
+            if (currentTilt < 0)
+                currentTilt = 0;
             tiltServo.write(currentTilt);
+            moved = true;
+        }
+        else if (tiltDirection == 2 && currentTilt < 180)
+        { // Mover Abajo
+            currentTilt += stepSize;
+            if (currentTilt > 180)
+                currentTilt = 180;
+            tiltServo.write(currentTilt);
+            moved = true;
         }
 
-        vTaskDelay(pdMS_TO_TICKS(20));
+        vTaskDelay(pdMS_TO_TICKS(moved ? 15 : 50));
     }
 }
 
@@ -155,7 +195,7 @@ void obstacleAvoidanceMode(void *parameters)
 
         if (lockI2C(20))
         {
-            detect = peripheralspcf8574.digitalRead(P5);
+            detect = rightmotorscontrolpcf8574.digitalRead(obstacleDetectorPin);
             unlockI2C();
         }
 

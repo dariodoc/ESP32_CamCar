@@ -13,7 +13,8 @@ TB6612FNG H-Bridge Motor Driver Example code (Refactorizado con Mutex FreeRTOS)
 #include <freertos/semphr.h>
 extern bool lockI2C(TickType_t timeoutMs = 20);
 extern void unlockI2C();
-extern PCF8574 motorcontrolpcf8574;
+extern PCF8574 leftmotorscontrolpcf8574;
+extern PCF8574 rightmotorscontrolpcf8574;
 #endif
 
 Motor::Motor(int In1pin, int In2pin, int PWMpin, int offset, int STBYpin)
@@ -41,8 +42,8 @@ void Motor::fwd(int speed)
 #ifdef PCF8574_ON
   if (lockI2C(20))
   {
-    motorcontrolpcf8574.digitalWrite(In1, HIGH);
-    motorcontrolpcf8574.digitalWrite(In2, LOW);
+    leftmotorscontrolpcf8574.digitalWrite(In1, HIGH);
+    leftmotorscontrolpcf8574.digitalWrite(In2, LOW);
     unlockI2C();
   }
 #else
@@ -65,8 +66,8 @@ void Motor::rev(int speed)
 #ifdef PCF8574_ON
   if (lockI2C(20))
   {
-    motorcontrolpcf8574.digitalWrite(In1, LOW);
-    motorcontrolpcf8574.digitalWrite(In2, HIGH);
+    leftmotorscontrolpcf8574.digitalWrite(In1, LOW);
+    leftmotorscontrolpcf8574.digitalWrite(In2, HIGH);
     unlockI2C();
   }
 #else
@@ -84,8 +85,8 @@ void Motor::brake()
   if (lockI2C(20))
   {
 
-    motorcontrolpcf8574.digitalWrite(In1, HIGH);
-    motorcontrolpcf8574.digitalWrite(In2, HIGH);
+    leftmotorscontrolpcf8574.digitalWrite(In1, HIGH);
+    leftmotorscontrolpcf8574.digitalWrite(In2, HIGH);
     unlockI2C();
   }
 #else
@@ -102,7 +103,7 @@ void Motor::standby()
 #ifdef PCF8574_ON
   if (lockI2C(20))
   {
-    motorcontrolpcf8574.digitalWrite(Standby, LOW);
+    leftmotorscontrolpcf8574.digitalWrite(Standby, LOW);
     unlockI2C();
   }
 #else

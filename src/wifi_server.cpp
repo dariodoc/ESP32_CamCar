@@ -18,7 +18,7 @@ AsyncWebSocket wsCarInput("/CarInput");
 
 int carInputClientId = 0;
 volatile int targetDirection = STOP;
-volatile unsigned long lastCommandTime = 0; // 👈 Inicialización
+volatile unsigned long lastCommandTime = 0;
 
 // Parámetros de la interfaz web
 const char *PARAM_INPUT_1 = "ssid";
@@ -49,7 +49,6 @@ void scanAndConnectToBestAP(const char *targetSSID, const char *password)
     Serial.println(" Scanning networks...");
 #endif
 
-    // Escaneo asíncrono = false, incluir redes ocultas = true
     int n = WiFi.scanNetworks(false, true);
     if (n > 0)
     {
@@ -92,10 +91,10 @@ void scanAndConnectToBestAP(const char *targetSSID, const char *password)
         ledIndicator(1, 250);
     }
 
-    WiFi.scanDelete(); // Libera la memoria RAM del escaneo
+    WiFi.scanDelete();
 }
 
-// Manejador del WebSocket para el Joystick / Motores
+// Manejador del WebSocket
 void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len)
 {
     if (type == WS_EVT_CONNECT)
@@ -114,10 +113,12 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
         if (client->id() == carInputClientId)
             carInputClientId = 0;
         targetDirection = STOP;
-        digitalWrite(lightPin, LOW);
-        enableLight = false;
-        targetPan = 75;
-        targetTilt = 90;
+        enableLaser = false;
+        turnLaserOn(enableLaser);
+
+        // Detener y centrar servos
+        centerServos();
+
         if (melodyOn)
         {
             melodyOn = false;
@@ -139,13 +140,11 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
         const uint8_t cmd = data[0];
         const uint8_t val = (len > 1) ? data[1] : 0;
 
-        // 🚀 Actualiza la marca de tiempo de vida con cualquier dato recibido
         lastCommandTime = millis();
 
         switch (cmd)
         {
-        case 'K': // 👈 Comando Heartbeat
-            // Simplemente actualiza lastCommandTime sin hacer nada más
+        case 'K': // Heartbeat
             break;
         case 'M':
             targetDirection = val;
@@ -154,19 +153,21 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
             motorSpeed = map(val, 1, 5, 200, 255);
             break;
         case 'L':
-            enableLight = !enableLight;
-            digitalWrite(lightPin, enableLight);
+            enableLaser = !enableLaser;
+            turnLaserOn(enableLaser);
             break;
+
+        // 🚀 Comandos de Servos Actualizados
         case 'P':
-            targetPan = val;
+            panDirection = val; // 0 = Stop, 1 = Izq, 2 = Der
             break;
         case 'T':
-            targetTilt = val;
+            tiltDirection = val; // 0 = Stop, 1 = Arriba, 2 = Abajo
             break;
         case 'C':
-            targetPan = 75;
-            targetTilt = 90;
+            centerServos();
             break;
+
         case 'H':
             melodyOn = !melodyOn;
             if (melodyOn)
@@ -219,7 +220,7 @@ void initWiFi()
 #endif
     }
 
-    WiFi.setSleep(false); // Desactiva el ahorro de energía para latencia cero
+    WiFi.setSleep(false);
     WiFi.setTxPower(WIFI_POWER_19_5dBm);
 
     ssid = readFile(SPIFFS, ssidPath);
@@ -227,7 +228,7 @@ void initWiFi()
     ip = readFile(SPIFFS, ipPath);
     gateway = readFile(SPIFFS, gatewayPath);
 
-    WiFi.mode(WIFI_AP_STA); // Modo dual para escaneo inicial o rescate
+    WiFi.mode(WIFI_AP_STA);
 
     if (!ssid.isEmpty())
     {
@@ -244,7 +245,7 @@ void initWiFi()
 
         if (WiFi.status() == WL_CONNECTED)
         {
-            WiFi.mode(WIFI_STA); // 🚀 APAGA el Access Point para liberar el canal de radio Wi-Fi
+            WiFi.mode(WIFI_STA);
             if (MDNS.begin("cameracar"))
                 MDNS.addService("http", "tcp", 80);
             ledIndicator(5, 50);
@@ -259,9 +260,7 @@ void initWiFi()
         WiFi.softAP("ESP-CAMERA-CAR", "carbondioxide");
     }
 
-    // ================= RUTAS DEL SERVIDOR WEB OPTIMIZADAS =================
-
-    // Interfaz Principal con Cache-Control de 1 día para acelerar cargas en el móvil
+    // Rutas del servidor Web
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
               {
         AsyncWebServerResponse *response = request->beginResponse(SPIFFS, "/index.html", "text/html");
@@ -274,7 +273,6 @@ void initWiFi()
         response->addHeader("Cache-Control", "max-age=86400");
         request->send(response); });
 
-    // Gestor de Wi-Fi
     server.on("/wifimanager", HTTP_GET, [](AsyncWebServerRequest *request)
               {
         AsyncWebServerResponse *response = request->beginResponse(SPIFFS, "/wifimanager.html", "text/html");
@@ -287,7 +285,6 @@ void initWiFi()
         response->addHeader("Cache-Control", "max-age=86400");
         request->send(response); });
 
-    // RUTA POST: Procesamiento directo sin variables intermedias y reinicio
     server.on("/", HTTP_POST, [](AsyncWebServerRequest *request)
               {
         int params = request->params();
@@ -306,15 +303,13 @@ void initWiFi()
 
     server.serveStatic("/", SPIFFS, "/");
 
-    // Handlers de WebSockets
     wsCarInput.onEvent(onCarInputWebSocketEvent);
     server.addHandler(&wsCarInput);
 
-    initCameraWebSocket(); // Inicializa el WebSocket binario de la cámara
+    initCameraWebSocket();
 
     server.begin();
 
-    // Apagar Bluetooth libera RAM e impide interferencias en la antena de 2.4 GHz
     btStop();
     esp_bt_controller_disable();
 }

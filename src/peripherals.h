@@ -6,9 +6,9 @@
 #include <freertos/task.h>
 
 // Variables Compartidas
-extern volatile int targetPan;
-extern volatile int targetTilt;
-extern volatile bool enableLight;
+extern volatile int panDirection;  // 0 = Stop, 1 = Izq, 2 = Der
+extern volatile int tiltDirection; // 0 = Stop, 1 = Arriba, 2 = Abajo
+extern volatile bool enableLaser;
 extern volatile bool melodyOn;
 extern volatile bool enableObstacleAvoidance;
 extern volatile bool obstacleFound;
@@ -18,12 +18,14 @@ extern TaskHandle_t playMelodyTaskHandle;
 extern TaskHandle_t obstacleAvoidanceModeTaskHandle;
 extern TaskHandle_t servoControlTaskHandle;
 
-// Prototipos de Periféricos y LEDs
+// Prototipos de Periféricos y Control
 void setupPeripherals();
+void centerServos(); // 🚀 Función para sincronizar y centrar servos
+void turnLaserOn(bool state);
 void ledIndicator(int blinkTimes, int delayTimeMS);
 void ledIndicator(int state);
-void leftBackLed(int state);
-void rightBackLed(int state);
+void leftRearLed(int state);
+void rightRearLed(int state);
 
 // Tareas FreeRTOS
 void playMelody(void *parameters);

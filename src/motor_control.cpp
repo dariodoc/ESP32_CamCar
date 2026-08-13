@@ -5,7 +5,8 @@
 #include "PCF8574.h"
 #include "SparkFun_TB6612.h"
 
-extern PCF8574 motorcontrolpcf8574;
+extern PCF8574 leftmotorscontrolpcf8574;
+extern PCF8574 rightmotorscontrolpcf8574;
 
 // Definición de los objetos motor y variables de velocidad
 Motor leftMotor(In1pinleftMotor1, In2pinleftMotor1, PWMPinleftMotor, offset, STBYpin);
@@ -18,7 +19,7 @@ void setCarMotorsStandby(bool enable)
 {
     if (lockI2C(20))
     {
-        motorcontrolpcf8574.digitalWrite(STBYpin, enable ? HIGH : LOW);
+        leftmotorscontrolpcf8574.digitalWrite(STBYpin, enable ? HIGH : LOW);
         unlockI2C();
     }
 }
@@ -66,11 +67,11 @@ void moveCar(int inputValue)
     case STOP:
         currentDirection = STOP;
         brake(leftMotor, rightMotor);
-        leftBackLed(HIGH);
-        rightBackLed(HIGH);
+        leftRearLed(HIGH);
+        rightRearLed(HIGH);
         return;
     }
 
-    leftBackLed(LOW);
-    rightBackLed(LOW);
+    leftRearLed(LOW);
+    rightRearLed(LOW);
 }
