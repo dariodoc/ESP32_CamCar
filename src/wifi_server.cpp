@@ -1,9 +1,9 @@
 #include "config.h"
-// 🚀 Limpiar definición previa si existe y aplicar la tuya ANTES de incluir AsyncWebServer
 #ifdef WS_MAX_QUEUED_MESSAGES
-  #undef WS_MAX_QUEUED_MESSAGES
+#undef WS_MAX_QUEUED_MESSAGES
 #endif
 #define WS_MAX_QUEUED_MESSAGES 1
+
 #include "wifi_server.h"
 #include "camera_setup.h"
 #include "motor_control.h"
@@ -16,6 +16,7 @@
 #include <ArduinoOTA.h>
 #include "esp_bt.h"
 #include <Update.h>
+#include <Preferences.h> // 👈 Librería nativa NVS
 
 AsyncWebServer server(80);
 AsyncWebSocket wsCarInput("/CarInput");
@@ -24,6 +25,9 @@ int carInputClientId = 0;
 volatile int targetDirection = STOP;
 volatile unsigned long lastCommandTime = 0;
 
+// Instancia de Preferences para NVS
+Preferences preferences;
+
 // Parámetros de la interfaz web
 const char *PARAM_INPUT_1 = "ssid";
 const char *PARAM_INPUT_2 = "pass";
@@ -31,10 +35,6 @@ const char *PARAM_INPUT_3 = "ip";
 const char *PARAM_INPUT_4 = "gateway";
 
 String ssid, pass, ip, gateway;
-const char *ssidPath = "/ssid.txt";
-const char *passPath = "/pass.txt";
-const char *ipPath = "/ip.txt";
-const char *gatewayPath = "/gateway.txt";
 
 void cleanupWSClients()
 {
@@ -103,8 +103,6 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
 {
     if (type == WS_EVT_CONNECT)
     {
-        // 🚀 Si entra una nueva conexión (por recargar F5 o reconexión),
-        // cerramos el cliente viejo si existía.
         if (carInputClientId != 0 && carInputClientId != client->id())
         {
             AsyncWebSocketClient *oldClient = server->client(carInputClientId);
@@ -112,15 +110,12 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
                 oldClient->close();
         }
 
-        // Registramos el nuevo ID de cliente y REACTIVAMOS los motores obligatoriamente
         carInputClientId = client->id();
         targetDirection = STOP;
-        setCarMotorsStandby(true); // 🚀 Vuelve a despertar el chip TB6612 (STBY = HIGH)
+        setCarMotorsStandby(true);
     }
     else if (type == WS_EVT_DISCONNECT)
     {
-        // 🚀 CRÍTICO: Solo apagamos los motores si el cliente que se desconecta
-        // es el cliente activo ACTUAL, no una sesión vieja que se cerró tarde.
         if (client->id() == carInputClientId)
         {
             carInputClientId = 0;
@@ -128,7 +123,6 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
             enableLaser = false;
             turnLaserOn(enableLaser);
 
-            // Detener y centrar servos
             centerServos();
 
             if (melodyOn)
@@ -142,13 +136,11 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
                 obstacleFound = false;
             }
 
-            // Ponemos los motores en standby solo si ya no hay nadie conectado
             setCarMotorsStandby(false);
         }
     }
     else if (type == WS_EVT_DATA && len > 0)
     {
-        // Aseguramos que solo el cliente activo pueda mandar órdenes a los motores
         if (client->id() != carInputClientId)
             return;
 
@@ -161,7 +153,6 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
 
         lastCommandTime = millis();
 
-        // 🚀 SEGURIDAD EXTRA: Asegurar que los motores estén activos al recibir un comando de movimiento
         setCarMotorsStandby(true);
 
         switch (cmd)
@@ -208,30 +199,9 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
     }
 }
 
-String readFile(fs::FS &fs, const char *path)
-{
-    File file = fs.open(path);
-    if (!file || file.isDirectory())
-        return String();
-
-    String fileContent = file.readStringUntil('\n');
-    fileContent.trim();
-    file.close();
-    return fileContent;
-}
-
-void writeFile(fs::FS &fs, const char *path, const char *message)
-{
-    File file = fs.open(path, FILE_WRITE);
-    if (file)
-    {
-        file.print(message);
-        file.close();
-    }
-}
-
 void initWiFi()
 {
+    // Mantenemos SPIFFS activo únicamente para la interfaz web (.html, .css)
     if (!SPIFFS.begin(true))
     {
 #ifdef DEBUG
@@ -242,10 +212,13 @@ void initWiFi()
     WiFi.setSleep(false);
     WiFi.setTxPower(WIFI_POWER_19_5dBm);
 
-    ssid = readFile(SPIFFS, ssidPath);
-    pass = readFile(SPIFFS, passPath);
-    ip = readFile(SPIFFS, ipPath);
-    gateway = readFile(SPIFFS, gatewayPath);
+    // 🚀 LECTURA DESDE NVS (Preferences) EN LUGAR DE SPIFFS
+    preferences.begin("wifi-config", true); // Abre espacio "wifi-config" en modo solo lectura
+    ssid = preferences.getString("ssid", "");
+    pass = preferences.getString("pass", "");
+    ip = preferences.getString("ip", "");
+    gateway = preferences.getString("gateway", "");
+    preferences.end();
 
     WiFi.mode(WIFI_AP_STA);
 
@@ -279,7 +252,7 @@ void initWiFi()
         WiFi.softAP("ESP-CAMERA-CAR", "carbondioxide");
     }
 
-    // Rutas del servidor Web
+    // Rutas del servidor Web (Archivos estáticos desde SPIFFS)
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
               {
         AsyncWebServerResponse *response = request->beginResponse(SPIFFS, "/index.html", "text/html");
@@ -304,19 +277,25 @@ void initWiFi()
         response->addHeader("Cache-Control", "max-age=86400");
         request->send(response); });
 
+    // 🚀 GUARDADO EN NVS AL RECIBIR FORMULARIO POST
     server.on("/", HTTP_POST, [](AsyncWebServerRequest *request)
               {
+        preferences.begin("wifi-config", false); // Abre en modo lectura/escritura
+
         int params = request->params();
         for (int i = 0; i < params; i++) {
             const AsyncWebParameter* p = request->getParam(i);
             if (p->isPost()) {
-                if (p->name() == PARAM_INPUT_1) { writeFile(SPIFFS, ssidPath, p->value().c_str()); }
-                if (p->name() == PARAM_INPUT_2) { writeFile(SPIFFS, passPath, p->value().c_str()); }
-                if (p->name() == PARAM_INPUT_3) { writeFile(SPIFFS, ipPath, p->value().c_str()); }
-                if (p->name() == PARAM_INPUT_4) { writeFile(SPIFFS, gatewayPath, p->value().c_str()); }
+                if (p->name() == PARAM_INPUT_1) { preferences.putString("ssid", p->value().c_str()); }
+                if (p->name() == PARAM_INPUT_2) { preferences.putString("pass", p->value().c_str()); }
+                if (p->name() == PARAM_INPUT_3) { preferences.putString("ip", p->value().c_str()); }
+                if (p->name() == PARAM_INPUT_4) { preferences.putString("gateway", p->value().c_str()); }
             }
         }
-        request->send(200, "text/plain", "Credenciales guardadas. El ESP32 se reiniciara...");
+        
+        preferences.end();
+
+        request->send(200, "text/plain", "Credenciales guardadas en NVS. El ESP32 se reiniciara...");
         vTaskDelay(pdMS_TO_TICKS(2000));
         ESP.restart(); });
 

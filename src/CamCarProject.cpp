@@ -85,5 +85,5 @@ void loop()
         lastSpeed = currentMotorSpeed;
     }
 
-    vTaskDelay(pdMS_TO_TICKS(1));
+    vTaskDelay(pdMS_TO_TICKS(10));
 }
