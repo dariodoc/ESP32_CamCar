@@ -4,10 +4,7 @@
 #include <AsyncTCP.h>
 #include "ESPAsyncWebServer.h"
 
-extern AsyncWebServer server; // Instancia global compartida en puerto 80
-
 AsyncWebSocket wsCamera("/CameraStream");
-const static int psramLimit = 4096;
 
 void onCameraWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len)
 {
@@ -32,15 +29,18 @@ void onCameraWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client
 
 void streamCameraFrame()
 {
-    // 🚀 Si no hay clientes activos escuchando, no solicitamos fotogramas al sensor
     if (wsCamera.count() == 0)
+        return;
+
+    // 🚀 Verificamos disponibilidad ANTES de capturar para evitar trabajo innecesario al sensor
+    if (!wsCamera.availableForWriteAll())
         return;
 
     camera_fb_t *fb = esp_camera_fb_get();
     if (!fb)
         return;
 
-    if (wsCamera.availableForWriteAll())
+    if (fb->buf != NULL && fb->len > 0)
     {
         wsCamera.binaryAll(fb->buf, fb->len);
     }
@@ -78,7 +78,7 @@ void initCameraWebSocket(AsyncWebServer *webServer)
         "CamWSStream",
         1024 * 4,
         NULL,
-        2,
+        3,
         NULL,
         0 // CORE 0
     );
@@ -115,7 +115,7 @@ void setupCamera()
         config.jpeg_quality = 30;
         config.fb_count = 3;                   // 3 búferes en PSRAM
         config.grab_mode = CAMERA_GRAB_LATEST; // Retener solo el cuadro más reciente
-        heap_caps_malloc_extmem_enable(psramLimit);
+       
     }
     else
     {
