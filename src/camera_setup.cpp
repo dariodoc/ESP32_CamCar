@@ -9,9 +9,30 @@ extern AsyncWebServer server; // Instancia global compartida en puerto 80
 AsyncWebSocket wsCamera("/CameraStream");
 const static int psramLimit = 4096;
 
+void onCameraWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len)
+{
+    if (type == WS_EVT_CONNECT)
+    {
+        uint32_t newClientId = client->id();
+
+        // 🚀 Desconectar forzosamente cualquier cliente anterior para liberar el socket de red
+        for (auto const &c : server->getClients())
+        {
+            if (c.id() != newClientId)
+            {
+                AsyncWebSocketClient *oldClient = server->client(c.id());
+                if (oldClient)
+                {
+                    oldClient->close();
+                }
+            }
+        }
+    }
+}
+
 void streamCameraFrame()
 {
-    // Solo procesa y envía si hay clientes conectados viendo el video
+    // 🚀 Si no hay clientes activos escuchando, no solicitamos fotogramas al sensor
     if (wsCamera.count() == 0)
         return;
 
@@ -19,7 +40,6 @@ void streamCameraFrame()
     if (!fb)
         return;
 
-    // Transmite los bytes binarios del JPEG directamente si el socket tiene espacio
     if (wsCamera.availableForWriteAll())
     {
         wsCamera.binaryAll(fb->buf, fb->len);
@@ -28,31 +48,39 @@ void streamCameraFrame()
     esp_camera_fb_return(fb);
 }
 
-// Tarea en Core 0 para capturar y enviar cuadros por WebSocket
 void cameraStreamTask(void *pvParameters)
 {
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+
     for (;;)
     {
         streamCameraFrame();
-        // Cede brevemente el control a la pila Wi-Fi en Core 0
-        vTaskDelay(pdMS_TO_TICKS(1));
+
+        // 🚀 Permite purgar sockets cerrados/fantasmas sin congelar el hilo
+        wsCamera.cleanupClients();
+
+        // 🚀 Cadencia de 50 ms (~20 FPS) esencial para permitir el intercambio de paquetes TCP
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(50));
     }
 }
 
-void initCameraWebSocket()
+void initCameraWebSocket(AsyncWebServer *webServer)
 {
-    // Agrega el handler del WebSocket al servidor asíncrono
-    server.addHandler(&wsCamera);
+    if (webServer != NULL)
+    {
+        // 🚀 Registrar el evento para detectar desconexiones/reconexiones
+        wsCamera.onEvent(onCameraWebSocketEvent);
+        webServer->addHandler(&wsCamera);
+    }
 
-    // Lanza la tarea de transmisión anclada explícitamente al CORE 0
     xTaskCreatePinnedToCore(
         cameraStreamTask,
         "CamWSStream",
-        4096,
+        1024 * 4,
         NULL,
         2,
         NULL,
-        0 // 👈 CORE 0
+        0 // CORE 0
     );
 }
 
@@ -83,7 +111,7 @@ void setupCamera()
     if (psramFound())
     {
         config.fb_location = CAMERA_FB_IN_PSRAM;
-        config.frame_size = FRAMESIZE_HVGA; // 
+        config.frame_size = FRAMESIZE_HVGA; //
         config.jpeg_quality = 30;
         config.fb_count = 3;                   // 3 búferes en PSRAM
         config.grab_mode = CAMERA_GRAB_LATEST; // Retener solo el cuadro más reciente
@@ -109,11 +137,11 @@ void setupCamera()
         s->set_awb_gain(s, 1);
         s->set_wb_mode(s, 0);
         s->set_exposure_ctrl(s, 1);
-        s->set_aec2(s, 0);     
-        s->set_ae_level(s, 1); 
-        s->set_bpc(s, 1);      
-        s->set_wpc(s, 1);      
-        s->set_raw_gma(s, 1);  
+        s->set_aec2(s, 0);
+        s->set_ae_level(s, 1);
+        s->set_bpc(s, 1);
+        s->set_wpc(s, 1);
+        s->set_raw_gma(s, 1);
         s->set_lenc(s, 0);
     }
 }

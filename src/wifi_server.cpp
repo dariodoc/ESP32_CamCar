@@ -1,11 +1,15 @@
 #include "config.h"
+// 🚀 Limpiar definición previa si existe y aplicar la tuya ANTES de incluir AsyncWebServer
+#ifdef WS_MAX_QUEUED_MESSAGES
+  #undef WS_MAX_QUEUED_MESSAGES
+#endif
+#define WS_MAX_QUEUED_MESSAGES 1
 #include "wifi_server.h"
 #include "camera_setup.h"
 #include "motor_control.h"
 #include "peripherals.h"
 #include <WiFi.h>
 #include "AsyncTCP.h"
-#define WS_MAX_QUEUED_MESSAGES 1
 #include "ESPAsyncWebServer.h"
 #include <SPIFFS.h>
 #include <ESPmDNS.h>
@@ -99,40 +103,55 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
 {
     if (type == WS_EVT_CONNECT)
     {
+        // 🚀 Si entra una nueva conexión (por recargar F5 o reconexión),
+        // cerramos el cliente viejo si existía.
         if (carInputClientId != 0 && carInputClientId != client->id())
         {
             AsyncWebSocketClient *oldClient = server->client(carInputClientId);
             if (oldClient)
                 oldClient->close();
         }
+
+        // Registramos el nuevo ID de cliente y REACTIVAMOS los motores obligatoriamente
         carInputClientId = client->id();
-        setCarMotorsStandby(true);
+        targetDirection = STOP;
+        setCarMotorsStandby(true); // 🚀 Vuelve a despertar el chip TB6612 (STBY = HIGH)
     }
     else if (type == WS_EVT_DISCONNECT)
     {
+        // 🚀 CRÍTICO: Solo apagamos los motores si el cliente que se desconecta
+        // es el cliente activo ACTUAL, no una sesión vieja que se cerró tarde.
         if (client->id() == carInputClientId)
+        {
             carInputClientId = 0;
-        targetDirection = STOP;
-        enableLaser = false;
-        turnLaserOn(enableLaser);
+            targetDirection = STOP;
+            enableLaser = false;
+            turnLaserOn(enableLaser);
 
-        // Detener y centrar servos
-        centerServos();
+            // Detener y centrar servos
+            centerServos();
 
-        if (melodyOn)
-        {
-            melodyOn = false;
-            ledcWriteTone(buzzerChannel, 0);
+            if (melodyOn)
+            {
+                melodyOn = false;
+                ledcWriteTone(buzzerChannel, 0);
+            }
+            if (enableObstacleAvoidance)
+            {
+                enableObstacleAvoidance = false;
+                obstacleFound = false;
+            }
+
+            // Ponemos los motores en standby solo si ya no hay nadie conectado
+            setCarMotorsStandby(false);
         }
-        if (enableObstacleAvoidance)
-        {
-            enableObstacleAvoidance = false;
-            obstacleFound = false;
-        }
-        setCarMotorsStandby(false);
     }
     else if (type == WS_EVT_DATA && len > 0)
     {
+        // Aseguramos que solo el cliente activo pueda mandar órdenes a los motores
+        if (client->id() != carInputClientId)
+            return;
+
         AwsFrameInfo *info = (AwsFrameInfo *)arg;
         if (!(info->final && info->index == 0 && info->len == len))
             return;
@@ -141,6 +160,9 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
         const uint8_t val = (len > 1) ? data[1] : 0;
 
         lastCommandTime = millis();
+
+        // 🚀 SEGURIDAD EXTRA: Asegurar que los motores estén activos al recibir un comando de movimiento
+        setCarMotorsStandby(true);
 
         switch (cmd)
         {
@@ -156,18 +178,15 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
             enableLaser = !enableLaser;
             turnLaserOn(enableLaser);
             break;
-
-        // 🚀 Comandos de Servos Actualizados
         case 'P':
-            panDirection = val; // 0 = Stop, 1 = Izq, 2 = Der
+            panDirection = val;
             break;
         case 'T':
-            tiltDirection = val; // 0 = Stop, 1 = Arriba, 2 = Abajo
+            tiltDirection = val;
             break;
         case 'C':
             centerServos();
             break;
-
         case 'H':
             melodyOn = !melodyOn;
             if (melodyOn)
@@ -289,7 +308,7 @@ void initWiFi()
               {
         int params = request->params();
         for (int i = 0; i < params; i++) {
-            AsyncWebParameter* p = request->getParam(i);
+            const AsyncWebParameter* p = request->getParam(i);
             if (p->isPost()) {
                 if (p->name() == PARAM_INPUT_1) { writeFile(SPIFFS, ssidPath, p->value().c_str()); }
                 if (p->name() == PARAM_INPUT_2) { writeFile(SPIFFS, passPath, p->value().c_str()); }
@@ -306,7 +325,7 @@ void initWiFi()
     wsCarInput.onEvent(onCarInputWebSocketEvent);
     server.addHandler(&wsCarInput);
 
-    initCameraWebSocket();
+    initCameraWebSocket(&server);
 
     server.begin();
 

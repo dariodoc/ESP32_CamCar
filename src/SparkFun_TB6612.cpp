@@ -1,22 +1,20 @@
 /******************************************************************************
 TB6612.cpp
-TB6612FNG H-Bridge Motor Driver Example code (Refactorizado con Mutex FreeRTOS)
+Refactorizado con Mutex FreeRTOS y puntero dinámico a PCF8574
 ******************************************************************************/
 
 #include "SparkFun_TB6612.h"
 #include <Arduino.h>
 
-#define PCF8574_ON // Uncomment to use PCF8574 by including "PCF8574.h"
+#define PCF8574_ON
 #ifdef PCF8574_ON
-#include <PCF8574.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 extern bool lockI2C(TickType_t timeoutMs = 20);
 extern void unlockI2C();
-extern PCF8574 leftmotorscontrolpcf8574;
-extern PCF8574 rightmotorscontrolpcf8574;
 #endif
 
+// Constructor base (GPIO directos / Fallback)
 Motor::Motor(int In1pin, int In2pin, int PWMpin, int offset, int STBYpin)
 {
   In1 = In1pin;
@@ -24,6 +22,20 @@ Motor::Motor(int In1pin, int In2pin, int PWMpin, int offset, int STBYpin)
   PWM = PWMpin;
   Offset = offset;
   Standby = STBYpin;
+  pcf = NULL;
+
+  pinMode(PWM, OUTPUT);
+}
+
+// 🚀 Constructor con soporte para PCF8574 vía Puntero
+Motor::Motor(int In1pin, int In2pin, int PWMpin, int offset, int STBYpin, PCF8574 *pcfDev)
+{
+  In1 = In1pin;
+  In2 = In2pin;
+  PWM = PWMpin;
+  Offset = offset;
+  Standby = STBYpin;
+  pcf = pcfDev; // Guarda la dirección de memoria del PCF asignado
 
   pinMode(PWM, OUTPUT);
 }
@@ -40,10 +52,10 @@ void Motor::drive(int speed)
 void Motor::fwd(int speed)
 {
 #ifdef PCF8574_ON
-  if (lockI2C(20))
+  if (pcf != NULL && lockI2C(20))
   {
-    leftmotorscontrolpcf8574.digitalWrite(In1, HIGH);
-    leftmotorscontrolpcf8574.digitalWrite(In2, LOW);
+    pcf->digitalWrite(In1, HIGH);
+    pcf->digitalWrite(In2, LOW);
     unlockI2C();
   }
 #else
@@ -64,10 +76,10 @@ void Motor::drive(int speed, int duration)
 void Motor::rev(int speed)
 {
 #ifdef PCF8574_ON
-  if (lockI2C(20))
+  if (pcf != NULL && lockI2C(20))
   {
-    leftmotorscontrolpcf8574.digitalWrite(In1, LOW);
-    leftmotorscontrolpcf8574.digitalWrite(In2, HIGH);
+    pcf->digitalWrite(In1, LOW);
+    pcf->digitalWrite(In2, HIGH);
     unlockI2C();
   }
 #else
@@ -82,11 +94,10 @@ void Motor::rev(int speed)
 void Motor::brake()
 {
 #ifdef PCF8574_ON
-  if (lockI2C(20))
+  if (pcf != NULL && lockI2C(20))
   {
-
-    leftmotorscontrolpcf8574.digitalWrite(In1, HIGH);
-    leftmotorscontrolpcf8574.digitalWrite(In2, HIGH);
+    pcf->digitalWrite(In1, HIGH);
+    pcf->digitalWrite(In2, HIGH);
     unlockI2C();
   }
 #else
@@ -101,9 +112,9 @@ void Motor::brake()
 void Motor::standby()
 {
 #ifdef PCF8574_ON
-  if (lockI2C(20))
+  if (pcf != NULL && lockI2C(20))
   {
-    leftmotorscontrolpcf8574.digitalWrite(Standby, LOW);
+    pcf->digitalWrite(Standby, LOW);
     unlockI2C();
   }
 #else
@@ -111,60 +122,55 @@ void Motor::standby()
 #endif
 }
 
+// Sobregargas de funciones globales
 void forward(Motor &motor1, Motor &motor2, int speed)
 {
   motor1.drive(speed);
   motor2.drive(speed);
 }
-
+void forward(Motor &motor1, Motor &motor2) { forward(motor1, motor2, DEFAULTSPEED); }
 void back(Motor &motor1, Motor &motor2, int speed)
 {
   int temp = abs(speed);
   motor1.drive(-temp);
   motor2.drive(-temp);
 }
-
+void back(Motor &motor1, Motor &motor2) { back(motor1, motor2, DEFAULTSPEED); }
 void left(Motor &left, Motor &right, int speed)
 {
   int temp = abs(speed);
   left.drive(-temp);
   right.drive(temp);
 }
-
 void right(Motor &left, Motor &right, int speed)
 {
   int temp = abs(speed);
   left.drive(temp);
   right.drive(-temp);
 }
-
 void brake(Motor &motor1, Motor &motor2)
 {
   motor1.brake();
   motor2.brake();
 }
-
 void forwardleft(Motor &left, Motor &right, int speed)
 {
   int temp = abs(speed) / 2;
   left.drive(temp);
   right.drive(speed);
 }
-
 void forwardright(Motor &left, Motor &right, int speed)
 {
   int temp = abs(speed) / 2;
   left.drive(speed);
   right.drive(temp);
 }
-
 void backleft(Motor &left, Motor &right, int speed)
 {
   int temp = abs(speed) / 2;
   left.drive(-temp);
   right.drive(-speed);
 }
-
 void backright(Motor &left, Motor &right, int speed)
 {
   int temp = abs(speed) / 2;
