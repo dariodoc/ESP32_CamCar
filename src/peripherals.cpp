@@ -179,7 +179,7 @@ void servoControlTask(void *parameters)
             moved = true;
         }
 
-        vTaskDelay(pdMS_TO_TICKS(moved ? 15 : 50));
+        vTaskDelay(pdMS_TO_TICKS(moved ? 20 : 50));
     }
 }
 
