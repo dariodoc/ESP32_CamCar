@@ -12,7 +12,7 @@ void onCameraWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client
     {
         uint32_t newClientId = client->id();
 
-        // 🚀 Desconectar forzosamente cualquier cliente anterior para liberar el socket de red
+        // 🚀 Desconectar forzosamente cualquier cliente anterior para liberar memoria y sockets de red
         for (auto const &c : server->getClients())
         {
             if (c.id() != newClientId)
@@ -24,16 +24,23 @@ void onCameraWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client
                 }
             }
         }
+#ifdef DEBUG
+        Serial.printf("📷 Cliente de cámara conectado: %u\n", newClientId);
+#endif
+    }
+    else if (type == WS_EVT_DISCONNECT)
+    {
+        // 🚀 Limpieza explícita en la instancia global wsCamera
+        wsCamera.cleanupClients();
+#ifdef DEBUG
+        Serial.printf("📷 Cliente de cámara desconectado: %u\n", client->id());
+#endif
     }
 }
 
 void streamCameraFrame()
 {
-    if (wsCamera.count() == 0)
-        return;
-
-    // 🚀 Verificamos disponibilidad ANTES de capturar para evitar trabajo innecesario al sensor
-    if (!wsCamera.availableForWriteAll())
+    if (wsCamera.count() == 0 || !wsCamera.availableForWriteAll())
         return;
 
     camera_fb_t *fb = esp_camera_fb_get();
@@ -111,11 +118,10 @@ void setupCamera()
     if (psramFound())
     {
         config.fb_location = CAMERA_FB_IN_PSRAM;
-        config.frame_size = FRAMESIZE_HVGA; //
+        config.frame_size = FRAMESIZE_HVGA;
         config.jpeg_quality = 30;
         config.fb_count = 3;                   // 3 búferes en PSRAM
         config.grab_mode = CAMERA_GRAB_LATEST; // Retener solo el cuadro más reciente
-       
     }
     else
     {

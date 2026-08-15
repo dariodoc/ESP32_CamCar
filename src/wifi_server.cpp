@@ -199,6 +199,14 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
     }
 }
 
+void initArduinoOTA()
+{
+    // Configuración obligatoria de ArduinoOTA
+    ArduinoOTA.onStart([]()
+                       { String type = (ArduinoOTA.getCommand() == U_FLASH) ? "sketch" : "filesystem"; });
+    ArduinoOTA.begin(); // 👈 Sin esto el ESP32 no escuchará peticiones en el puerto 3232
+}
+
 void initWiFi()
 {
     // Mantenemos SPIFFS activo únicamente para la interfaz web (.html, .css)
@@ -307,6 +315,7 @@ void initWiFi()
     initCameraWebSocket(&server);
 
     server.begin();
+    initArduinoOTA();
 
     btStop();
     esp_bt_controller_disable();

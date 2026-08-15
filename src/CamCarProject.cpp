@@ -4,7 +4,6 @@
 #include "motor_control.h"
 #include "peripherals.h"
 #include "wifi_server.h"
-#include <SPIFFS.h>
 #include <ArduinoOTA.h>
 #include "Melodies.h"
 
@@ -15,15 +14,7 @@ void initTasks()
     xTaskCreatePinnedToCore(obstacleAvoidanceMode, "obstacleAvoidanceMode", 1024 * 2, NULL, 2, &obstacleAvoidanceModeTaskHandle, CONFIG_ARDUINO_RUNNING_CORE);
 }
 
-void initArduinoOTA()
-{
-    // ... tu configuración de WiFi actual ...
 
-    // Configuración obligatoria de ArduinoOTA
-    ArduinoOTA.onStart([]()
-                       { String type = (ArduinoOTA.getCommand() == U_FLASH) ? "sketch" : "filesystem"; });
-    ArduinoOTA.begin(); // 👈 Sin esto el ESP32 no escuchará peticiones en el puerto 3232
-}
 
 void setup()
 {
@@ -39,7 +30,6 @@ void setup()
     setupPeripherals();
     initWiFi();
     initTasks();
-    initArduinoOTA();
 }
 
 void loop()

@@ -59,32 +59,37 @@ void rightRearLed(int state)
     }
 }
 
+void configurePCFPins()
+{
+    leftmotorscontrolpcf8574.pinMode(In1pinleftMotor1, OUTPUT);
+    leftmotorscontrolpcf8574.pinMode(In2pinleftMotor1, OUTPUT);
+    leftmotorscontrolpcf8574.pinMode(STBYpin, OUTPUT);
+    leftmotorscontrolpcf8574.pinMode(In1pinrightMotor2, OUTPUT);
+    leftmotorscontrolpcf8574.pinMode(In2pinrightMotor2, OUTPUT);
+    leftmotorscontrolpcf8574.pinMode(laserPin, OUTPUT);
+
+    rightmotorscontrolpcf8574.pinMode(obstacleDetectorPin, INPUT);
+    rightmotorscontrolpcf8574.pinMode(leftRearLedPin, OUTPUT);
+    rightmotorscontrolpcf8574.pinMode(rightRearLedPin, OUTPUT);
+}
+
 void setupPeripherals()
 {
     pinMode(builtinLedPin, OUTPUT);
     digitalWrite(builtinLedPin, HIGH); // LED OFF
     ledcDetachPin(buzzerPin);
 
-    Wire.begin(26, 27);
+    Wire.begin(SIOD_GPIO_NUM, SIOC_GPIO_NUM);    
+    vTaskDelay(pdMS_TO_TICKS(100)); // 👈 100 ms para arranque en frío
     Wire.setClock(400000);
-    vTaskDelay(pdMS_TO_TICKS(100));
+    Wire.setTimeOut(50);
 
     leftmotorscontrolpcf8574.begin();
     rightmotorscontrolpcf8574.begin();
 
-    leftmotorscontrolpcf8574.pinMode(In1pinleftMotor1, OUTPUT);
-    leftmotorscontrolpcf8574.pinMode(In2pinleftMotor1, OUTPUT);
-    leftmotorscontrolpcf8574.pinMode(STBYpin, OUTPUT);
-    leftmotorscontrolpcf8574.pinMode(In1pinrightMotor2, OUTPUT);
-    leftmotorscontrolpcf8574.pinMode(In2pinrightMotor2, OUTPUT);
+    configurePCFPins(); // 👈 Lógica centralizada de pines
 
-    leftmotorscontrolpcf8574.pinMode(laserPin, OUTPUT);
-
-    rightmotorscontrolpcf8574.pinMode(P5, INPUT);
-    rightmotorscontrolpcf8574.pinMode(P7, OUTPUT);
-    rightmotorscontrolpcf8574.pinMode(P6, OUTPUT);
-
-    Wire.setTimeOut(50);
+    
 
     turnLaserOn(false);
     panServo.attach(panPin);
