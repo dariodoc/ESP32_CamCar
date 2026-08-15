@@ -18,6 +18,8 @@
 #include <Update.h>
 #include <Preferences.h> // 👈 Librería nativa NVS
 
+extern AsyncWebSocket wsCamera;
+
 AsyncWebServer server(80);
 AsyncWebSocket wsCarInput("/CarInput");
 
@@ -39,6 +41,7 @@ String ssid, pass, ip, gateway;
 void cleanupWSClients()
 {
     wsCarInput.cleanupClients();
+    wsCamera.cleanupClients(); // 👈 Agrega esta línea para liberar memoria de sockets de cámara
 }
 
 // Escaneo BSSID para conectar al nodo con mejor señal en red mesh
@@ -132,6 +135,8 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
             carInputClientId = 0;
             joystickX = 0.0f;
             joystickY = 0.0f;
+
+            // 1. Detener periféricos y frenar hardware
             enableLaser = false;
             turnLaserOn(enableLaser);
             centerServos();
@@ -148,6 +153,7 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
             }
 
             setCarMotorsStandby(false);
+            cleanupWSClients(); // 👈 Limpieza explícita de clientes WebSocket para liberar memoria y sockets de red
         }
     }
     else if (type == WS_EVT_DATA && len > 0)
@@ -231,7 +237,7 @@ void initWiFi()
 #endif
     }
 
-    WiFi.setSleep(false);
+    WiFi.setSleep(WIFI_PS_NONE);
     WiFi.setTxPower(WIFI_POWER_19_5dBm);
 
     // 🚀 LECTURA DESDE NVS (Preferences) EN LUGAR DE SPIFFS

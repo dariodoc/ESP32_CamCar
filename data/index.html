@@ -352,10 +352,11 @@
             if (Math.abs(x) < 0.08) x = 0.0;
             if (Math.abs(y) < 0.08) y = 0.0;
 
-            if (!force && x === lastSentX && y === lastSentY) return;
-
             let currentTime = Date.now();
-            if (force || (currentTime - lastSendTime >= 50)) { // Limite 20 Hz (50 ms)
+
+            // 🚀 TRANSMISIÓN CONTINUA: Envía si cambio la posición, si se fuerza (Stop), 
+            // o si han pasado 50 ms MIENTRAS se mantenga presionado el joystick (paint == true)
+            if (force || (x !== lastSentX || y !== lastSentY) || (paint && currentTime - lastSendTime >= 50)) {
                 if (websocketCarInput && websocketCarInput.readyState === WebSocket.OPEN) {
                     const buffer = new ArrayBuffer(8);
                     const view = new DataView(buffer);

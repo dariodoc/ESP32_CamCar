@@ -23,15 +23,25 @@ void setCarMotorsStandby(bool enable)
     }
 }
 
+// int scaleMotorSpeed(float val)
+// {
+//     if (val == 0.0f) return 0;
+
+//     int minPWM = 200; // Supera la zona muerta mecánica
+//     int maxPWM = 255;
+
+//     int absPWM = minPWM + (int)(fabs(val) * (maxPWM - minPWM));
+//     return (val > 0) ? absPWM : -absPWM;
+// }
+
 int scaleMotorSpeed(float val)
 {
-    if (val == 0.0f) return 0;
-    
-    int minPWM = 200; // Supera la zona muerta mecánica
-    int maxPWM = 255;
-    
-    int absPWM = minPWM + (int)(fabs(val) * (maxPWM - minPWM));
-    return (val > 0) ? absPWM : -absPWM;
+    if (val == 0.0f)
+        return 0;
+
+    // 🚀 VELOCIDAD MÁXIMA CONSTANTE:
+    // Retorna 255 si el joystick va adelante, y -255 si va en reversa
+    return (val > 0) ? 255 : -255;
 }
 
 void processDifferentialDrive(float x, float y)
@@ -50,7 +60,8 @@ void processDifferentialDrive(float x, float y)
 
     // 2. Normalización para no rebasar 1.0
     float maxVal = fabs(left);
-    if (fabs(right) > maxVal) maxVal = fabs(right);
+    if (fabs(right) > maxVal)
+        maxVal = fabs(right);
 
     if (maxVal > 1.0f)
     {
