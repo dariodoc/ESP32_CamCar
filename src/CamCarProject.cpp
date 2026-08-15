@@ -36,10 +36,7 @@ void loop()
 {
     ArduinoOTA.handle();
 
-    static int lastSpeed = -1;
-    static int lastDirection = -1;
     static unsigned long lastCleanupTime = 0;
-
     unsigned long currentMillis = millis();
 
     if (currentMillis - lastCleanupTime >= 2000)
@@ -49,31 +46,24 @@ void loop()
     }
 
     // 🛑 CONTROL DE SEGURIDAD KEEP ALIVE (Timeout: 1200 ms)
-    // Si no se recibe latido ni datos en 1 segundo y el coche no está en STOP:
-    if (currentMillis - lastCommandTime > 1200 && targetDirection != STOP)
+    if (currentMillis - lastCommandTime > 1200 && (joystickX != 0.0f || joystickY != 0.0f))
     {
-        targetDirection = STOP;
+        joystickX = 0.0f;
+        joystickY = 0.0f;
 #ifdef DEBUG
         Serial.println("❌ Timeout de comunicación: Frenando por seguridad.");
 #endif
     }
 
-    int currentTargetDir = targetDirection;
-    int currentMotorSpeed = motorSpeed;
-
-    if (obstacleFound && (currentTargetDir == FORWARD || currentTargetDir == FORWARDLEFT || currentTargetDir == FORWARDRIGHT))
+    // Detección de Obstáculos
+    if (obstacleFound && joystickY > 0.0f)
     {
         toneToPlay(buzzerPin, buzzerChannel, NOTE_G5, 200);
-        currentTargetDir = STOP;
-        targetDirection = STOP;
+        joystickY = 0.0f; // Bloquea avance hacia adelante
     }
 
-    if (currentTargetDir != lastDirection || currentMotorSpeed != lastSpeed)
-    {
-        moveCar(currentTargetDir);
-        lastDirection = currentTargetDir;
-        lastSpeed = currentMotorSpeed;
-    }
+    // Actualiza movimiento proporcional
+    processDifferentialDrive(joystickX, joystickY);
 
     vTaskDelay(pdMS_TO_TICKS(10));
 }

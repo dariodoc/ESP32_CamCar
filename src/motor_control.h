@@ -3,9 +3,10 @@
 
 #include <Arduino.h>
 
-extern volatile int motorSpeed;
-extern volatile int currentDirection;
+extern volatile float joystickX;
+extern volatile float joystickY;
 
-void moveCar(int inputValue);
+void processDifferentialDrive(float x, float y);
 void setCarMotorsStandby(bool enable);
+
 #endif // MOTOR_CONTROL_H

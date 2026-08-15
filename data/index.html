@@ -273,7 +273,9 @@
             sendCommand('S', this.value);
         };
 
-        //////////////////// JOYSTICK ////////////////////////////
+        //////////////////// JOYSTICK BINARIO (20 Hz / 8 Bytes) ////////////////////////////
+
+        let lastSentX = 0, lastSentY = 0;
 
         function background() {
             x_orig = width / 2;
@@ -322,11 +324,7 @@
 
             let dx = mouseX - rect.left - x_orig;
             let dy = mouseY - rect.top - y_orig;
-            let invertedY = -dy;
             let distance = Math.sqrt(dx * dx + dy * dy);
-
-            let angle = Math.atan2(invertedY, dx) * 180 / Math.PI;
-            if (angle < 0) angle += 360;
 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             background();
@@ -336,58 +334,38 @@
                 x = mouseX - rect.left;
                 y = mouseY - rect.top;
             } else {
-                let rad = angle * Math.PI / 180;
-                x = x_orig + radius * Math.cos(rad);
-                y = y_orig - radius * Math.sin(rad);
+                let angleRad = Math.atan2(dy, dx);
+                x = x_orig + radius * Math.cos(angleRad);
+                y = y_orig + radius * Math.sin(angleRad);
             }
             joystick(x, y);
 
-            let speed = Math.round(100 * Math.min(distance, radius) / radius);
-            processAndSend(speed, angle, false);
+            // Normalización entre -1.0 y 1.0 (X = giro, Y = avance/reversa)
+            let normX = parseFloat(((x - x_orig) / radius).toFixed(2));
+            let normY = parseFloat((-(y - y_orig) / radius).toFixed(2)); // Invertido para que Arriba sea positivo
+
+            sendJoystickBinary(normX, normY);
         }
 
-        let pendingTimeout = null;
+        function sendJoystickBinary(x, y, force = false) {
+            // Zona muerta en JS
+            if (Math.abs(x) < 0.08) x = 0.0;
+            if (Math.abs(y) < 0.08) y = 0.0;
 
-        function processAndSend(speed, angle, force = false) {
-            if (!paint && !force) return;
+            if (!force && x === lastSentX && y === lastSentY) return;
 
-            let newDirection = STOP;
+            let currentTime = Date.now();
+            if (force || (currentTime - lastSendTime >= 50)) { // Limite 20 Hz (50 ms)
+                if (websocketCarInput && websocketCarInput.readyState === WebSocket.OPEN) {
+                    const buffer = new ArrayBuffer(8);
+                    const view = new DataView(buffer);
+                    view.setFloat32(0, x, true); // Little-Endian
+                    view.setFloat32(4, y, true);
+                    websocketCarInput.send(buffer);
 
-            if (speed < 15) {
-                newDirection = STOP;
-            } else {
-                if (angle >= 67.5 && angle < 112.5) newDirection = FORWARD;
-                else if (angle >= 112.5 && angle < 157.5) newDirection = FORWARDLEFT;
-                else if (angle >= 157.5 && angle < 202.5) newDirection = LEFT;
-                else if (angle >= 202.5 && angle < 247.5) newDirection = BACKLEFT;
-                else if (angle >= 247.5 && angle < 292.5) newDirection = BACKWARD;
-                else if (angle >= 292.5 && angle < 337.5) newDirection = BACKRIGHT;
-                else if (angle >= 337.5 || angle < 22.5) newDirection = RIGHT;
-                else if (angle >= 22.5 && angle < 67.5) newDirection = FORWARDRIGHT;
-            }
-
-            if (pendingTimeout) {
-                clearTimeout(pendingTimeout);
-                pendingTimeout = null;
-            }
-
-            if (newDirection !== currentDirection || force) {
-                let currentTime = Date.now();
-                let timeElapsed = currentTime - lastSendTime;
-
-                if (newDirection === STOP || force || timeElapsed >= 50) {
-                    currentDirection = newDirection;
-                    sendCommand('M', currentDirection);
+                    lastSentX = x;
+                    lastSentY = y;
                     lastSendTime = currentTime;
-                } else {
-                    let delayNeeded = 50 - timeElapsed;
-                    pendingTimeout = setTimeout(() => {
-                        if (paint) {
-                            currentDirection = newDirection;
-                            sendCommand('M', currentDirection);
-                            lastSendTime = Date.now();
-                        }
-                    }, delayNeeded);
                 }
             }
         }
@@ -404,41 +382,26 @@
 
             paint = false;
 
-            if (pendingTimeout) {
-                clearTimeout(pendingTimeout);
-                pendingTimeout = null;
-            }
-
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             background();
             joystick(width / 2, height / 2);
 
-            currentDirection = STOP;
-            sendCommand('M', STOP);
-            lastSendTime = Date.now();
-
-            setTimeout(() => {
-                sendCommand('M', STOP);
-            }, 40);
+            // Enviar Parada (0, 0) forzada
+            sendJoystickBinary(0.0, 0.0, true);
         }
+
+        //////////////////////////////////////////////////////////////////////////
 
         function initFunction() {
             resize();
             initCameraStream();
             initCarInputWebSocket();
 
-            // 🚀 KEEP ALIVE: Envía 'K' cada 400 ms
-            setInterval(() => {
-                sendCommand('K', currentDirection);
-            }, 400);
-
             // 🛑 PARADA DE EMERGENCIA INSTANTÁNEA
             window.addEventListener('beforeunload', () => {
-                if (websocketCamera) {
-                    websocketCamera.close();
-                }
+                if (websocketCamera) websocketCamera.close();
                 if (websocketCarInput) {
-                    sendCommand('M', STOP);
+                    sendJoystickBinary(0.0, 0.0, true);
                     websocketCarInput.close();
                 }
             });

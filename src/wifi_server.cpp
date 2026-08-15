@@ -99,6 +99,16 @@ void scanAndConnectToBestAP(const char *targetSSID, const char *password)
 }
 
 // Manejador del WebSocket
+// Estructura binaria de 8 bytes
+struct __attribute__((__packed__)) DifferentialInput
+{
+    float x;
+    float y;
+};
+
+extern volatile float joystickX;
+extern volatile float joystickY;
+
 void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len)
 {
     if (type == WS_EVT_CONNECT)
@@ -111,7 +121,8 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
         }
 
         carInputClientId = client->id();
-        targetDirection = STOP;
+        joystickX = 0.0f;
+        joystickY = 0.0f;
         setCarMotorsStandby(true);
     }
     else if (type == WS_EVT_DISCONNECT)
@@ -119,10 +130,10 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
         if (client->id() == carInputClientId)
         {
             carInputClientId = 0;
-            targetDirection = STOP;
+            joystickX = 0.0f;
+            joystickY = 0.0f;
             enableLaser = false;
             turnLaserOn(enableLaser);
-
             centerServos();
 
             if (melodyOn)
@@ -148,53 +159,56 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
         if (!(info->final && info->index == 0 && info->len == len))
             return;
 
-        const uint8_t cmd = data[0];
-        const uint8_t val = (len > 1) ? data[1] : 0;
-
         lastCommandTime = millis();
-
         setCarMotorsStandby(true);
 
-        switch (cmd)
+        // 🚀 SI RECIBE 8 BYTES: Es comando binario de Joystick
+        if (len == sizeof(DifferentialInput))
         {
-        case 'K': // Heartbeat
-            break;
-        case 'M':
-            targetDirection = val;
-            break;
-        case 'S':
-            motorSpeed = map(val, 1, 5, 200, 255);
-            break;
-        case 'L':
-            enableLaser = !enableLaser;
-            turnLaserOn(enableLaser);
-            break;
-        case 'P':
-            panDirection = val;
-            break;
-        case 'T':
-            tiltDirection = val;
-            break;
-        case 'C':
-            centerServos();
-            break;
-        case 'H':
-            melodyOn = !melodyOn;
-            if (melodyOn)
-                xTaskNotifyGive(playMelodyTaskHandle);
-            else
-                ledcWriteTone(buzzerChannel, 0);
-            break;
-        case 'O':
-            enableObstacleAvoidance = !enableObstacleAvoidance;
-            if (enableObstacleAvoidance)
-                xTaskNotifyGive(obstacleAvoidanceModeTaskHandle);
-            else
+            DifferentialInput *input = (DifferentialInput *)data;
+            joystickX = input->x;
+            joystickY = input->y;
+        }
+        // 🚀 SI RECIBE COMANDOS DE TEXTO/ACCESORIOS (L, P, T, C, H, O)
+        else
+        {
+            const uint8_t cmd = data[0];
+            const uint8_t val = (len > 1) ? data[1] : 0;
+
+            switch (cmd)
             {
-                obstacleFound = false;
-                targetDirection = STOP;
+            case 'L':
+                enableLaser = !enableLaser;
+                turnLaserOn(enableLaser);
+                break;
+            case 'P':
+                panDirection = val;
+                break;
+            case 'T':
+                tiltDirection = val;
+                break;
+            case 'C':
+                centerServos();
+                break;
+            case 'H':
+                melodyOn = !melodyOn;
+                if (melodyOn)
+                    xTaskNotifyGive(playMelodyTaskHandle);
+                else
+                    ledcWriteTone(buzzerChannel, 0);
+                break;
+            case 'O':
+                enableObstacleAvoidance = !enableObstacleAvoidance;
+                if (enableObstacleAvoidance)
+                    xTaskNotifyGive(obstacleAvoidanceModeTaskHandle);
+                else
+                {
+                    obstacleFound = false;
+                    joystickX = 0.0f;
+                    joystickY = 0.0f;
+                }
+                break;
             }
-            break;
         }
     }
 }

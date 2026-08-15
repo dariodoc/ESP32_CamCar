@@ -8,16 +8,11 @@
 extern PCF8574 leftmotorscontrolpcf8574;
 extern PCF8574 rightmotorscontrolpcf8574;
 
-// 🚀 INSTANCIACIÓN POR PUNTERO:
-// Si ambos motores están cableados al PCF izquierdo (0x20):
 Motor leftMotor(In1pinleftMotor1, In2pinleftMotor1, PWMPinleftMotor, offset, STBYpin, &leftmotorscontrolpcf8574);
 Motor rightMotor(In1pinrightMotor2, In2pinrightMotor2, PWMPinrightMotor, offset, STBYpin, &rightmotorscontrolpcf8574);
 
-// (Nota: Si el motor derecho estuviese físicamente conectado al segundo PCF (0x24),
-//  solo le pasarías &rightmotorscontrolpcf8574 al segundo objeto y funcionaría automáticamente).
-
-volatile int motorSpeed = 255;
-volatile int currentDirection = STOP;
+volatile float joystickX = 0.0f;
+volatile float joystickY = 0.0f;
 
 void setCarMotorsStandby(bool enable)
 {
@@ -28,53 +23,48 @@ void setCarMotorsStandby(bool enable)
     }
 }
 
-void moveCar(int inputValue)
+int scaleMotorSpeed(float val)
 {
-#ifdef DEBUG
-    Serial.printf("Got value as %d\n", inputValue);
-#endif
+    if (val == 0.0f) return 0;
+    
+    int minPWM = 200; // Supera la zona muerta mecánica
+    int maxPWM = 255;
+    
+    int absPWM = minPWM + (int)(fabs(val) * (maxPWM - minPWM));
+    return (val > 0) ? absPWM : -absPWM;
+}
 
-    switch (inputValue)
+void processDifferentialDrive(float x, float y)
+{
+    if (x == 0.0f && y == 0.0f)
     {
-    case FORWARD:
-        currentDirection = FORWARD;
-        forward(leftMotor, rightMotor, motorSpeed);
-        break;
-    case BACKWARD:
-        currentDirection = BACKWARD;
-        back(leftMotor, rightMotor, motorSpeed);
-        break;
-    case LEFT:
-        currentDirection = LEFT;
-        left(leftMotor, rightMotor, motorSpeed);
-        break;
-    case RIGHT:
-        currentDirection = RIGHT;
-        right(leftMotor, rightMotor, motorSpeed);
-        break;
-    case FORWARDLEFT:
-        currentDirection = FORWARDLEFT;
-        forwardleft(leftMotor, rightMotor, motorSpeed);
-        break;
-    case FORWARDRIGHT:
-        currentDirection = FORWARDRIGHT;
-        forwardright(leftMotor, rightMotor, motorSpeed);
-        break;
-    case BACKLEFT:
-        currentDirection = BACKLEFT;
-        backleft(leftMotor, rightMotor, motorSpeed);
-        break;
-    case BACKRIGHT:
-        currentDirection = BACKRIGHT;
-        backright(leftMotor, rightMotor, motorSpeed);
-        break;
-    case STOP:
-        currentDirection = STOP;
         brake(leftMotor, rightMotor);
         leftRearLed(HIGH);
         rightRearLed(HIGH);
         return;
     }
+
+    // 1. Cinemática Diferencial
+    float left = y + x;
+    float right = y - x;
+
+    // 2. Normalización para no rebasar 1.0
+    float maxVal = fabs(left);
+    if (fabs(right) > maxVal) maxVal = fabs(right);
+
+    if (maxVal > 1.0f)
+    {
+        left /= maxVal;
+        right /= maxVal;
+    }
+
+    // 3. Escalado al rango de motores (200-255)
+    int speedLeft = scaleMotorSpeed(left);
+    int speedRight = scaleMotorSpeed(right);
+
+    // 4. Aplicación de movimiento
+    leftMotor.drive(speedLeft);
+    rightMotor.drive(speedRight);
 
     leftRearLed(LOW);
     rightRearLed(LOW);
