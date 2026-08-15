@@ -14,15 +14,6 @@ Motor rightMotor(In1pinrightMotor2, In2pinrightMotor2, PWMPinrightMotor, offset,
 volatile float joystickX = 0.0f;
 volatile float joystickY = 0.0f;
 
-void setCarMotorsStandby(bool enable)
-{
-    if (lockI2C(20))
-    {
-        leftmotorscontrolpcf8574.digitalWrite(STBYpin, enable ? HIGH : LOW);
-        unlockI2C();
-    }
-}
-
 // int scaleMotorSpeed(float val)
 // {
 //     if (val == 0.0f) return 0;

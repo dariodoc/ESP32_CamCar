@@ -21,7 +21,7 @@ extern TaskHandle_t servoControlTaskHandle;
 // Prototipos de Periféricos y Control
 void setupPeripherals();
 void configurePCFPins(); // 🚀 Función auxiliar para configurar modos de pines I2C
-void centerServos(); // 🚀 Función para sincronizar y centrar servos
+void centerServos();     // 🚀 Función para sincronizar y centrar servos
 void turnLaserOn(bool state);
 void ledIndicator(int blinkTimes, int delayTimeMS);
 void ledIndicator(int state);

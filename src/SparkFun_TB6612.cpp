@@ -22,7 +22,6 @@ Motor::Motor(int In1pin, int In2pin, int PWMpin, int offset, int STBYpin)
   PWM = PWMpin;
   Offset = offset;
   Standby = STBYpin;
-  pcf = NULL;
 
   pinMode(PWM, OUTPUT);
 }
@@ -54,6 +53,7 @@ void Motor::fwd(int speed)
 #ifdef PCF8574_ON
   if (pcf != NULL && lockI2C(20))
   {
+    pcf->digitalWrite(Standby, HIGH);
     pcf->digitalWrite(In1, HIGH);
     pcf->digitalWrite(In2, LOW);
     unlockI2C();
@@ -78,6 +78,7 @@ void Motor::rev(int speed)
 #ifdef PCF8574_ON
   if (pcf != NULL && lockI2C(20))
   {
+    pcf->digitalWrite(Standby, HIGH);
     pcf->digitalWrite(In1, LOW);
     pcf->digitalWrite(In2, HIGH);
     unlockI2C();
@@ -96,6 +97,7 @@ void Motor::brake()
 #ifdef PCF8574_ON
   if (pcf != NULL && lockI2C(20))
   {
+    pcf->digitalWrite(Standby, LOW);
     pcf->digitalWrite(In1, HIGH);
     pcf->digitalWrite(In2, HIGH);
     unlockI2C();
@@ -136,44 +138,22 @@ void back(Motor &motor1, Motor &motor2, int speed)
   motor2.drive(-temp);
 }
 void back(Motor &motor1, Motor &motor2) { back(motor1, motor2, DEFAULTSPEED); }
-void left(Motor &left, Motor &right, int speed)
+void left(Motor &motor1, Motor &motor2, int speed)
 {
   int temp = abs(speed);
-  left.drive(-temp);
-  right.drive(temp);
+  motor1.drive(-temp);
+  motor2.drive(temp);
 }
-void right(Motor &left, Motor &right, int speed)
+void left(Motor &motor1, Motor &motor2) { left(motor1, motor2, DEFAULTSPEED); }
+void right(Motor &motor1, Motor &motor2, int speed)
 {
   int temp = abs(speed);
-  left.drive(temp);
-  right.drive(-temp);
+  motor1.drive(temp);
+  motor2.drive(-temp);
 }
+void right(Motor &motor1, Motor &motor2) { right(motor1, motor2, DEFAULTSPEED); }
 void brake(Motor &motor1, Motor &motor2)
 {
   motor1.brake();
   motor2.brake();
-}
-void forwardleft(Motor &left, Motor &right, int speed)
-{
-  int temp = abs(speed) / 2;
-  left.drive(temp);
-  right.drive(speed);
-}
-void forwardright(Motor &left, Motor &right, int speed)
-{
-  int temp = abs(speed) / 2;
-  left.drive(speed);
-  right.drive(temp);
-}
-void backleft(Motor &left, Motor &right, int speed)
-{
-  int temp = abs(speed) / 2;
-  left.drive(-temp);
-  right.drive(-speed);
-}
-void backright(Motor &left, Motor &right, int speed)
-{
-  int temp = abs(speed) / 2;
-  left.drive(-speed);
-  right.drive(-temp);
 }

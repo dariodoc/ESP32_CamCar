@@ -79,7 +79,7 @@ void setupPeripherals()
     digitalWrite(builtinLedPin, HIGH); // LED OFF
     ledcDetachPin(buzzerPin);
 
-    Wire.begin(SIOD_GPIO_NUM, SIOC_GPIO_NUM);    
+    Wire.begin(SIOD_GPIO_NUM, SIOC_GPIO_NUM);
     vTaskDelay(pdMS_TO_TICKS(100)); // 👈 100 ms para arranque en frío
     Wire.setClock(400000);
     Wire.setTimeOut(50);
@@ -88,8 +88,6 @@ void setupPeripherals()
     rightmotorscontrolpcf8574.begin();
 
     configurePCFPins(); // 👈 Lógica centralizada de pines
-
-    
 
     turnLaserOn(false);
     panServo.attach(panPin);

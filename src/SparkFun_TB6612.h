@@ -11,7 +11,7 @@ class Motor
 public:
     // Constructor original
     Motor(int In1pin, int In2pin, int PWMpin, int offset, int STBYpin);
-    
+
     // 🚀 NUEVO CONSTRUCTOR: Recibe el puntero al PCF8574
     Motor(int In1pin, int In2pin, int PWMpin, int offset, int STBYpin, PCF8574 *pcfDev);
 
@@ -38,11 +38,5 @@ void left(Motor &left, Motor &right, int speed);
 void right(Motor &left, Motor &right, int speed);
 
 void brake(Motor &motor1, Motor &motor2);
-
-void forwardleft(Motor &left, Motor &right, int speed);
-void forwardright(Motor &left, Motor &right, int speed);
-
-void backleft(Motor &left, Motor &right, int speed);
-void backright(Motor &left, Motor &right, int speed);
 
 #endif

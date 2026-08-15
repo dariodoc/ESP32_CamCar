@@ -126,7 +126,6 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
         carInputClientId = client->id();
         joystickX = 0.0f;
         joystickY = 0.0f;
-        setCarMotorsStandby(true);
     }
     else if (type == WS_EVT_DISCONNECT)
     {
@@ -152,7 +151,6 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
                 obstacleFound = false;
             }
 
-            setCarMotorsStandby(false);
             cleanupWSClients(); // 👈 Limpieza explícita de clientes WebSocket para liberar memoria y sockets de red
         }
     }
@@ -166,7 +164,6 @@ void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *clie
             return;
 
         lastCommandTime = millis();
-        setCarMotorsStandby(true);
 
         // 🚀 SI RECIBE 8 BYTES: Es comando binario de Joystick
         if (len == sizeof(DifferentialInput))

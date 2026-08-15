@@ -14,8 +14,6 @@ void initTasks()
     xTaskCreatePinnedToCore(obstacleAvoidanceMode, "obstacleAvoidanceMode", 1024 * 2, NULL, 2, &obstacleAvoidanceModeTaskHandle, CONFIG_ARDUINO_RUNNING_CORE);
 }
 
-
-
 void setup()
 {
     // Forzar explícitamente los 240 MHz desde el arranque

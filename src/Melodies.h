@@ -93,7 +93,6 @@
 #define NOTE_D8 4699
 #define NOTE_DS8 4978
 
-
 void toneToPlay(uint32_t buzzPin, uint8_t buzzChannel, uint32_t buzzNote, uint32_t buzzDuration);
 
 void toneToPlay(uint32_t buzzPin, uint8_t buzzChannel, uint32_t buzzNote, uint32_t buzzDuration, uint32_t buzzBips);
