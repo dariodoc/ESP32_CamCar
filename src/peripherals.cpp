@@ -64,10 +64,10 @@ void configurePCFPins()
     leftmotorscontrolpcf8574.pinMode(In1pinleftMotor1, OUTPUT);
     leftmotorscontrolpcf8574.pinMode(In2pinleftMotor1, OUTPUT);
     leftmotorscontrolpcf8574.pinMode(STBYpin, OUTPUT);
-    leftmotorscontrolpcf8574.pinMode(In1pinrightMotor2, OUTPUT);
-    leftmotorscontrolpcf8574.pinMode(In2pinrightMotor2, OUTPUT);
     leftmotorscontrolpcf8574.pinMode(laserPin, OUTPUT);
 
+    rightmotorscontrolpcf8574.pinMode(In1pinrightMotor2, OUTPUT);
+    rightmotorscontrolpcf8574.pinMode(In2pinrightMotor2, OUTPUT);
     rightmotorscontrolpcf8574.pinMode(obstacleDetectorPin, INPUT);
     rightmotorscontrolpcf8574.pinMode(leftRearLedPin, OUTPUT);
     rightmotorscontrolpcf8574.pinMode(rightRearLedPin, OUTPUT);

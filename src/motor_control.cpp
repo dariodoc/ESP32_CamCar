@@ -11,7 +11,7 @@ extern PCF8574 rightmotorscontrolpcf8574;
 // 🚀 INSTANCIACIÓN POR PUNTERO:
 // Si ambos motores están cableados al PCF izquierdo (0x20):
 Motor leftMotor(In1pinleftMotor1, In2pinleftMotor1, PWMPinleftMotor, offset, STBYpin, &leftmotorscontrolpcf8574);
-Motor rightMotor(In1pinrightMotor2, In2pinrightMotor2, PWMPinrightMotor, offset, STBYpin, &leftmotorscontrolpcf8574);
+Motor rightMotor(In1pinrightMotor2, In2pinrightMotor2, PWMPinrightMotor, offset, STBYpin, &rightmotorscontrolpcf8574);
 
 // (Nota: Si el motor derecho estuviese físicamente conectado al segundo PCF (0x24),
 //  solo le pasarías &rightmotorscontrolpcf8574 al segundo objeto y funcionaría automáticamente).
