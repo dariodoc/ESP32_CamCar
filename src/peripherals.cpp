@@ -31,13 +31,6 @@ TaskHandle_t servoControlTaskHandle = NULL;
 
 volatile bool isCentering = false; // 👈 Bandera de centrado suave
 
-void centerServos()
-{
-    panDirection = 0;
-    tiltDirection = 0;
-    isCentering = true; // 🚀 Notifica a servoControlTask que inicie el centrado suave
-}
-
 // --- Control de LEDs Traseros ---
 void leftRearLed(int state)
 {
@@ -136,6 +129,13 @@ void playMelody(void *parameters)
         melodyOn = false;
         ledcWriteTone(buzzerChannel, 0);
     }
+}
+
+void centerServos()
+{
+    panDirection = 0;
+    tiltDirection = 0;
+    isCentering = true; // 🚀 Notifica a servoControlTask que inicie el centrado suave
 }
 
 void servoControlTask(void *parameters)
