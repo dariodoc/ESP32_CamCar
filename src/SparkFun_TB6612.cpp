@@ -6,7 +6,7 @@ Refactorizado con Mutex FreeRTOS y puntero dinámico a PCF8574
 #include "SparkFun_TB6612.h"
 #include <Arduino.h>
 
-#define PCF8574_ON
+#define PCF8574_ON // Define this to enable PCF8574 support
 #ifdef PCF8574_ON
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
@@ -39,15 +39,6 @@ Motor::Motor(int In1pin, int In2pin, int PWMpin, int offset, int STBYpin, PCF857
   pinMode(PWM, OUTPUT);
 }
 
-void Motor::drive(int speed)
-{
-  speed = speed * Offset;
-  if (speed >= 0)
-    fwd(speed);
-  else
-    rev(-speed);
-}
-
 void Motor::fwd(int speed)
 {
 #ifdef PCF8574_ON
@@ -65,12 +56,6 @@ void Motor::fwd(int speed)
 #endif
 
   analogWrite(PWM, speed);
-}
-
-void Motor::drive(int speed, int duration)
-{
-  drive(speed);
-  delay(duration);
 }
 
 void Motor::rev(int speed)
@@ -97,13 +82,13 @@ void Motor::brake()
 #ifdef PCF8574_ON
   if (pcf != NULL && lockI2C(20))
   {
-    pcf->digitalWrite(Standby, LOW);
+    // pcf->digitalWrite(Standby, LOW);
     pcf->digitalWrite(In1, HIGH);
     pcf->digitalWrite(In2, HIGH);
     unlockI2C();
   }
 #else
-  digitalWrite(Standby, LOW);
+  // digitalWrite(Standby, LOW);
   digitalWrite(In1, HIGH);
   digitalWrite(In2, HIGH);
 #endif
@@ -111,49 +96,17 @@ void Motor::brake()
   analogWrite(PWM, 0);
 }
 
-void Motor::standby()
+void Motor::drive(int speed)
 {
-#ifdef PCF8574_ON
-  if (pcf != NULL && lockI2C(20))
-  {
-    pcf->digitalWrite(Standby, LOW);
-    unlockI2C();
-  }
-#else
-  digitalWrite(Standby, LOW);
-#endif
+  speed = speed * Offset;
+  if (speed >= 0)
+    fwd(speed);
+  else
+    rev(-speed);
 }
 
-// Sobregargas de funciones globales
-void forward(Motor &motor1, Motor &motor2, int speed)
+void Motor::drive(int speed, int duration)
 {
-  motor1.drive(speed);
-  motor2.drive(speed);
-}
-void forward(Motor &motor1, Motor &motor2) { forward(motor1, motor2, DEFAULTSPEED); }
-void back(Motor &motor1, Motor &motor2, int speed)
-{
-  int temp = abs(speed);
-  motor1.drive(-temp);
-  motor2.drive(-temp);
-}
-void back(Motor &motor1, Motor &motor2) { back(motor1, motor2, DEFAULTSPEED); }
-void left(Motor &motor1, Motor &motor2, int speed)
-{
-  int temp = abs(speed);
-  motor1.drive(-temp);
-  motor2.drive(temp);
-}
-void left(Motor &motor1, Motor &motor2) { left(motor1, motor2, DEFAULTSPEED); }
-void right(Motor &motor1, Motor &motor2, int speed)
-{
-  int temp = abs(speed);
-  motor1.drive(temp);
-  motor2.drive(-temp);
-}
-void right(Motor &motor1, Motor &motor2) { right(motor1, motor2, DEFAULTSPEED); }
-void brake(Motor &motor1, Motor &motor2)
-{
-  motor1.brake();
-  motor2.brake();
+  drive(speed);
+  delay(duration);
 }

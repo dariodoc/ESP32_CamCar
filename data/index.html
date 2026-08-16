@@ -17,14 +17,6 @@
 
     <table id="MainTable" style="width:345px; margin:auto; table-layout:fixed" cellspacing=10>
 
-        <tr>
-            <td style="text-align:left"><b>Speed:</b></td>
-            <td colspan="2">
-                <div class="slidecontainer">
-                    <input type="range" min="1" max="5" value="5" class="slider" id="Speed" style="width: 100%;">
-                </div>
-            </td>
-        </tr>
 
         <tr>
             <td style="text-align:left"><b>Pan:</b></td>
@@ -130,7 +122,6 @@
 
             websocketCarInput.onopen = function () {
                 console.log('CarInput WebSocket connected');
-                sendCommand('S', document.getElementById("Speed").value);
             };
 
             websocketCarInput.onclose = function () {
@@ -268,10 +259,6 @@
                 element.addEventListener('mouseleave', handleEnd);
             }
         }
-
-        document.getElementById("Speed").onchange = function () {
-            sendCommand('S', this.value);
-        };
 
         //////////////////// JOYSTICK BINARIO (20 Hz / 8 Bytes) ////////////////////////////
 

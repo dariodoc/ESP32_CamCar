@@ -7,8 +7,8 @@
 #include "Melodies.h"
 #include <Wire.h>
 
-PCF8574 leftmotorscontrolpcf8574(&Wire, 0x20);
-PCF8574 rightmotorscontrolpcf8574(&Wire, 0x24);
+PCF8574 LMCpcf8574(&Wire, 0x20);
+PCF8574 RMCpcf8574(&Wire, 0x24);
 
 Servo panServo;
 Servo tiltServo;
@@ -45,7 +45,7 @@ void leftRearLed(int state)
 {
     if (lockI2C(20))
     {
-        rightmotorscontrolpcf8574.digitalWrite(leftRearLedPin, !state);
+        LMCpcf8574.digitalWrite(leftRearLedPin, !state);
         unlockI2C();
     }
 }
@@ -54,23 +54,30 @@ void rightRearLed(int state)
 {
     if (lockI2C(20))
     {
-        rightmotorscontrolpcf8574.digitalWrite(rightRearLedPin, !state);
+        RMCpcf8574.digitalWrite(rightRearLedPin, !state);
         unlockI2C();
     }
 }
 
 void configurePCFPins()
 {
-    leftmotorscontrolpcf8574.pinMode(In1pinleftMotor1, OUTPUT);
-    leftmotorscontrolpcf8574.pinMode(In2pinleftMotor1, OUTPUT);
-    leftmotorscontrolpcf8574.pinMode(STBYpin, OUTPUT);
-    leftmotorscontrolpcf8574.pinMode(laserPin, OUTPUT);
+    LMCpcf8574.pinMode(motorFLIn1pin, OUTPUT);
+    LMCpcf8574.pinMode(motorFLIn2pin, OUTPUT);
+    LMCpcf8574.pinMode(motorBLIn1pin, OUTPUT);
+    LMCpcf8574.pinMode(motorBLIn2pin, OUTPUT);
+    LMCpcf8574.pinMode(leftSTBYpin, OUTPUT);
 
-    rightmotorscontrolpcf8574.pinMode(In1pinrightMotor2, OUTPUT);
-    rightmotorscontrolpcf8574.pinMode(In2pinrightMotor2, OUTPUT);
-    rightmotorscontrolpcf8574.pinMode(obstacleDetectorPin, INPUT);
-    rightmotorscontrolpcf8574.pinMode(leftRearLedPin, OUTPUT);
-    rightmotorscontrolpcf8574.pinMode(rightRearLedPin, OUTPUT);
+    LMCpcf8574.pinMode(leftRearLedPin, OUTPUT);
+    LMCpcf8574.pinMode(laserPin, OUTPUT);
+
+    RMCpcf8574.pinMode(motorFRIn1pin, OUTPUT);
+    RMCpcf8574.pinMode(motorFRIn2pin, OUTPUT);
+    RMCpcf8574.pinMode(motorBRIn1pin, OUTPUT);
+    RMCpcf8574.pinMode(motorBRIn2pin, OUTPUT);
+    RMCpcf8574.pinMode(rightSTBYpin, OUTPUT);
+
+    RMCpcf8574.pinMode(rightRearLedPin, OUTPUT);
+    RMCpcf8574.pinMode(obstacleDetectorPin, INPUT);
 }
 
 void setupPeripherals()
@@ -84,8 +91,8 @@ void setupPeripherals()
     Wire.setClock(400000);
     Wire.setTimeOut(50);
 
-    leftmotorscontrolpcf8574.begin();
-    rightmotorscontrolpcf8574.begin();
+    LMCpcf8574.begin();
+    RMCpcf8574.begin();
 
     configurePCFPins(); // 👈 Lógica centralizada de pines
 
@@ -117,7 +124,7 @@ void turnLaserOn(bool state)
 {
     if (lockI2C(20))
     {
-        leftmotorscontrolpcf8574.digitalWrite(laserPin, !state);
+        LMCpcf8574.digitalWrite(laserPin, !state);
         unlockI2C();
     }
 }
@@ -198,7 +205,7 @@ void obstacleAvoidanceMode(void *parameters)
 
         if (lockI2C(20))
         {
-            detect = rightmotorscontrolpcf8574.digitalRead(obstacleDetectorPin);
+            detect = RMCpcf8574.digitalRead(obstacleDetectorPin);
             unlockI2C();
         }
 

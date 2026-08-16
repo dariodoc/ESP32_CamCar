@@ -28,7 +28,7 @@
 // --- PINES DE PERIFÉRICOS ---
 const int builtinLedPin = 2;
 const int laserPin = 5;
-const int leftRearLedPin = 7;
+const int leftRearLedPin = 6;
 const int rightRearLedPin = 6;
 const int obstacleDetectorPin = 5;
 
@@ -40,25 +40,29 @@ const int panCenter = 75;
 const int tiltCenter = 90;
 
 // --- PINES DE LOS MOTORES ---
-const int PWMPinleftMotor = 14;  // Pin del esp32 para el motor izquierdo
-const int PWMPinrightMotor = 15; // Pin del esp32 para el motor derecho
-const int In1pinleftMotor1 = 3;  // Pin de PCF8574 para el motor izquierdo
-const int In2pinleftMotor1 = 4;  // Pin de PCF8574 para el motor izquierdo
-const int In1pinrightMotor2 = 1; // Pin de PCF8574 para el motor derecho
-const int In2pinrightMotor2 = 0; // Pin de PCF8574 para el motor derecho
-const int STBYpin = 2;           // Pin de PCF8574 para Standby del controlador de motor
-const int offset = 1;            // 1 para normal, -1 para invertir dirección
 
-// --- CONSTANTES DEL MOTOR ---
-#define FORWARD 1
-#define BACKWARD 2
-#define LEFT 3
-#define RIGHT 4
-#define STOP 0
-#define FORWARDLEFT 5
-#define FORWARDRIGHT 6
-#define BACKLEFT 7
-#define BACKRIGHT 8
+const int motorFLIn1pin = 0;  // Pin de PCF8574 para el motor delantero izquierdo
+const int motorFLIn2pin = 1;  // Pin de PCF8574 para el motor delantero izquierdo
+const int motorFLPWMPin = 14; // Pin del esp32 para el motor delantero izquierdo
+const int motorFLoffset = 1;  // 1 para normal, -1 para invertir dirección
+
+const int motorBLIn1pin = 3;  // Pin de PCF8574 para el motor trasero izquierdo
+const int motorBLIn2pin = 4;  // Pin de PCF8574 para el motor trasero izquierdo
+const int motorBLPWMPin = 14; // Pin del esp32 para el motor trasero izquierdo
+const int motorBLoffset = 1;  // 1 para normal, -1 para invertir dirección
+
+const int motorFRIn1pin = 0;  // Pin de PCF8574 para el motor delantero derecho
+const int motorFRIn2pin = 1;  // Pin de PCF8574 para el motor delantero derecho
+const int motorFRPWMPin = 15; // Pin del esp32 para el motor delantero derecho
+const int motorFRoffset = 1;  // 1 para normal, -1 para invertir dirección
+
+const int motorBRIn1pin = 3;  // Pin de PCF8574 para el motor trasero derecho
+const int motorBRIn2pin = 4;  // Pin de PCF8574 para el motor trasero derecho
+const int motorBRPWMPin = 15; // Pin del esp32 para el motor trasero derecho
+const int motorBRoffset = 1;  // 1 para normal, -1 para invertir dirección
+
+const int leftSTBYpin = 2;  // Pin de PCF8574 para Standby del controlador de motor izquierdo
+const int rightSTBYpin = 2; // Pin de PCF8574 para Standby del controlador de motor derecho
 
 // --- CONFIGURACIÓN DE FREERTOS ---
 #define STACK_SIZE (1024 * 4)

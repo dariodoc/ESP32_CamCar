@@ -4,8 +4,8 @@
 #include "PCF8574.h"
 #include "peripherals.h"
 
-extern PCF8574 leftmotorscontrolpcf8574;
-extern PCF8574 rightmotorscontrolpcf8574;
+extern PCF8574 LMCpcf8574;
+extern PCF8574 RMCpcf8574;
 
 static SemaphoreHandle_t i2cMutex = NULL;
 static int i2cFailCounter = 0;
@@ -51,8 +51,8 @@ bool lockI2C(TickType_t timeoutMs)
         Wire.setClock(400000);
         Wire.setTimeOut(50);
 
-        leftmotorscontrolpcf8574.begin();
-        rightmotorscontrolpcf8574.begin();
+        LMCpcf8574.begin();
+        RMCpcf8574.begin();
 
         configurePCFPins();
 

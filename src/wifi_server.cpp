@@ -24,7 +24,7 @@ AsyncWebServer server(80);
 AsyncWebSocket wsCarInput("/CarInput");
 
 int carInputClientId = 0;
-volatile int targetDirection = STOP;
+// volatile int targetDirection = STOP;
 volatile unsigned long lastCommandTime = 0;
 
 // Instancia de Preferences para NVS

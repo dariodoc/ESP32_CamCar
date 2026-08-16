@@ -4,7 +4,7 @@
 #include <Arduino.h>
 #include <PCF8574.h> // 👈 Requerido para declarar PCF8574*
 
-#define DEFAULTSPEED 255
+#define DEFAULTSPEED 255 // max speed for analogWrite
 
 class Motor
 {
@@ -18,7 +18,6 @@ public:
     void drive(int speed);
     void drive(int speed, int duration);
     void brake();
-    void standby();
 
 private:
     int In1, In2, PWM, Offset, Standby;
@@ -27,16 +26,5 @@ private:
     void fwd(int speed);
     void rev(int speed);
 };
-
-void forward(Motor &motor1, Motor &motor2, int speed);
-void forward(Motor &motor1, Motor &motor2);
-
-void back(Motor &motor1, Motor &motor2, int speed);
-void back(Motor &motor1, Motor &motor2);
-
-void left(Motor &left, Motor &right, int speed);
-void right(Motor &left, Motor &right, int speed);
-
-void brake(Motor &motor1, Motor &motor2);
 
 #endif

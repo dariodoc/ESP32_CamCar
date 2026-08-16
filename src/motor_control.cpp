@@ -5,43 +5,59 @@
 #include "PCF8574.h"
 #include "SparkFun_TB6612.h"
 
-extern PCF8574 leftmotorscontrolpcf8574;
-extern PCF8574 rightmotorscontrolpcf8574;
+extern PCF8574 LMCpcf8574;
+extern PCF8574 RMCpcf8574;
 
-Motor leftMotor(In1pinleftMotor1, In2pinleftMotor1, PWMPinleftMotor, offset, STBYpin, &leftmotorscontrolpcf8574);
-Motor rightMotor(In1pinrightMotor2, In2pinrightMotor2, PWMPinrightMotor, offset, STBYpin, &rightmotorscontrolpcf8574);
+Motor motorFL(motorFLIn1pin, motorFLIn2pin, motorFLPWMPin, motorFLoffset, leftSTBYpin, &LMCpcf8574);
+Motor motorFR(motorFRIn1pin, motorFRIn2pin, motorFRPWMPin, motorFRoffset, leftSTBYpin, &RMCpcf8574);
+Motor motorBL(motorBLIn1pin, motorBLIn2pin, motorBLPWMPin, motorBLoffset, leftSTBYpin, &LMCpcf8574);
+Motor motorBR(motorBRIn1pin, motorBRIn2pin, motorBRPWMPin, motorBRoffset, leftSTBYpin, &RMCpcf8574);
 
 volatile float joystickX = 0.0f;
 volatile float joystickY = 0.0f;
-
-// int scaleMotorSpeed(float val)
-// {
-//     if (val == 0.0f) return 0;
-
-//     int minPWM = 200; // Supera la zona muerta mecánica
-//     int maxPWM = 255;
-
-//     int absPWM = minPWM + (int)(fabs(val) * (maxPWM - minPWM));
-//     return (val > 0) ? absPWM : -absPWM;
-// }
 
 int scaleMotorSpeed(float val)
 {
     if (val == 0.0f)
         return 0;
 
-    // 🚀 VELOCIDAD MÁXIMA CONSTANTE:
-    // Retorna 255 si el joystick va adelante, y -255 si va en reversa
-    return (val > 0) ? 255 : -255;
+    int minPWM = 210; // Supera la zona muerta mecánica
+    int maxPWM = 255;
+
+    int absPWM = minPWM + (int)(fabs(val) * (maxPWM - minPWM));
+    return (val > 0) ? absPWM : -absPWM;
+}
+
+// int scaleMotorSpeed(float val)
+// {
+//     if (val == 0.0f)
+//         return 0;
+
+//     // 🚀 VELOCIDAD MÁXIMA CONSTANTE:
+//     // Retorna 255 si el joystick va adelante, y -255 si va en reversa
+//     return (val > 0) ? 255 : -255;
+// }
+
+void brakeAllMotors()
+{
+    motorFL.brake();
+    motorFR.brake();
+    motorBL.brake();
+    motorBR.brake();
+
+    LMCpcf8574.digitalWrite(leftSTBYpin, LOW);
+    RMCpcf8574.digitalWrite(rightSTBYpin, LOW);
+
+    leftRearLed(HIGH);
+    rightRearLed(HIGH);
 }
 
 void processDifferentialDrive(float x, float y)
 {
     if (x == 0.0f && y == 0.0f)
     {
-        brake(leftMotor, rightMotor);
-        leftRearLed(HIGH);
-        rightRearLed(HIGH);
+        brakeAllMotors();
+
         return;
     }
 
@@ -65,8 +81,10 @@ void processDifferentialDrive(float x, float y)
     int speedRight = scaleMotorSpeed(right);
 
     // 4. Aplicación de movimiento
-    leftMotor.drive(speedLeft);
-    rightMotor.drive(speedRight);
+    motorFL.drive(speedLeft);
+    motorFR.drive(speedRight);
+    motorBL.drive(speedLeft);
+    motorBR.drive(speedRight);
 
     leftRearLed(LOW);
     rightRearLed(LOW);
