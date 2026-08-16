@@ -3,7 +3,7 @@
 #include "peripherals.h"
 #include "i2c_manager.h"
 #include "PCF8574.h"
-#include "SparkFun_TB6612.h"
+#include "custom_motor_driver.h"
 
 extern PCF8574 LMCpcf8574;
 extern PCF8574 RMCpcf8574;

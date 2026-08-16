@@ -1,18 +1,18 @@
-#ifndef SPARKFUN_TB6612_h
-#define SPARKFUN_TB6612_h
+#ifndef CUSTOM_MOTOR_DRIVER_H
+#define CUSTOM_MOTOR_DRIVER_H
 
 #include <Arduino.h>
-#include <PCF8574.h> // 👈 Requerido para declarar PCF8574*
+#include <PCF8574.h>
 
-#define DEFAULTSPEED 255 // max speed for analogWrite
+#define DEFAULT_MOTOR_SPEED 255
 
 class Motor
 {
 public:
-    // Constructor original
+    // Constructor estándar (pines GPIO directos del microcontrolador)
     Motor(int In1pin, int In2pin, int PWMpin, int offset, int STBYpin);
 
-    // 🚀 NUEVO CONSTRUCTOR: Recibe el puntero al PCF8574
+    // Constructor con soporte para expandidor PCF8574 por I2C
     Motor(int In1pin, int In2pin, int PWMpin, int offset, int STBYpin, PCF8574 *pcfDev);
 
     void drive(int speed);
@@ -21,10 +21,10 @@ public:
 
 private:
     int In1, In2, PWM, Offset, Standby;
-    PCF8574 *pcf; // 👈 Puntero al expandidor específico de este motor
+    PCF8574 *pcf;
 
     void fwd(int speed);
     void rev(int speed);
 };
 
-#endif
+#endif // CUSTOM_MOTOR_DRIVER_H
