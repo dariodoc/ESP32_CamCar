@@ -56,7 +56,6 @@
         let isMelodyOn = false;
         let isLightOn = false;
         let isObstacleAvoidanceOn = false;
-        let currentDirection = 0;
 
         let panState = 0;  // -1: Izquierda, 0: Detenido, 1: Derecha
         let tiltState = 0; // -1: Arriba,    0: Detenido, 1: Abajo
@@ -76,9 +75,6 @@
         const btnPanRight = document.getElementById("btnPanRight");
         const btnTiltUp = document.getElementById("btnTiltUp");
         const btnTiltDown = document.getElementById("btnTiltDown");
-
-        const FORWARD = 1, BACKWARD = 2, LEFT = 3, RIGHT = 4, STOP = 0;
-        const FORWARDLEFT = 5, FORWARDRIGHT = 6, BACKLEFT = 7, BACKRIGHT = 8;
 
         //////////////////////////////// CÁMARA WEBSOCKET BINARIO ////////////////////////////////
 
@@ -327,23 +323,22 @@
             }
             joystick(x, y);
 
-            // Normalización entre -1.0 y 1.0 (X = giro, Y = avance/reversa)
             let normX = parseFloat(((x - x_orig) / radius).toFixed(2));
-            let normY = parseFloat((-(y - y_orig) / radius).toFixed(2)); // Invertido para que Arriba sea positivo
+            let normY = parseFloat((-(y - y_orig) / radius).toFixed(2));
 
             sendJoystickBinary(normX, normY);
         }
 
         function sendJoystickBinary(x, y, force = false) {
-            // Zona muerta en JS
             if (Math.abs(x) < 0.08) x = 0.0;
             if (Math.abs(y) < 0.08) y = 0.0;
 
             let currentTime = Date.now();
 
-            // 🚀 TRANSMISIÓN CONTINUA: Envía si cambio la posición, si se fuerza (Stop), 
-            // o si han pasado 50 ms MIENTRAS se mantenga presionado el joystick (paint == true)
-            if (force || (x !== lastSentX || y !== lastSentY) || (paint && currentTime - lastSendTime >= 50)) {
+            // 🚀 KEEP-ALIVE CONTINUO:
+            // Transmite si se fuerza (Stop), si cambió la posición, O si han pasado >= 50 ms 
+            // mientras el usuario mantenga presionado el joystick (paint === true).
+            if (force || (x !== lastSentX || y !== lastSentY) || (paint && (currentTime - lastSendTime >= 50))) {
                 if (websocketCarInput && websocketCarInput.readyState === WebSocket.OPEN) {
                     const buffer = new ArrayBuffer(8);
                     const view = new DataView(buffer);
@@ -357,7 +352,7 @@
                 }
             }
         }
-
+        
         function startDrawing(event) {
             if (event.cancelable) event.preventDefault();
             paint = true;
@@ -374,7 +369,6 @@
             background();
             joystick(width / 2, height / 2);
 
-            // Enviar Parada (0, 0) forzada
             sendJoystickBinary(0.0, 0.0, true);
         }
 
