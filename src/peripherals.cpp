@@ -29,15 +29,13 @@ TaskHandle_t playMelodyTaskHandle = NULL;
 TaskHandle_t obstacleAvoidanceModeTaskHandle = NULL;
 TaskHandle_t servoControlTaskHandle = NULL;
 
-// 🚀 Función para centrar físicamente y actualizar contadores
+volatile bool isCentering = false; // 👈 Bandera de centrado suave
+
 void centerServos()
 {
     panDirection = 0;
     tiltDirection = 0;
-    currentPan = panCenter;
-    currentTilt = tiltCenter;
-    panServo.write(panCenter);
-    tiltServo.write(tiltCenter);
+    isCentering = true; // 🚀 Notifica a servoControlTask que inicie el centrado suave
 }
 
 // --- Control de LEDs Traseros ---
@@ -148,42 +146,81 @@ void servoControlTask(void *parameters)
     {
         bool moved = false;
 
-        // --- Manejo Servo PAN ---
-        if (panDirection == 1 && currentPan < 180)
-        { // Mover Izquierda
-            currentPan += stepSize;
-            if (currentPan > 180)
-                currentPan = 180;
-            panServo.write(currentPan);
-            moved = true;
+        // 🚀 MODO CENTRADO SUAVE (EASING)
+        if (isCentering)
+        {
+            bool panDone = (currentPan == panCenter);
+            bool tiltDone = (currentTilt == tiltCenter);
+
+            // Suavizado PAN
+            if (!panDone)
+            {
+                if (currentPan < panCenter)
+                    currentPan += stepSize;
+                else if (currentPan > panCenter)
+                    currentPan -= stepSize;
+                panServo.write(currentPan);
+                moved = true;
+            }
+
+            // Suavizado TILT
+            if (!tiltDone)
+            {
+                if (currentTilt < tiltCenter)
+                    currentTilt += stepSize;
+                else if (currentTilt > tiltCenter)
+                    currentTilt -= stepSize;
+                tiltServo.write(currentTilt);
+                moved = true;
+            }
+
+            // Si ambos alcanzaron el centro objetivo, se desactiva el modo centrado
+            if (panDone && tiltDone)
+            {
+                isCentering = false;
+            }
         }
-        else if (panDirection == 2 && currentPan > 0)
-        { // Mover Derecha
-            currentPan -= stepSize;
-            if (currentPan < 0)
-                currentPan = 0;
-            panServo.write(currentPan);
-            moved = true;
+        // 🚀 MODO CONTROL MANUAL (Joystick / Botones)
+        else
+        {
+            // --- Manejo Servo PAN ---
+            if (panDirection == 1 && currentPan < 180)
+            { // Mover Izquierda
+                currentPan += stepSize;
+                if (currentPan > 180)
+                    currentPan = 180;
+                panServo.write(currentPan);
+                moved = true;
+            }
+            else if (panDirection == 2 && currentPan > 0)
+            { // Mover Derecha
+                currentPan -= stepSize;
+                if (currentPan < 0)
+                    currentPan = 0;
+                panServo.write(currentPan);
+                moved = true;
+            }
+
+            // --- Manejo Servo TILT ---
+            if (tiltDirection == 1 && currentTilt > 0)
+            { // Mover Arriba
+                currentTilt -= stepSize;
+                if (currentTilt < 0)
+                    currentTilt = 0;
+                tiltServo.write(currentTilt);
+                moved = true;
+            }
+            else if (tiltDirection == 2 && currentTilt < 180)
+            { // Mover Abajo
+                currentTilt += stepSize;
+                if (currentTilt > 180)
+                    currentTilt = 180;
+                tiltServo.write(currentTilt);
+                moved = true;
+            }
         }
 
-        // --- Manejo Servo TILT ---
-        if (tiltDirection == 1 && currentTilt > 0)
-        { // Mover Arriba
-            currentTilt -= stepSize;
-            if (currentTilt < 0)
-                currentTilt = 0;
-            tiltServo.write(currentTilt);
-            moved = true;
-        }
-        else if (tiltDirection == 2 && currentTilt < 180)
-        { // Mover Abajo
-            currentTilt += stepSize;
-            if (currentTilt > 180)
-                currentTilt = 180;
-            tiltServo.write(currentTilt);
-            moved = true;
-        }
-
+        // Mantiene una cadencia fluida de 20 ms por grado cuando hay movimiento
         vTaskDelay(pdMS_TO_TICKS(moved ? 20 : 50));
     }
 }
