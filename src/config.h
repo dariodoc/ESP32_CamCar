@@ -57,11 +57,11 @@ const int motorBLPWMPin = 14; // Pin del esp32 para el motor trasero izquierdo
 
 const int motorFRIn1pin = 0;  // Pin de PCF8574 para el motor delantero derecho
 const int motorFRIn2pin = 1;  // Pin de PCF8574 para el motor delantero derecho
-const int motorFRPWMPin = 15; // Pin del esp32 para el motor delantero derecho
+const int motorFRPWMPin = 32; // Pin del esp32 para el motor delantero derecho
 
 const int motorBRIn1pin = 3;  // Pin de PCF8574 para el motor trasero derecho
 const int motorBRIn2pin = 4;  // Pin de PCF8574 para el motor trasero derecho
-const int motorBRPWMPin = 15; // Pin del esp32 para el motor trasero derecho
+const int motorBRPWMPin = 32; // Pin del esp32 para el motor trasero derecho
 
 const int leftSTBYpin = 2;  // Pin de PCF8574 para Standby del controlador de motor izquierdo
 const int rightSTBYpin = 2; // Pin de PCF8574 para Standby del controlador de motor derecho
