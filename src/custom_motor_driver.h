@@ -4,8 +4,6 @@
 #include <Arduino.h>
 #include <PCF8574.h>
 
-#define DEFAULT_MOTOR_SPEED 255
-
 class Motor
 {
 public:
