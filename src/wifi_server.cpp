@@ -43,81 +43,6 @@ void Get_Command(String inputStringTemp)
     }
 }
 
-void cameraStreamTaskTCP(void *pvParameters)
-{
-    for (;;)
-    {
-        WiFiClient client = server_Camera.accept();
-        if (client)
-        {
-#ifdef DEBUG
-            Serial.println("📷 Cliente de cámara conectado vía TCP (Puerto 7000)");
-#endif
-            while (client.connected())
-            {
-                if (videoFlag)
-                {
-                    camera_fb_t *fb = esp_camera_fb_get();
-                    if (fb)
-                    {
-                        uint32_t jpg_buf_len = fb->len;
-                        uint8_t *jpg_buf = fb->buf;
-
-                        // Header de 4 bytes con el tamaño del frame (Little-Endian)
-                        uint8_t slen[4];
-                        slen[0] = (uint8_t)(jpg_buf_len & 0xFF);
-                        slen[1] = (uint8_t)((jpg_buf_len >> 8) & 0xFF);
-                        slen[2] = (uint8_t)((jpg_buf_len >> 16) & 0xFF);
-                        slen[3] = (uint8_t)((jpg_buf_len >> 24) & 0xFF);
-
-                        client.write(slen, 4);
-                        client.write(jpg_buf, jpg_buf_len);
-                        esp_camera_fb_return(fb);
-                    }
-                }
-                vTaskDelay(pdMS_TO_TICKS(30)); // ~25 FPS
-            }
-            client.stop();
-        }
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
-}
-
-void initWiFi()
-{
-    WiFi.persistent(false);
-    WiFi.setSleep(WIFI_PS_NONE);
-    WiFi.setTxPower(WIFI_POWER_19_5dBm);
-
-    // Configuración del Access Point dedicado para la App
-    IPAddress apIP(192, 168, 4, 1);
-    IPAddress apGateway(192, 168, 4, 1);
-    IPAddress apSubnet(255, 255, 255, 0);
-
-    WiFi.mode(WIFI_AP);
-    WiFi.softAPConfig(apIP, apGateway, apSubnet);
-    WiFi.softAP("ESP-CAMERA-CAR", "carbondioxide", 6, 0, 4);
-
-    server_Cmd.begin(4000);
-    server_Camera.begin(7000);
-
-    // Tarea de streaming de video en el Core 0
-    xTaskCreatePinnedToCore(
-        cameraStreamTaskTCP,
-        "CamTCPStream",
-        1024 * 4,
-        NULL,
-        3,
-        NULL,
-        0);
-
-    ArduinoOTA.begin();
-
-    // Desactiva Bluetooth para liberar RAM
-    btStop();
-    esp_bt_controller_disable();
-}
-
 void loopCmdServer()
 {
     WiFiClient client = server_Cmd.accept();
@@ -208,4 +133,79 @@ void loopCmdServer()
         // Parada de seguridad cuando la app se desconecta
         processDifferentialDrive(0.0f, 0.0f);
     }
+}
+
+void cameraStreamTaskTCP(void *pvParameters)
+{
+    for (;;)
+    {
+        WiFiClient client = server_Camera.accept();
+        if (client)
+        {
+#ifdef DEBUG
+            Serial.println("📷 Cliente de cámara conectado vía TCP (Puerto 7000)");
+#endif
+            while (client.connected())
+            {
+                if (videoFlag)
+                {
+                    camera_fb_t *fb = esp_camera_fb_get();
+                    if (fb)
+                    {
+                        uint32_t jpg_buf_len = fb->len;
+                        uint8_t *jpg_buf = fb->buf;
+
+                        // Header de 4 bytes con el tamaño del frame (Little-Endian)
+                        uint8_t slen[4];
+                        slen[0] = (uint8_t)(jpg_buf_len & 0xFF);
+                        slen[1] = (uint8_t)((jpg_buf_len >> 8) & 0xFF);
+                        slen[2] = (uint8_t)((jpg_buf_len >> 16) & 0xFF);
+                        slen[3] = (uint8_t)((jpg_buf_len >> 24) & 0xFF);
+
+                        client.write(slen, 4);
+                        client.write(jpg_buf, jpg_buf_len);
+                        esp_camera_fb_return(fb);
+                    }
+                }
+                vTaskDelay(pdMS_TO_TICKS(30)); // ~25 FPS
+            }
+            client.stop();
+        }
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
+void initWiFi()
+{
+    WiFi.persistent(false);
+    WiFi.setSleep(WIFI_PS_NONE);
+    WiFi.setTxPower(WIFI_POWER_19_5dBm);
+
+    // Configuración del Access Point dedicado para la App
+    IPAddress apIP(192, 168, 4, 1);
+    IPAddress apGateway(192, 168, 4, 1);
+    IPAddress apSubnet(255, 255, 255, 0);
+
+    WiFi.mode(WIFI_AP);
+    WiFi.softAPConfig(apIP, apGateway, apSubnet);
+    WiFi.softAP("ESP-CAMERA-CAR", "carbondioxide", 6, 0, 4);
+
+    server_Cmd.begin(4000);
+    server_Camera.begin(7000);
+
+    // Tarea de streaming de video en el Core 0
+    xTaskCreatePinnedToCore(
+        cameraStreamTaskTCP,
+        "CamTCPStream",
+        1024 * 4,
+        NULL,
+        3,
+        NULL,
+        0);
+
+    ArduinoOTA.begin();
+
+    // Desactiva Bluetooth para liberar RAM
+    btStop();
+    esp_bt_controller_disable();
 }
