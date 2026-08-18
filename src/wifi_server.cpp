@@ -1,339 +1,211 @@
 #include "config.h"
-#ifdef WS_MAX_QUEUED_MESSAGES
-#undef WS_MAX_QUEUED_MESSAGES
-#endif
-#define WS_MAX_QUEUED_MESSAGES 1
-
 #include "wifi_server.h"
 #include "camera_setup.h"
 #include "motor_control.h"
 #include "peripherals.h"
 #include <WiFi.h>
-#include "AsyncTCP.h"
-#include "ESPAsyncWebServer.h"
-#include <SPIFFS.h>
-#include <ESPmDNS.h>
-#include <ArduinoOTA.h>
+#include <WiFiClient.h>
+#include <WiFiServer.h>
+#include <esp_camera.h>
 #include "esp_bt.h"
-#include <Update.h>
-#include <Preferences.h> // 👈 Librería nativa NVS
+#include <ArduinoOTA.h>
+#include "Melodies.h"
 
-extern AsyncWebSocket wsCamera;
+WiFiServer server_Cmd(4000);
+WiFiServer server_Camera(7000);
 
-AsyncWebServer server(80);
-AsyncWebSocket wsCarInput("/CarInput");
+String CmdArray[8];
+int paramters[8];
+volatile bool videoFlag = false;
 
-int carInputClientId = 0;
-// volatile int targetDirection = STOP;
-volatile unsigned long lastCommandTime = 0;
-
-// Instancia de Preferences para NVS
-Preferences preferences;
-
-// Parámetros de la interfaz web
-const char *PARAM_INPUT_1 = "ssid";
-const char *PARAM_INPUT_2 = "pass";
-const char *PARAM_INPUT_3 = "ip";
-const char *PARAM_INPUT_4 = "gateway";
-
-String ssid, pass, ip, gateway;
-
-void cleanupWSClients()
+void Get_Command(String inputStringTemp)
 {
-    wsCarInput.cleanupClients();
-    wsCamera.cleanupClients(); // 👈 Agrega esta línea para liberar memoria de sockets de cámara
-}
-
-// Escaneo BSSID para conectar al nodo con mejor señal en red mesh
-void scanAndConnectToBestAP(const char *targetSSID, const char *password)
-{
-    int8_t bestRSSI = -100;
-    uint8_t bestBSSID[6];
-    int bestChannel = 0;
-    bool found = false;
-
-#ifdef DEBUG
-    Serial.println(" Scanning networks...");
-#endif
-
-    int n = WiFi.scanNetworks(false, true);
-    if (n > 0)
+    int string_length = inputStringTemp.length();
+    for (int i = 0; i < 8; i++)
     {
-        for (int i = 0; i < n; ++i)
+        int index = inputStringTemp.indexOf('#');
+        if (index < 0)
         {
-            if (WiFi.SSID(i) == targetSSID)
+            if (string_length > 0)
             {
-#ifdef DEBUG
-                Serial.printf(" Found: %s | Ch: %d | RSSI: %d dBm\n", WiFi.SSID(i).c_str(), WiFi.channel(i), WiFi.RSSI(i));
-#endif
-                if (WiFi.RSSI(i) > bestRSSI)
-                {
-                    bestRSSI = WiFi.RSSI(i);
-                    memcpy(bestBSSID, WiFi.BSSID(i), 6);
-                    bestChannel = WiFi.channel(i);
-                    found = true;
-                }
+                CmdArray[i] = inputStringTemp;
+                paramters[i] = inputStringTemp.toInt();
             }
+            break;
         }
-    }
-
-    if (!found)
-    {
-#ifdef DEBUG
-        Serial.println(" Desired SSID not found. Trying standard connection...");
-#endif
-        WiFi.begin(targetSSID, password);
-    }
-    else
-    {
-#ifdef DEBUG
-        Serial.printf(" Connecting to best AP node (RSSI: %d dBm) on Ch %d\n", bestRSSI, bestChannel);
-#endif
-        WiFi.begin(targetSSID, password, bestChannel, bestBSSID);
-    }
-
-    unsigned long startAttempt = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 10000)
-    {
-        ledIndicator(1, 250);
-    }
-
-    WiFi.scanDelete();
-}
-
-// Manejador del WebSocket
-// Estructura binaria de 8 bytes
-struct __attribute__((__packed__)) DifferentialInput
-{
-    float x;
-    float y;
-};
-
-extern volatile float joystickX;
-extern volatile float joystickY;
-
-void onCarInputWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len)
-{
-    if (type == WS_EVT_CONNECT)
-    {
-        if (carInputClientId != 0 && carInputClientId != client->id())
-        {
-            AsyncWebSocketClient *oldClient = server->client(carInputClientId);
-            if (oldClient)
-                oldClient->close();
-        }
-
-        carInputClientId = client->id();
-        joystickX = 0.0f;
-        joystickY = 0.0f;
-    }
-    else if (type == WS_EVT_DISCONNECT)
-    {
-        if (client->id() == carInputClientId)
-        {
-            carInputClientId = 0;
-            joystickX = 0.0f;
-            joystickY = 0.0f;
-
-            // 1. Detener periféricos y frenar hardware
-            enableLaser = false;
-            turnLaserOn(enableLaser);
-            centerServos();
-
-            if (melodyOn)
-            {
-                melodyOn = false;
-                ledcWriteTone(buzzerChannel, 0);
-            }
-            if (enableObstacleAvoidance)
-            {
-                enableObstacleAvoidance = false;
-                obstacleFound = false;
-            }
-
-            cleanupWSClients(); // 👈 Limpieza explícita de clientes WebSocket para liberar memoria y sockets de red
-        }
-    }
-    else if (type == WS_EVT_DATA && len > 0)
-    {
-        if (client->id() != carInputClientId)
-            return;
-
-        AwsFrameInfo *info = (AwsFrameInfo *)arg;
-        if (!(info->final && info->index == 0 && info->len == len))
-            return;
-
-        lastCommandTime = millis();
-
-        // 🚀 SI RECIBE 8 BYTES: Es comando binario de Joystick
-        if (len == sizeof(DifferentialInput))
-        {
-            DifferentialInput *input = (DifferentialInput *)data;
-            joystickX = input->x;
-            joystickY = input->y;
-        }
-        // 🚀 SI RECIBE COMANDOS DE TEXTO/ACCESORIOS (L, P, T, C, H, O)
         else
         {
-            const uint8_t cmd = data[0];
-            const uint8_t val = (len > 1) ? data[1] : 0;
-
-            switch (cmd)
-            {
-            case 'L':
-                enableLaser = !enableLaser;
-                turnLaserOn(enableLaser);
-                break;
-            case 'P':
-                panDirection = val;
-                break;
-            case 'T':
-                tiltDirection = val;
-                break;
-            case 'C':
-                centerServos();
-                break;
-            case 'H':
-                melodyOn = !melodyOn;
-                if (melodyOn)
-                    xTaskNotifyGive(playMelodyTaskHandle);
-                else
-                    ledcWriteTone(buzzerChannel, 0);
-                break;
-            case 'O':
-                enableObstacleAvoidance = !enableObstacleAvoidance;
-                if (enableObstacleAvoidance)
-                    xTaskNotifyGive(obstacleAvoidanceModeTaskHandle);
-                else
-                {
-                    obstacleFound = false;
-                    joystickX = 0.0f;
-                    joystickY = 0.0f;
-                }
-                break;
-            }
+            string_length -= index;
+            CmdArray[i] = inputStringTemp.substring(0, index);
+            paramters[i] = CmdArray[i].toInt();
+            inputStringTemp = inputStringTemp.substring(index + 1);
         }
     }
 }
 
-void initArduinoOTA()
+void cameraStreamTaskTCP(void *pvParameters)
 {
-    // Configuración obligatoria de ArduinoOTA
-    ArduinoOTA.onStart([]()
-                       { String type = (ArduinoOTA.getCommand() == U_FLASH) ? "sketch" : "filesystem"; });
-    ArduinoOTA.begin(); // 👈 Sin esto el ESP32 no escuchará peticiones en el puerto 3232
+    for (;;)
+    {
+        WiFiClient client = server_Camera.accept();
+        if (client)
+        {
+#ifdef DEBUG
+            Serial.println("📷 Cliente de cámara conectado vía TCP (Puerto 7000)");
+#endif
+            while (client.connected())
+            {
+                if (videoFlag)
+                {
+                    camera_fb_t *fb = esp_camera_fb_get();
+                    if (fb)
+                    {
+                        uint32_t jpg_buf_len = fb->len;
+                        uint8_t *jpg_buf = fb->buf;
+
+                        // Header de 4 bytes con el tamaño del frame (Little-Endian)
+                        uint8_t slen[4];
+                        slen[0] = (uint8_t)(jpg_buf_len & 0xFF);
+                        slen[1] = (uint8_t)((jpg_buf_len >> 8) & 0xFF);
+                        slen[2] = (uint8_t)((jpg_buf_len >> 16) & 0xFF);
+                        slen[3] = (uint8_t)((jpg_buf_len >> 24) & 0xFF);
+
+                        client.write(slen, 4);
+                        client.write(jpg_buf, jpg_buf_len);
+                        esp_camera_fb_return(fb);
+                    }
+                }
+                vTaskDelay(pdMS_TO_TICKS(30)); // ~25 FPS
+            }
+            client.stop();
+        }
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
 }
 
 void initWiFi()
 {
-    // Mantenemos SPIFFS activo únicamente para la interfaz web (.html, .css)
-    if (!SPIFFS.begin(true))
-    {
-#ifdef DEBUG
-        Serial.println("Error mounting SPIFFS");
-#endif
-    }
-
+    WiFi.persistent(false);
     WiFi.setSleep(WIFI_PS_NONE);
     WiFi.setTxPower(WIFI_POWER_19_5dBm);
 
-    // 🚀 LECTURA DESDE NVS (Preferences) EN LUGAR DE SPIFFS
-    preferences.begin("wifi-config", true); // Abre espacio "wifi-config" en modo solo lectura
-    ssid = preferences.getString("ssid", "");
-    pass = preferences.getString("pass", "");
-    ip = preferences.getString("ip", "");
-    gateway = preferences.getString("gateway", "");
-    preferences.end();
+    // Configuración del Access Point dedicado para la App
+    IPAddress apIP(192, 168, 4, 1);
+    IPAddress apGateway(192, 168, 4, 1);
+    IPAddress apSubnet(255, 255, 255, 0);
 
-    WiFi.mode(WIFI_AP_STA);
+    WiFi.mode(WIFI_AP);
+    WiFi.softAPConfig(apIP, apGateway, apSubnet);
+    WiFi.softAP("ESP-CAMERA-CAR", "carbondioxide", 6, 0, 4);
 
-    if (!ssid.isEmpty())
-    {
-        if (!ip.isEmpty() && !gateway.isEmpty())
-        {
-            IPAddress localIP, localGateway, subnet(255, 255, 255, 0);
-            localIP.fromString(ip);
-            localGateway.fromString(gateway);
-            WiFi.config(localIP, localGateway, subnet);
-        }
+    server_Cmd.begin(4000);
+    server_Camera.begin(7000);
 
-        scanAndConnectToBestAP(ssid.c_str(), pass.c_str());
-        WiFi.setAutoReconnect(true);
+    // Tarea de streaming de video en el Core 0
+    xTaskCreatePinnedToCore(
+        cameraStreamTaskTCP,
+        "CamTCPStream",
+        1024 * 4,
+        NULL,
+        3,
+        NULL,
+        0);
 
-        if (WiFi.status() == WL_CONNECTED)
-        {
-            WiFi.mode(WIFI_STA);
-            if (MDNS.begin("cameracar"))
-                MDNS.addService("http", "tcp", 80);
-            ledIndicator(5, 50);
-        }
-        else
-        {
-            WiFi.softAP("ESP-CAMERA-CAR", "carbondioxide");
-        }
-    }
-    else
-    {
-        WiFi.softAP("ESP-CAMERA-CAR", "carbondioxide");
-    }
+    ArduinoOTA.begin();
 
-    // Rutas del servidor Web (Archivos estáticos desde SPIFFS)
-    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
-              {
-        AsyncWebServerResponse *response = request->beginResponse(SPIFFS, "/index.html", "text/html");
-        response->addHeader("Cache-Control", "max-age=86400");
-        request->send(response); });
-
-    server.on("/style.css", HTTP_GET, [](AsyncWebServerRequest *request)
-              {
-        AsyncWebServerResponse *response = request->beginResponse(SPIFFS, "/style.css", "text/css");
-        response->addHeader("Cache-Control", "max-age=86400");
-        request->send(response); });
-
-    server.on("/wifimanager", HTTP_GET, [](AsyncWebServerRequest *request)
-              {
-        AsyncWebServerResponse *response = request->beginResponse(SPIFFS, "/wifimanager.html", "text/html");
-        response->addHeader("Cache-Control", "max-age=86400");
-        request->send(response); });
-
-    server.on("/wifimanager.css", HTTP_GET, [](AsyncWebServerRequest *request)
-              {
-        AsyncWebServerResponse *response = request->beginResponse(SPIFFS, "/wifimanager.css", "text/css");
-        response->addHeader("Cache-Control", "max-age=86400");
-        request->send(response); });
-
-    // 🚀 GUARDADO EN NVS AL RECIBIR FORMULARIO POST
-    server.on("/", HTTP_POST, [](AsyncWebServerRequest *request)
-              {
-        preferences.begin("wifi-config", false); // Abre en modo lectura/escritura
-
-        int params = request->params();
-        for (int i = 0; i < params; i++) {
-            const AsyncWebParameter* p = request->getParam(i);
-            if (p->isPost()) {
-                if (p->name() == PARAM_INPUT_1) { preferences.putString("ssid", p->value().c_str()); }
-                if (p->name() == PARAM_INPUT_2) { preferences.putString("pass", p->value().c_str()); }
-                if (p->name() == PARAM_INPUT_3) { preferences.putString("ip", p->value().c_str()); }
-                if (p->name() == PARAM_INPUT_4) { preferences.putString("gateway", p->value().c_str()); }
-            }
-        }
-        
-        preferences.end();
-
-        request->send(200, "text/plain", "Credenciales guardadas en NVS. El ESP32 se reiniciara...");
-        vTaskDelay(pdMS_TO_TICKS(2000));
-        ESP.restart(); });
-
-    server.serveStatic("/", SPIFFS, "/");
-
-    wsCarInput.onEvent(onCarInputWebSocketEvent);
-    server.addHandler(&wsCarInput);
-
-    initCameraWebSocket(&server);
-
-    server.begin();
-    initArduinoOTA();
-
+    // Desactiva Bluetooth para liberar RAM
     btStop();
     esp_bt_controller_disable();
+}
+
+void loopCmdServer()
+{
+    WiFiClient client = server_Cmd.accept();
+    if (client)
+    {
+#ifdef DEBUG
+        Serial.println("🕹️ Cliente de Comandos conectado (Puerto 4000)");
+#endif
+        while (client.connected())
+        {
+            if (client.available())
+            {
+                String inputStringTemp = client.readStringUntil('\n');
+                inputStringTemp.trim();
+
+                Get_Command(inputStringTemp);
+
+                // --- MAPPING DE COMANDOS APP FREENOVE A TU HARDWARE --- //
+
+                // 1. Control de Motores (TB6612FNG via PCF8574 + PWM)
+                if (CmdArray[0] == "CMD_MOTOR")
+                {
+                    int rawLeft = paramters[1]; // Rango app: -4095 a 4095
+                    int rawRight = paramters[3];
+
+                    // Mapeo del rango [-4095, 4095] de la App al rango PWM del TB6612FNG [-255, 255]
+                    float normX = 0.0f;
+                    float normY = (float)rawLeft / 4095.0f;
+
+                    if (rawLeft != rawRight)
+                    {
+                        normX = (float)(rawLeft - rawRight) / 4095.0f;
+                    }
+
+                    processDifferentialDrive(normX, normY);
+                }
+
+                // 2. Control de Servos Pan / Tilt (GPIOs directos)
+                if (CmdArray[0] == "CMD_SERVO" || CmdArray[0] == "CMD_CAMERA")
+                {
+                    if (CmdArray[0] == "CMD_CAMERA")
+                    {
+                        setPanAngle(paramters[1]);
+                        setTiltAngle(paramters[2]);
+                    }
+                    else if (paramters[1] == 0)
+                    {
+                        setPanAngle(paramters[2]);
+                    }
+                    else if (paramters[1] == 1)
+                    {
+                        setTiltAngle(paramters[2]);
+                    }
+                }
+
+                // 3. Control de Streaming de Video
+                if (CmdArray[0] == "CMD_VIDEO")
+                {
+                    videoFlag = (paramters[1] == 1);
+                }
+
+                // 4. Buzzer Pasivo
+                if (CmdArray[0] == "CMD_BUZZER")
+                {
+                    bool enable = (paramters[1] == 1);
+                    int freq = paramters[2];
+                    if (enable && freq > 0)
+                    {
+                        toneToPlay(buzzerPin, buzzerChannel, freq, 100);
+                    }
+                    else
+                    {
+                        ledcWriteTone(buzzerChannel, 0);
+                    }
+                }
+
+                // Limpieza de búferes
+                for (int i = 0; i < 8; i++)
+                {
+                    CmdArray[i] = "";
+                    paramters[i] = 0;
+                }
+            }
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+        client.stop();
+
+        // Parada de seguridad cuando la app se desconecta
+        processDifferentialDrive(0.0f, 0.0f);
+    }
 }

@@ -50,6 +50,19 @@ void rightRearLed(int state)
     }
 }
 
+void setPanAngle(int angle)
+{
+    currentPan = constrain(angle, 0, 180);
+    panServo.write(currentPan);
+}
+
+void setTiltAngle(int angle)
+{
+    int constrainedAngle = constrain(angle, 0, 180);
+    currentTilt = 180 - constrainedAngle; // 👈 Invierte la posición del servo
+    tiltServo.write(currentTilt);
+}
+
 void configurePCFPins()
 {
     LMCpcf8574.pinMode(motorFLIn1pin, OUTPUT);
@@ -201,20 +214,20 @@ void servoControlTask(void *parameters)
                 moved = true;
             }
 
-            // --- Manejo Servo TILT ---
-            if (tiltDirection == 1 && currentTilt > 0)
-            { // Mover Arriba
-                currentTilt -= stepSize;
-                if (currentTilt < 0)
-                    currentTilt = 0;
-                tiltServo.write(currentTilt);
-                moved = true;
-            }
-            else if (tiltDirection == 2 && currentTilt < 180)
-            { // Mover Abajo
+            // --- Manejo Servo TILT (Invertido) ---
+            if (tiltDirection == 1 && currentTilt < 180)
+            { // Mover Arriba (Invertido)
                 currentTilt += stepSize;
                 if (currentTilt > 180)
                     currentTilt = 180;
+                tiltServo.write(currentTilt);
+                moved = true;
+            }
+            else if (tiltDirection == 2 && currentTilt > 0)
+            { // Mover Abajo (Invertido)
+                currentTilt -= stepSize;
+                if (currentTilt < 0)
+                    currentTilt = 0;
                 tiltServo.write(currentTilt);
                 moved = true;
             }

@@ -1,95 +1,6 @@
 #include "camera_setup.h"
 #include "config.h"
 #include <esp_camera.h>
-#include <AsyncTCP.h>
-#include "ESPAsyncWebServer.h"
-
-AsyncWebSocket wsCamera("/CameraStream");
-
-void onCameraWebSocketEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len)
-{
-    if (type == WS_EVT_CONNECT)
-    {
-        uint32_t newClientId = client->id();
-
-        // 🚀 Desconectar forzosamente cualquier cliente anterior para liberar memoria y sockets de red
-        for (auto const &c : server->getClients())
-        {
-            if (c.id() != newClientId)
-            {
-                AsyncWebSocketClient *oldClient = server->client(c.id());
-                if (oldClient)
-                {
-                    oldClient->close();
-                }
-            }
-        }
-#ifdef DEBUG
-        Serial.printf("📷 Cliente de cámara conectado: %u\n", newClientId);
-#endif
-    }
-    else if (type == WS_EVT_DISCONNECT)
-    {
-        // 🚀 Limpieza explícita en la instancia global wsCamera
-        wsCamera.cleanupClients();
-#ifdef DEBUG
-        Serial.printf("📷 Cliente de cámara desconectado: %u\n", client->id());
-#endif
-    }
-}
-
-void streamCameraFrame()
-{
-    if (wsCamera.count() == 0 || !wsCamera.availableForWriteAll())
-        return;
-
-    camera_fb_t *fb = esp_camera_fb_get();
-    if (!fb)
-        return;
-
-    if (fb->buf != NULL && fb->len > 0)
-    {
-        wsCamera.binaryAll(fb->buf, fb->len);
-    }
-
-    esp_camera_fb_return(fb);
-}
-
-void cameraStreamTask(void *pvParameters)
-{
-    TickType_t xLastWakeTime = xTaskGetTickCount();
-
-    for (;;)
-    {
-        streamCameraFrame();
-
-        // 🚀 Permite purgar sockets cerrados/fantasmas sin congelar el hilo
-        wsCamera.cleanupClients();
-
-        // 🚀 Cadencia de 50 ms (~20 FPS) esencial para permitir el intercambio de paquetes TCP
-        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(50));
-    }
-}
-
-void initCameraWebSocket(AsyncWebServer *webServer)
-{
-    if (webServer != NULL)
-    {
-        // 🚀 Registrar el evento para detectar desconexiones/reconexiones
-        wsCamera.onEvent(onCameraWebSocketEvent);
-        webServer->addHandler(&wsCamera);
-    }
-
-    xTaskCreatePinnedToCore(
-        cameraStreamTask,
-        "CamWSStream",
-        1024 * 4,
-        NULL,
-        3,
-        NULL,
-        0 // CORE 0
-    );
-}
 
 void setupCamera()
 {
@@ -112,16 +23,16 @@ void setupCamera()
     config.pin_sccb_scl = SIOC_GPIO_NUM;
     config.pin_pwdn = PWDN_GPIO_NUM;
     config.pin_reset = RESET_GPIO_NUM;
-    config.xclk_freq_hz = 24000000;
+    config.xclk_freq_hz = 20000000;
     config.pixel_format = PIXFORMAT_JPEG;
 
     if (psramFound())
     {
         config.fb_location = CAMERA_FB_IN_PSRAM;
-        config.frame_size = FRAMESIZE_HVGA;
-        config.jpeg_quality = 30;
-        config.fb_count = 3;                   // 3 búferes en PSRAM
-        config.grab_mode = CAMERA_GRAB_LATEST; // Retener solo el cuadro más reciente
+        config.frame_size = FRAMESIZE_QVGA;
+        config.jpeg_quality = 16;
+        config.fb_count = 2;
+        config.grab_mode = CAMERA_GRAB_LATEST;
     }
     else
     {
@@ -139,15 +50,10 @@ void setupCamera()
     sensor_t *s = esp_camera_sensor_get();
     if (s != NULL)
     {
-        s->set_whitebal(s, 1);
-        s->set_awb_gain(s, 1);
-        s->set_wb_mode(s, 0);
-        s->set_exposure_ctrl(s, 1);
-        s->set_aec2(s, 0);
-        s->set_ae_level(s, 1);
-        s->set_bpc(s, 1);
-        s->set_wpc(s, 1);
-        s->set_raw_gma(s, 1);
-        s->set_lenc(s, 0);
+        s->set_hmirror(s, 1);
+        s->set_vflip(s, 1);
+        s->set_brightness(s, 1);
+        s->set_saturation(s, 0);
+        s->set_ae_level(s, -1);
     }
 }

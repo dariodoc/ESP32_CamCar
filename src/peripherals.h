@@ -13,6 +13,9 @@ extern volatile bool melodyOn;
 extern volatile bool enableObstacleAvoidance;
 extern volatile bool obstacleFound;
 
+void setPanAngle(int angle);
+void setTiltAngle(int angle);
+
 // Handlers de Tareas
 extern TaskHandle_t playMelodyTaskHandle;
 extern TaskHandle_t obstacleAvoidanceModeTaskHandle;
@@ -32,5 +35,7 @@ void rightRearLed(int state);
 void playMelody(void *parameters);
 void obstacleAvoidanceMode(void *parameters);
 void servoControlTask(void *parameters);
+
+
 
 #endif // PERIPHERALS_H

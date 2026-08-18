@@ -3,11 +3,7 @@
 
 #include <Arduino.h>
 
-extern int carInputClientId;
-extern volatile int targetDirection;
-extern volatile unsigned long lastCommandTime;
-
 void initWiFi();
-void cleanupWSClients();
+void loopCmdServer();
 
 #endif // WIFI_SERVER_H
