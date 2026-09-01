@@ -80,20 +80,37 @@ void loopCmdServer()
                     processDifferentialDrive(normX, normY);
                 }
 
-                // 2. Control de Servos Pan / Tilt (GPIOs directos)
-                if (CmdArray[0] == "CMD_SERVO" || CmdArray[0] == "CMD_CAMERA")
+                // 2. Control de Servos Pan / Tilt (Mapeo directo desde la App Freenove)
+                if (CmdArray[0] == "CMD_SERVO")
                 {
-                    if (CmdArray[0] == "CMD_CAMERA")
+                    int servoID = paramters[1]; // 0 = Pan, 1 = Tilt
+                    int angle = paramters[2];   // Ángulo enviado por la App (0 - 180)
+
+                    if (servoID == 0)
+                    {
+                        setPanAngle(angle);
+                    }
+                    else if (servoID == 1)
+                    {
+                        setTiltAngle(angle);
+                    }
+                }
+                else if (CmdArray[0] == "CMD_CAMERA")
+                {
+                    // La App envía CMD_CAMERA#panAngle#tiltAngle al mover el joystick de la cámara
+                    setPanAngle(paramters[1]);
+                    setTiltAngle(paramters[2]);
+                }
+                else if (CmdArray[0] == "CMD_CAMERA")
+                {
+                    // Si la App envía ángulos absolutos o comando de centrado
+                    if (paramters[1] == panCenter && paramters[2] == tiltCenter)
+                    {
+                        centerServos(); // 👈 Inicia centrado suave
+                    }
+                    else
                     {
                         setPanAngle(paramters[1]);
-                        setTiltAngle(paramters[2]);
-                    }
-                    else if (paramters[1] == 0)
-                    {
-                        setPanAngle(paramters[2]);
-                    }
-                    else if (paramters[1] == 1)
-                    {
                         setTiltAngle(paramters[2]);
                     }
                 }
@@ -116,6 +133,38 @@ void loopCmdServer()
                     else
                     {
                         ledcWriteTone(buzzerChannel, 0);
+                    }
+                }
+                if (CmdArray[0] == "CMD_LIGHT")
+                {
+                    bool state = (paramters[1] == 1);
+                    enableLaser = state;
+                    turnLaserOn(enableLaser);
+                }
+                if (CmdArray[0] == "CMD_TRACK")
+                {
+                    bool state = (paramters[1] == 1);
+                    if (state)
+                    {
+                        if (obstacleAvoidanceModeTaskHandle == NULL)
+                        {
+                            xTaskCreatePinnedToCore(
+                                obstacleAvoidanceMode,
+                                "ObstacleAvoidance",
+                                1024 * 4,
+                                NULL,
+                                2,
+                                &obstacleAvoidanceModeTaskHandle,
+                                1);
+                        }
+                    }
+                    else
+                    {
+                        if (obstacleAvoidanceModeTaskHandle != NULL)
+                        {
+                            vTaskDelete(obstacleAvoidanceModeTaskHandle);
+                            obstacleAvoidanceModeTaskHandle = NULL;
+                        }
                     }
                 }
 

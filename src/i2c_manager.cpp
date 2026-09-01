@@ -2,10 +2,12 @@
 #include "i2c_manager.h"
 #include <Wire.h>
 #include "PCF8574.h"
+#include "Adafruit_PWMServoDriver.h"
 #include "peripherals.h"
 
-extern PCF8574 LMCpcf8574;
-extern PCF8574 RMCpcf8574;
+extern PCF8574 FMCpcf8574;
+extern PCF8574 BMCpcf8574;
+extern Adafruit_PWMServoDriver pca9685;
 
 static SemaphoreHandle_t i2cMutex = NULL;
 static int i2cFailCounter = 0;
@@ -51,8 +53,10 @@ bool lockI2C(TickType_t timeoutMs)
         Wire.setClock(400000);
         Wire.setTimeOut(50);
 
-        LMCpcf8574.begin();
-        RMCpcf8574.begin();
+        FMCpcf8574.begin();
+        BMCpcf8574.begin();
+        pca9685.begin();
+        pca9685.setPWMFreq(50);
 
         configurePCFPins();
 

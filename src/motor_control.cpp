@@ -3,15 +3,17 @@
 #include "peripherals.h"
 #include "i2c_manager.h"
 #include "PCF8574.h"
+#include "Adafruit_PWMServoDriver.h"
 #include "custom_motor_driver.h"
 
-extern PCF8574 LMCpcf8574;
-extern PCF8574 RMCpcf8574;
+extern PCF8574 FMCpcf8574;
+extern PCF8574 BMCpcf8574;
+extern Adafruit_PWMServoDriver pca9685;
 
-Motor motorFL(motorFLIn1pin, motorFLIn2pin, motorFLPWMPin, motorFLoffset, leftSTBYpin, &LMCpcf8574);
-Motor motorFR(motorFRIn1pin, motorFRIn2pin, motorFRPWMPin, motorFRoffset, leftSTBYpin, &RMCpcf8574);
-Motor motorBL(motorBLIn1pin, motorBLIn2pin, motorBLPWMPin, motorBLoffset, leftSTBYpin, &LMCpcf8574);
-Motor motorBR(motorBRIn1pin, motorBRIn2pin, motorBRPWMPin, motorBRoffset, leftSTBYpin, &RMCpcf8574);
+Motor motorFL(motorFLIn1pin, motorFLIn2pin, motorFLPWMPin, motorFLoffset, &FMCpcf8574, &pca9685);
+Motor motorFR(motorFRIn1pin, motorFRIn2pin, motorFRPWMPin, motorFRoffset, &FMCpcf8574, &pca9685);
+Motor motorBL(motorBLIn1pin, motorBLIn2pin, motorBLPWMPin, motorBLoffset, &BMCpcf8574, &pca9685);
+Motor motorBR(motorBRIn1pin, motorBRIn2pin, motorBRPWMPin, motorBRoffset, &BMCpcf8574, &pca9685);
 
 volatile float joystickX = 0.0f;
 volatile float joystickY = 0.0f;
@@ -21,22 +23,12 @@ int scaleMotorSpeed(float val)
     if (val == 0.0f)
         return 0;
 
-    int minPWM = 210; // Supera la zona muerta mecánica
-    int maxPWM = 255;
+    int minPWM = 3072; // Supera la zona muerta mecánica
+    int maxPWM = 4095;
 
     int absPWM = minPWM + (int)(fabs(val) * (maxPWM - minPWM));
     return (val > 0) ? absPWM : -absPWM;
 }
-
-// int scaleMotorSpeed(float val)
-// {
-//     if (val == 0.0f)
-//         return 0;
-
-//     // 🚀 VELOCIDAD MÁXIMA CONSTANTE:
-//     // Retorna 255 si el joystick va adelante, y -255 si va en reversa
-//     return (val > 0) ? 255 : -255;
-// }
 
 void brakeAllMotors()
 {
@@ -45,9 +37,12 @@ void brakeAllMotors()
     motorBL.brake();
     motorBR.brake();
 
-    LMCpcf8574.digitalWrite(leftSTBYpin, LOW);
-    RMCpcf8574.digitalWrite(rightSTBYpin, LOW);
-
+    if (lockI2C(20))
+    {
+        BMCpcf8574.digitalWrite(STBYpin, LOW);
+        unlockI2C();
+    }
+    
     leftRearLed(HIGH);
     rightRearLed(HIGH);
 }
@@ -81,6 +76,9 @@ void processDifferentialDrive(float x, float y)
     int speedRight = scaleMotorSpeed(right);
 
     // 4. Aplicación de movimiento
+
+    BMCpcf8574.digitalWrite(STBYpin, HIGH);
+
     motorFL.drive(speedLeft);
     motorFR.drive(speedRight);
     motorBL.drive(speedLeft);

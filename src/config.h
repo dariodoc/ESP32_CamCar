@@ -26,7 +26,7 @@
 #define PCLK_GPIO_NUM 22
 
 const int buzzerChannel = 3; // Canal del buzzer
-const int panCenter = 75;    // Posición central del pan
+const int panCenter = 90;    // Posición central del pan
 const int tiltCenter = 90;   // Posición central del tilt
 
 const int motorFLoffset = 1; // 1 para normal, -1 para invertir dirección
@@ -36,35 +36,39 @@ const int motorBRoffset = 1; // 1 para normal, -1 para invertir dirección
 
 // --- PINES DE PERIFÉRICOS ---
 
-const int builtinLedPin = 2;       // Pin del LED incorporado en la placa ESP32
-const int laserPin = 5;            // pcf8574 pin 5
-const int leftRearLedPin = 6;      // pcf8574 pin 6
-const int rightRearLedPin = 6;     // pcf8574 pin 6
-const int obstacleDetectorPin = 5; // pcf8574 pin 5
-const int buzzerPin = 33;          // esp32 pin 33
-const int panPin = 12;             // esp32 pin 12
-const int tiltPin = 13;            // esp32 pin 13
+const int builtinLedPin = 2;    // Pin del LED incorporado en la placa ESP32
+const int laserPin = 13;        // Pin del PCA9685 para el láser
+const int leftRearLedPin = 15;  // Pin del PCA9685 para el led trasero izquierdo
+const int rightRearLedPin = 14; // Pin del PCA9685 para el led trasero derecho
 
-// --- PINES DEL PCF8574 PARA LOS MOTORES ---
+const int obstacleDetectorPin1 = 3; // Pin del pcf8574
+const int obstacleDetectorPin2 = 2; // Pin del pcf8574
+const int obstacleDetectorPin3 = 1; // Pin del pcf8574
+const int obstacleDetectorPin4 = 0; // Pin del pcf8574
 
-const int motorFLIn1pin = 0;  // Pin de PCF8574 para el motor delantero izquierdo
-const int motorFLIn2pin = 1;  // Pin de PCF8574 para el motor delantero izquierdo
-const int motorFLPWMPin = 14; // Pin del esp32 para el motor delantero izquierdo
+const int buzzerPin = 12; // Pin del ESP32 para el buzzer (PWM)
+const int panPin = 4;     // Pin del PCA9685 para el pan
+const int tiltPin = 5;    // Pin del PCA9685 para el tilt
 
-const int motorBLIn1pin = 3;  // Pin de PCF8574 para el motor trasero izquierdo
-const int motorBLIn2pin = 4;  // Pin de PCF8574 para el motor trasero izquierdo
-const int motorBLPWMPin = 14; // Pin del esp32 para el motor trasero izquierdo
+// --- PINES DEL PCF8574 Y PCA9685 PARA LOS MOTORES ---
 
-const int motorFRIn1pin = 0;  // Pin de PCF8574 para el motor delantero derecho
-const int motorFRIn2pin = 1;  // Pin de PCF8574 para el motor delantero derecho
-const int motorFRPWMPin = 32; // Pin del esp32 para el motor delantero derecho
+const int motorFLIn1pin = 4; // Pin de PCF8574 para el motor delantero izquierdo
+const int motorFLIn2pin = 5; // Pin de PCF8574 para el motor delantero izquierdo
+const int motorFLPWMPin = 0; // Pin del PCA9685 para el motor delantero izquierdo
 
-const int motorBRIn1pin = 3;  // Pin de PCF8574 para el motor trasero derecho
-const int motorBRIn2pin = 4;  // Pin de PCF8574 para el motor trasero derecho
-const int motorBRPWMPin = 32; // Pin del esp32 para el motor trasero derecho
+const int motorFRIn1pin = 7; // Pin de PCF8574 para el motor delantero derecho
+const int motorFRIn2pin = 6; // Pin de PCF8574 para el motor delantero derecho
+const int motorFRPWMPin = 1; // Pin del PCA9685 para el motor delantero derecho
 
-const int leftSTBYpin = 2;  // Pin de PCF8574 para Standby del controlador de motor izquierdo
-const int rightSTBYpin = 2; // Pin de PCF8574 para Standby del controlador de motor derecho
+const int motorBLIn1pin = 2; // Pin de PCF8574 para el motor trasero izquierdo
+const int motorBLIn2pin = 3; // Pin de PCF8574 para el motor trasero izquierdo
+const int motorBLPWMPin = 3; // Pin del PCA9685 para el motor trasero izquierdo
+
+const int motorBRIn1pin = 1; // Pin de PCF8574 para el motor trasero derecho
+const int motorBRIn2pin = 0; // Pin de PCF8574 para el motor trasero derecho
+const int motorBRPWMPin = 2; // Pin del PCA9685 para el motor trasero derecho
+
+const int STBYpin = 4; // Pin de PCF8574 para Standby
 
 // --- CONFIGURACIÓN DE FREERTOS ---
 #define STACK_SIZE (1024 * 4)

@@ -3,15 +3,13 @@
 #include "i2c_manager.h"
 #include "motor_control.h"
 #include "PCF8574.h"
-#include "ESP32Servo.h"
+#include "Adafruit_PWMServoDriver.h"
 #include "Melodies.h"
 #include <Wire.h>
 
-PCF8574 LMCpcf8574(&Wire, 0x20);
-PCF8574 RMCpcf8574(&Wire, 0x24);
-
-Servo panServo;
-Servo tiltServo;
+PCF8574 FMCpcf8574(&Wire, 0x20);
+PCF8574 BMCpcf8574(&Wire, 0x24);
+Adafruit_PWMServoDriver pca9685(0x40, Wire);
 
 volatile bool enableLaser = false;
 volatile bool melodyOn = false;
@@ -21,7 +19,7 @@ volatile bool obstacleFound = false;
 volatile int panDirection = 0;
 volatile int tiltDirection = 0;
 
-// 🚀 Variables de posición global para mantener sincronía interna
+// Variables de posición global para mantener sincronía interna
 static int currentPan = panCenter;   // 75
 static int currentTilt = tiltCenter; // 90
 
@@ -29,14 +27,15 @@ TaskHandle_t playMelodyTaskHandle = NULL;
 TaskHandle_t obstacleAvoidanceModeTaskHandle = NULL;
 TaskHandle_t servoControlTaskHandle = NULL;
 
-volatile bool isCentering = false; // 👈 Bandera de centrado suave
+volatile bool isCentering = false; // Bandera de centrado suave
 
 // --- Control de LEDs Traseros ---
 void leftRearLed(int state)
 {
     if (lockI2C(20))
     {
-        LMCpcf8574.digitalWrite(leftRearLedPin, !state);
+        int pwmValue = state ? 0 : 4095;
+        pca9685.setPWM(leftRearLedPin, 0, pwmValue);
         unlockI2C();
     }
 }
@@ -45,43 +44,74 @@ void rightRearLed(int state)
 {
     if (lockI2C(20))
     {
-        RMCpcf8574.digitalWrite(rightRearLedPin, !state);
+        int pwmValue = state ? 0 : 4095;
+        pca9685.setPWM(rightRearLedPin, 0, pwmValue);
         unlockI2C();
     }
 }
 
+void writeServoPCA(uint8_t channel, int angle)
+{
+    int constrainedAngle = constrain(angle, 0, 180);
+    int uS = 0;
+
+    // Calibración independiente por servo / canal
+    if (channel == panPin) // Canal 4 (Pan)
+    {
+        // 🚀 
+        uS = map(constrainedAngle, 0, 180, 600, 2400);
+    }
+    else if (channel == tiltPin) // Canal 5 (Tilt)
+    {
+        // Rango protegido para el Tilt para evitar que se brinque el engrane
+        uS = map(constrainedAngle, 0, 180, 600, 2400);
+    }
+    else
+    {
+        uS = map(constrainedAngle, 0, 180, 600, 2400);
+    }
+
+    if (lockI2C(20))
+    {
+        pca9685.writeMicroseconds(channel, uS);
+        unlockI2C();
+    }
+}
+
+// --- Control de Ángulos Pan y Tilt usando PCA9685 ---
 void setPanAngle(int angle)
 {
     currentPan = constrain(angle, 0, 180);
-    panServo.write(currentPan);
+    writeServoPCA(panPin, currentPan); // panPin = 4 en PCA9685
 }
 
 void setTiltAngle(int angle)
 {
-    int constrainedAngle = constrain(angle, 0, 180);
-    currentTilt = 180 - constrainedAngle; // 👈 Invierte la posición del servo
-    tiltServo.write(currentTilt);
+    // 🚀 Restringimos el rango a 10° - 170° para evitar que el servo toque el tope mecánico y se desenganche
+    int safeAngle = constrain(angle, 10, 170);
+
+    currentTilt = 180 - safeAngle; // Mantiene la inversión vertical
+    writeServoPCA(tiltPin, currentTilt);
 }
 
 void configurePCFPins()
 {
-    LMCpcf8574.pinMode(motorFLIn1pin, OUTPUT);
-    LMCpcf8574.pinMode(motorFLIn2pin, OUTPUT);
-    LMCpcf8574.pinMode(motorBLIn1pin, OUTPUT);
-    LMCpcf8574.pinMode(motorBLIn2pin, OUTPUT);
-    LMCpcf8574.pinMode(leftSTBYpin, OUTPUT);
+    FMCpcf8574.pinMode(motorFLIn1pin, OUTPUT);
+    FMCpcf8574.pinMode(motorFLIn2pin, OUTPUT);
+    FMCpcf8574.pinMode(motorFRIn1pin, OUTPUT);
+    FMCpcf8574.pinMode(motorFRIn2pin, OUTPUT);
 
-    LMCpcf8574.pinMode(leftRearLedPin, OUTPUT);
-    LMCpcf8574.pinMode(laserPin, OUTPUT);
+    BMCpcf8574.pinMode(motorBRIn1pin, OUTPUT);
+    BMCpcf8574.pinMode(motorBRIn2pin, OUTPUT);
+    BMCpcf8574.pinMode(motorBLIn1pin, OUTPUT);
+    BMCpcf8574.pinMode(motorBLIn2pin, OUTPUT);
 
-    RMCpcf8574.pinMode(motorFRIn1pin, OUTPUT);
-    RMCpcf8574.pinMode(motorFRIn2pin, OUTPUT);
-    RMCpcf8574.pinMode(motorBRIn1pin, OUTPUT);
-    RMCpcf8574.pinMode(motorBRIn2pin, OUTPUT);
-    RMCpcf8574.pinMode(rightSTBYpin, OUTPUT);
+    BMCpcf8574.pinMode(STBYpin, OUTPUT);
 
-    RMCpcf8574.pinMode(rightRearLedPin, OUTPUT);
-    RMCpcf8574.pinMode(obstacleDetectorPin, INPUT);
+    FMCpcf8574.pinMode(obstacleDetectorPin1, INPUT_PULLUP);
+    FMCpcf8574.pinMode(obstacleDetectorPin2, INPUT_PULLUP);
+    FMCpcf8574.pinMode(obstacleDetectorPin3, INPUT_PULLUP);
+    FMCpcf8574.pinMode(obstacleDetectorPin4, INPUT_PULLUP);
 }
 
 void setupPeripherals()
@@ -91,18 +121,21 @@ void setupPeripherals()
     ledcDetachPin(buzzerPin);
 
     Wire.begin(SIOD_GPIO_NUM, SIOC_GPIO_NUM);
-    vTaskDelay(pdMS_TO_TICKS(100)); // 👈 100 ms para arranque en frío
-    Wire.setClock(400000);
-    Wire.setTimeOut(50);
+    vTaskDelay(pdMS_TO_TICKS(100)); // 100 ms para arranque en frío
 
-    LMCpcf8574.begin();
-    RMCpcf8574.begin();
+    // 🚀 Reducir a 100 kHz para mayor tolerancia al ruido eléctrico
+    Wire.setClock(100000);
+    Wire.setTimeOut(100);
 
-    configurePCFPins(); // 👈 Lógica centralizada de pines
+    FMCpcf8574.begin();
+    BMCpcf8574.begin();
+    pca9685.begin();
+    pca9685.setPWMFreq(50);
+
+    configurePCFPins(); // Lógica centralizada de pines
 
     turnLaserOn(false);
-    panServo.attach(panPin);
-    tiltServo.attach(tiltPin);
+
     centerServos();
 
     ledIndicator(3, 100);
@@ -128,7 +161,8 @@ void turnLaserOn(bool state)
 {
     if (lockI2C(20))
     {
-        LMCpcf8574.digitalWrite(laserPin, !state);
+        int pwmValue = state ? 0 : 4095;
+        pca9685.setPWM(laserPin, 0, pwmValue);
         unlockI2C();
     }
 }
@@ -146,96 +180,8 @@ void playMelody(void *parameters)
 
 void centerServos()
 {
-    panDirection = 0;
-    tiltDirection = 0;
-    isCentering = true; // 🚀 Notifica a servoControlTask que inicie el centrado suave
-}
-
-void servoControlTask(void *parameters)
-{
-    const int stepSize = 1;
-
-    for (;;)
-    {
-        bool moved = false;
-
-        // 🚀 MODO CENTRADO SUAVE (EASING)
-        if (isCentering)
-        {
-            bool panDone = (currentPan == panCenter);
-            bool tiltDone = (currentTilt == tiltCenter);
-
-            // Suavizado PAN
-            if (!panDone)
-            {
-                if (currentPan < panCenter)
-                    currentPan += stepSize;
-                else if (currentPan > panCenter)
-                    currentPan -= stepSize;
-                panServo.write(currentPan);
-                moved = true;
-            }
-
-            // Suavizado TILT
-            if (!tiltDone)
-            {
-                if (currentTilt < tiltCenter)
-                    currentTilt += stepSize;
-                else if (currentTilt > tiltCenter)
-                    currentTilt -= stepSize;
-                tiltServo.write(currentTilt);
-                moved = true;
-            }
-
-            // Si ambos alcanzaron el centro objetivo, se desactiva el modo centrado
-            if (panDone && tiltDone)
-            {
-                isCentering = false;
-            }
-        }
-        // 🚀 MODO CONTROL MANUAL (Joystick / Botones)
-        else
-        {
-            // --- Manejo Servo PAN ---
-            if (panDirection == 1 && currentPan < 180)
-            { // Mover Izquierda
-                currentPan += stepSize;
-                if (currentPan > 180)
-                    currentPan = 180;
-                panServo.write(currentPan);
-                moved = true;
-            }
-            else if (panDirection == 2 && currentPan > 0)
-            { // Mover Derecha
-                currentPan -= stepSize;
-                if (currentPan < 0)
-                    currentPan = 0;
-                panServo.write(currentPan);
-                moved = true;
-            }
-
-            // --- Manejo Servo TILT (Invertido) ---
-            if (tiltDirection == 1 && currentTilt < 180)
-            { // Mover Arriba (Invertido)
-                currentTilt += stepSize;
-                if (currentTilt > 180)
-                    currentTilt = 180;
-                tiltServo.write(currentTilt);
-                moved = true;
-            }
-            else if (tiltDirection == 2 && currentTilt > 0)
-            { // Mover Abajo (Invertido)
-                currentTilt -= stepSize;
-                if (currentTilt < 0)
-                    currentTilt = 0;
-                tiltServo.write(currentTilt);
-                moved = true;
-            }
-        }
-
-        // Mantiene una cadencia fluida de 20 ms por grado cuando hay movimiento
-        vTaskDelay(pdMS_TO_TICKS(moved ? 20 : 50));
-    }
+    setPanAngle(panCenter);   // panCenter = 75 en config.h
+    setTiltAngle(tiltCenter); // tiltCenter = 90 en config.h
 }
 
 void obstacleAvoidanceMode(void *parameters)
@@ -255,7 +201,7 @@ void obstacleAvoidanceMode(void *parameters)
 
         if (lockI2C(20))
         {
-            detect = RMCpcf8574.digitalRead(obstacleDetectorPin);
+            detect = FMCpcf8574.digitalRead(obstacleDetectorPin1);
             unlockI2C();
         }
 

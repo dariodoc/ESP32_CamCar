@@ -6,30 +6,15 @@
 extern bool lockI2C(TickType_t timeoutMs = 20);
 extern void unlockI2C();
 
-// Constructor para GPIO directos
-Motor::Motor(int In1pin, int In2pin, int PWMpin, int offset, int STBYpin)
+// Constructor con PCF8574 y PCA9685
+Motor::Motor(int In1pin, int In2pin, int PWMpin, int offset, PCF8574 *pcfDev, Adafruit_PWMServoDriver *pcaController)
 {
     In1 = In1pin;
     In2 = In2pin;
     PWM = PWMpin;
     Offset = offset;
-    Standby = STBYpin;
-    pcf = nullptr;
-
-    pinMode(PWM, OUTPUT);
-}
-
-// Constructor con PCF8574
-Motor::Motor(int In1pin, int In2pin, int PWMpin, int offset, int STBYpin, PCF8574 *pcfDev)
-{
-    In1 = In1pin;
-    In2 = In2pin;
-    PWM = PWMpin;
-    Offset = offset;
-    Standby = STBYpin;
     pcf = pcfDev;
-
-    pinMode(PWM, OUTPUT);
+    pca = pcaController;
 }
 
 void Motor::fwd(int speed)
@@ -38,7 +23,7 @@ void Motor::fwd(int speed)
     {
         if (lockI2C(20))
         {
-            pcf->digitalWrite(Standby, HIGH);
+
             pcf->digitalWrite(In1, HIGH);
             pcf->digitalWrite(In2, LOW);
             unlockI2C();
@@ -46,12 +31,12 @@ void Motor::fwd(int speed)
     }
     else
     {
-        digitalWrite(Standby, HIGH);
+
         digitalWrite(In1, HIGH);
         digitalWrite(In2, LOW);
     }
 
-    analogWrite(PWM, speed);
+    pca->setPWM(PWM, 0, speed);
 }
 
 void Motor::rev(int speed)
@@ -60,7 +45,7 @@ void Motor::rev(int speed)
     {
         if (lockI2C(20))
         {
-            pcf->digitalWrite(Standby, HIGH);
+
             pcf->digitalWrite(In1, LOW);
             pcf->digitalWrite(In2, HIGH);
             unlockI2C();
@@ -68,12 +53,12 @@ void Motor::rev(int speed)
     }
     else
     {
-        digitalWrite(Standby, HIGH);
+
         digitalWrite(In1, LOW);
         digitalWrite(In2, HIGH);
     }
 
-    analogWrite(PWM, speed);
+    pca->setPWM(PWM, 0, speed);
 }
 
 void Motor::brake()
@@ -93,7 +78,7 @@ void Motor::brake()
         digitalWrite(In2, HIGH);
     }
 
-    analogWrite(PWM, 0);
+    pca->setPWM(PWM, 0, 0); // Detener el PWM
 }
 
 void Motor::drive(int speed)
