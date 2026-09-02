@@ -68,7 +68,6 @@ void loopCmdServer()
                     int rawLeft = paramters[1]; // Rango app: -4095 a 4095
                     int rawRight = paramters[3];
 
-                    // Mapeo del rango [-4095, 4095] de la App al rango PWM del TB6612FNG [-255, 255]
                     float normX = 0.0f;
                     float normY = (float)rawLeft / 4095.0f;
 
@@ -98,15 +97,9 @@ void loopCmdServer()
                 else if (CmdArray[0] == "CMD_CAMERA")
                 {
                     // La App envía CMD_CAMERA#panAngle#tiltAngle al mover el joystick de la cámara
-                    setPanAngle(paramters[1]);
-                    setTiltAngle(paramters[2]);
-                }
-                else if (CmdArray[0] == "CMD_CAMERA")
-                {
-                    // Si la App envía ángulos absolutos o comando de centrado
                     if (paramters[1] == panCenter && paramters[2] == tiltCenter)
                     {
-                        centerServos(); // 👈 Inicia centrado suave
+                        centerServos();
                     }
                     else
                     {
@@ -135,36 +128,31 @@ void loopCmdServer()
                         ledcWriteTone(buzzerChannel, 0);
                     }
                 }
+
+                // 5. Control de Luz / Láser
                 if (CmdArray[0] == "CMD_LIGHT")
                 {
                     bool state = (paramters[1] == 1);
                     enableLaser = state;
                     turnLaserOn(enableLaser);
                 }
+
+                // 6. Control del Modo Esquivar Obstáculos / Tracking
                 if (CmdArray[0] == "CMD_TRACK")
                 {
                     bool state = (paramters[1] == 1);
-                    if (state)
+                    enableObstacleAvoidance = state;
+
+                    if (enableObstacleAvoidance)
                     {
-                        if (obstacleAvoidanceModeTaskHandle == NULL)
+                        if (obstacleAvoidanceModeTaskHandle != NULL)
                         {
-                            xTaskCreatePinnedToCore(
-                                obstacleAvoidanceMode,
-                                "ObstacleAvoidance",
-                                1024 * 4,
-                                NULL,
-                                2,
-                                &obstacleAvoidanceModeTaskHandle,
-                                1);
+                            xTaskNotifyGive(obstacleAvoidanceModeTaskHandle);
                         }
                     }
                     else
                     {
-                        if (obstacleAvoidanceModeTaskHandle != NULL)
-                        {
-                            vTaskDelete(obstacleAvoidanceModeTaskHandle);
-                            obstacleAvoidanceModeTaskHandle = NULL;
-                        }
+                        processDifferentialDrive(0.0f, 0.0f);
                     }
                 }
 
@@ -230,14 +218,40 @@ void initWiFi()
     WiFi.setSleep(WIFI_PS_NONE);
     WiFi.setTxPower(WIFI_POWER_19_5dBm);
 
-    // Configuración del Access Point dedicado para la App
-    IPAddress apIP(192, 168, 4, 1);
-    IPAddress apGateway(192, 168, 4, 1);
-    IPAddress apSubnet(255, 255, 255, 0);
+    // Configuración de IP Estática en Modo STA
+    IPAddress staticIP(192, 168, 0, 202);
+    IPAddress gateway(192, 168, 0, 1);
+    IPAddress subnet(255, 255, 255, 0);
+    IPAddress dns(8, 8, 8, 8);
 
-    WiFi.mode(WIFI_AP);
-    WiFi.softAPConfig(apIP, apGateway, apSubnet);
-    WiFi.softAP("ESP-CAMERA-CAR", "carbondioxide", 6, 0, 4);
+    WiFi.mode(WIFI_STA);
+
+    if (!WiFi.config(staticIP, gateway, subnet, dns))
+    {
+#ifdef DEBUG
+        Serial.println("❌ Fallo al configurar IP Estática en STA");
+#endif
+    }
+
+    WiFi.begin("Tractorex", "9983476198");
+
+#ifdef DEBUG
+    Serial.print("Conectando a la red Tractorex");
+#endif
+
+    while (WiFi.status() != WL_CONNECTED)
+    {
+        vTaskDelay(pdMS_TO_TICKS(500));
+#ifdef DEBUG
+        Serial.print(".");
+#endif
+    }
+
+#ifdef DEBUG
+    Serial.println("\n✅ Wi-Fi Conectado!");
+    Serial.print("IP del coche: ");
+    Serial.println(WiFi.localIP());
+#endif
 
     server_Cmd.begin(4000);
     server_Camera.begin(7000);

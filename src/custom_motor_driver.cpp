@@ -1,12 +1,16 @@
 #include "custom_motor_driver.h"
+#include "config.h"
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
+#include <Wire.h>
 
-// Funciones globales para control de concurrencia I2C
+extern PCF8574 FMCpcf8574;
 extern bool lockI2C(TickType_t timeoutMs = 20);
 extern void unlockI2C();
 
-// Constructor con PCF8574 y PCA9685
+// Estado en sombra para preservar salidas y entradas sin depender del Read-Modify-Write de la librería
+static uint8_t pcfOutputState = 0xFF; 
+
 Motor::Motor(int In1pin, int In2pin, int PWMpin, int offset, PCF8574 *pcfDev, Adafruit_PWMServoDriver *pcaController)
 {
     In1 = In1pin;
@@ -17,81 +21,57 @@ Motor::Motor(int In1pin, int In2pin, int PWMpin, int offset, PCF8574 *pcfDev, Ad
     pca = pcaController;
 }
 
-void Motor::fwd(int speed)
+void Motor::setMotorState(int stateIn1, int stateIn2, int speed)
 {
-    if (pcf != nullptr)
+    if (lockI2C(20))
     {
-        if (lockI2C(20))
+        if (pcf == &FMCpcf8574)
         {
+            // 1. Modificar bits de dirección de este motor
+            if (stateIn1 == HIGH) pcfOutputState |= (1 << In1);
+            else                  pcfOutputState &= ~(1 << In1);
 
-            pcf->digitalWrite(In1, HIGH);
-            pcf->digitalWrite(In2, LOW);
-            unlockI2C();
+            if (stateIn2 == HIGH) pcfOutputState |= (1 << In2);
+            else                  pcfOutputState &= ~(1 << In2);
+
+            // 2. FORZAR SIEMPRE EN 1 LÓGICO LOS SENSORES EN EL EXPANSOR 0x20
+            pcfOutputState |= (1 << obstacleDetectorPin1);
+            pcfOutputState |= (1 << obstacleDetectorPin2);
+            pcfOutputState |= (1 << obstacleDetectorPin3);
+            pcfOutputState |= (1 << obstacleDetectorPin4);
+
+            // 3. Transmisión nativa I2C al puerto 0x20
+            Wire.beginTransmission(0x20);
+            Wire.write(pcfOutputState);
+            Wire.endTransmission();
         }
-    }
-    else
-    {
+        else
+        {
+            // Para el expansor de atrás (BMCpcf8574 / 0x24)
+            pcf->digitalWrite(In1, stateIn1);
+            pcf->digitalWrite(In2, stateIn2);
+        }
 
-        digitalWrite(In1, HIGH);
-        digitalWrite(In2, LOW);
-    }
+        // 4. Ajuste de PWM en PCA9685 dentro del mismo lock
+        pca->setPWM(PWM, 0, speed);
 
-    pca->setPWM(PWM, 0, speed);
+        unlockI2C();
+    }
 }
 
-void Motor::rev(int speed)
-{
-    if (pcf != nullptr)
-    {
-        if (lockI2C(20))
-        {
-
-            pcf->digitalWrite(In1, LOW);
-            pcf->digitalWrite(In2, HIGH);
-            unlockI2C();
-        }
-    }
-    else
-    {
-
-        digitalWrite(In1, LOW);
-        digitalWrite(In2, HIGH);
-    }
-
-    pca->setPWM(PWM, 0, speed);
-}
-
-void Motor::brake()
-{
-    if (pcf != nullptr)
-    {
-        if (lockI2C(20))
-        {
-            pcf->digitalWrite(In1, HIGH);
-            pcf->digitalWrite(In2, HIGH);
-            unlockI2C();
-        }
-    }
-    else
-    {
-        digitalWrite(In1, HIGH);
-        digitalWrite(In2, HIGH);
-    }
-
-    pca->setPWM(PWM, 0, 0); // Detener el PWM
-}
+void Motor::fwd(int speed)  { setMotorState(HIGH, LOW, speed); }
+void Motor::rev(int speed)  { setMotorState(LOW, HIGH, speed); }
+void Motor::brake()        { setMotorState(HIGH, HIGH, 0); }
 
 void Motor::drive(int speed)
 {
     speed = speed * Offset;
-    if (speed >= 0)
-        fwd(speed);
-    else
-        rev(-speed);
+    if (speed >= 0) fwd(speed);
+    else            rev(-speed);
 }
 
 void Motor::drive(int speed, int duration)
 {
     drive(speed);
-    delay(duration);
+    vTaskDelay(pdMS_TO_TICKS(duration));
 }

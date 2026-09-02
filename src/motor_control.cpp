@@ -77,7 +77,11 @@ void processDifferentialDrive(float x, float y)
 
     // 4. Aplicación de movimiento
 
-    BMCpcf8574.digitalWrite(STBYpin, HIGH);
+    if (lockI2C(20))
+    {
+        BMCpcf8574.digitalWrite(STBYpin, HIGH);
+        unlockI2C();
+    }
 
     motorFL.drive(speedLeft);
     motorFR.drive(speedRight);

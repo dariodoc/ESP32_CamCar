@@ -58,7 +58,7 @@ void writeServoPCA(uint8_t channel, int angle)
     // Calibración independiente por servo / canal
     if (channel == panPin) // Canal 4 (Pan)
     {
-        // 🚀 
+        // 🚀
         uS = map(constrainedAngle, 0, 180, 600, 2400);
     }
     else if (channel == tiltPin) // Canal 5 (Tilt)
