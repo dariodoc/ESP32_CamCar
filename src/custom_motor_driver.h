@@ -5,6 +5,8 @@
 #include "PCF8574.h"
 #include "Adafruit_PWMServoDriver.h"
 
+void setStandbyPin(bool enable);
+
 class Motor
 {
 private:

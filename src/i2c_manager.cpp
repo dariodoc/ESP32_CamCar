@@ -50,15 +50,24 @@ bool lockI2C(TickType_t timeoutMs)
 
         Wire.begin(SIOD_GPIO_NUM, SIOC_GPIO_NUM);
         vTaskDelay(pdMS_TO_TICKS(50));
-        Wire.setClock(400000);
-        Wire.setTimeOut(50);
+
+        // 🚀 Mantener reloj en 100 kHz para evitar ruina de señal por interferencia
+        Wire.setClock(100000);
+        Wire.setTimeOut(100);
 
         FMCpcf8574.begin();
         BMCpcf8574.begin();
         pca9685.begin();
         pca9685.setPWMFreq(50);
 
-        configurePCFPins();
+        // 🚀 Sincronizar en frío el bus en HIGH (0xFF) tras el reinicio del bus
+        Wire.beginTransmission(0x20);
+        Wire.write(0xFF);
+        Wire.endTransmission();
+
+        Wire.beginTransmission(0x24);
+        Wire.write(0xFF);
+        Wire.endTransmission();
 
         i2cFailCounter = 0;
 

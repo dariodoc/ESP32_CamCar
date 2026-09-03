@@ -15,21 +15,6 @@ Motor motorFR(motorFRIn1pin, motorFRIn2pin, motorFRPWMPin, motorFRoffset, &FMCpc
 Motor motorBL(motorBLIn1pin, motorBLIn2pin, motorBLPWMPin, motorBLoffset, &BMCpcf8574, &pca9685);
 Motor motorBR(motorBRIn1pin, motorBRIn2pin, motorBRPWMPin, motorBRoffset, &BMCpcf8574, &pca9685);
 
-volatile float joystickX = 0.0f;
-volatile float joystickY = 0.0f;
-
-int scaleMotorSpeed(float val)
-{
-    if (val == 0.0f)
-        return 0;
-
-    int minPWM = 3072; // Supera la zona muerta mecánica
-    int maxPWM = 4095;
-
-    int absPWM = minPWM + (int)(fabs(val) * (maxPWM - minPWM));
-    return (val > 0) ? absPWM : -absPWM;
-}
-
 void brakeAllMotors()
 {
     motorFL.brake();
@@ -37,56 +22,30 @@ void brakeAllMotors()
     motorBL.brake();
     motorBR.brake();
 
-    if (lockI2C(20))
-    {
-        BMCpcf8574.digitalWrite(STBYpin, LOW);
-        unlockI2C();
-    }
-    
+    // Desactivar Standby mediante el registro en sombra atómico
+    setStandbyPin(false);
+
     leftRearLed(HIGH);
     rightRearLed(HIGH);
 }
 
-void processDifferentialDrive(float x, float y)
+// 🚀 Control directo a plena potencia usando los 4 comandos recibidos (-4095 a 4095)
+void driveDirectRaw(int fl, int bl, int fr, int br)
 {
-    if (x == 0.0f && y == 0.0f)
+    if (fl == 0 && fr == 0 && bl == 0 && br == 0)
     {
         brakeAllMotors();
-
         return;
     }
 
-    // 1. Cinemática Diferencial
-    float left = y + x;
-    float right = y - x;
+    // 1. Activa STBY solo si no estaba ya activo
+    setStandbyPin(true);
 
-    // 2. Normalización para no rebasar 1.0
-    float maxVal = fabs(left);
-    if (fabs(right) > maxVal)
-        maxVal = fabs(right);
-
-    if (maxVal > 1.0f)
-    {
-        left /= maxVal;
-        right /= maxVal;
-    }
-
-    // 3. Escalado al rango de motores (200-255)
-    int speedLeft = scaleMotorSpeed(left);
-    int speedRight = scaleMotorSpeed(right);
-
-    // 4. Aplicación de movimiento
-
-    if (lockI2C(20))
-    {
-        BMCpcf8574.digitalWrite(STBYpin, HIGH);
-        unlockI2C();
-    }
-
-    motorFL.drive(speedLeft);
-    motorFR.drive(speedRight);
-    motorBL.drive(speedLeft);
-    motorBR.drive(speedRight);
+    // 2. Envío directo del pulso PWM a cada motor
+    motorFL.drive(fl);
+    motorFR.drive(fr);
+    motorBL.drive(bl);
+    motorBR.drive(br);
 
     leftRearLed(LOW);
     rightRearLed(LOW);

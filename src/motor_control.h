@@ -3,9 +3,7 @@
 
 #include <Arduino.h>
 
-extern volatile float joystickX;
-extern volatile float joystickY;
+void brakeAllMotors();
+void driveDirectRaw(int fl, int fr, int bl, int br);
 
-void processDifferentialDrive(float x, float y);
-
-#endif // MOTOR_CONTROL_H
+#endif

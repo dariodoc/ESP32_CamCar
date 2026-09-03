@@ -3,6 +3,9 @@
 
 #include <Arduino.h>
 
+// 🚀 Define DEBUG para habilitar las impresiones por el puerto serial
+// #define DEBUG
+
 // ======================================================
 // CONFIGURACIÓN DE PINES - FREENOVE ESP32-WROVER
 // ======================================================

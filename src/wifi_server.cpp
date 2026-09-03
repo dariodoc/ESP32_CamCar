@@ -58,28 +58,25 @@ void loopCmdServer()
                 String inputStringTemp = client.readStringUntil('\n');
                 inputStringTemp.trim();
 
+#ifdef DEBUG
+                Serial.print("📩 Comando recibido: ");
+                Serial.println(inputStringTemp);
+#endif
+
                 Get_Command(inputStringTemp);
 
-                // --- MAPPING DE COMANDOS APP FREENOVE A TU HARDWARE --- //
-
-                // 1. Control de Motores (TB6612FNG via PCF8574 + PWM)
+                // 1. Control Directo de Motores (FL, BL, FR, BR)
                 if (CmdArray[0] == "CMD_MOTOR")
                 {
-                    int rawLeft = paramters[1]; // Rango app: -4095 a 4095
-                    int rawRight = paramters[3];
+                    int rawFL = paramters[1];
+                    int rawBL = paramters[2];
+                    int rawFR = paramters[3];
+                    int rawBR = paramters[4];
 
-                    float normX = 0.0f;
-                    float normY = (float)rawLeft / 4095.0f;
-
-                    if (rawLeft != rawRight)
-                    {
-                        normX = (float)(rawLeft - rawRight) / 4095.0f;
-                    }
-
-                    processDifferentialDrive(normX, normY);
+                    driveDirectRaw(rawFL, rawBL, rawFR, rawBR);
                 }
 
-                // 2. Control de Servos Pan / Tilt (Mapeo directo desde la App Freenove)
+                // 2. Control de Servos Pan / Tilt
                 if (CmdArray[0] == "CMD_SERVO")
                 {
                     int servoID = paramters[1]; // 0 = Pan, 1 = Tilt
@@ -96,7 +93,6 @@ void loopCmdServer()
                 }
                 else if (CmdArray[0] == "CMD_CAMERA")
                 {
-                    // La App envía CMD_CAMERA#panAngle#tiltAngle al mover el joystick de la cámara
                     if (paramters[1] == panCenter && paramters[2] == tiltCenter)
                     {
                         centerServos();
@@ -152,7 +148,7 @@ void loopCmdServer()
                     }
                     else
                     {
-                        processDifferentialDrive(0.0f, 0.0f);
+                        brakeAllMotors();
                     }
                 }
 
@@ -168,7 +164,7 @@ void loopCmdServer()
         client.stop();
 
         // Parada de seguridad cuando la app se desconecta
-        processDifferentialDrive(0.0f, 0.0f);
+        brakeAllMotors();
     }
 }
 
@@ -214,6 +210,9 @@ void cameraStreamTaskTCP(void *pvParameters)
 
 void initWiFi()
 {
+    // Apagado inicial (0 = Apagado)
+    ledIndicator(0);
+
     WiFi.persistent(false);
     WiFi.setSleep(WIFI_PS_NONE);
     WiFi.setTxPower(WIFI_POWER_19_5dBm);
@@ -225,6 +224,7 @@ void initWiFi()
     IPAddress dns(8, 8, 8, 8);
 
     WiFi.mode(WIFI_STA);
+    WiFi.setAutoReconnect(true);
 
     if (!WiFi.config(staticIP, gateway, subnet, dns))
     {
@@ -233,30 +233,39 @@ void initWiFi()
 #endif
     }
 
-    WiFi.begin("Tractorex", "9983476198");
-
 #ifdef DEBUG
-    Serial.print("Conectando a la red Tractorex");
+    Serial.print("Buscando y conectando a la red Tractorex");
 #endif
+
+    WiFi.begin("Tractorex", "9983476198");
 
     while (WiFi.status() != WL_CONNECTED)
     {
-        vTaskDelay(pdMS_TO_TICKS(500));
+        ledIndicator(1, 80);
+
 #ifdef DEBUG
         Serial.print(".");
 #endif
+        vTaskDelay(pdMS_TO_TICKS(1920));
+
+        if (WiFi.status() == WL_CONNECT_FAILED || WiFi.status() == WL_DISCONNECTED)
+        {
+            WiFi.begin("Tractorex", "9983476198");
+        }
     }
+
+    ledIndicator(2, 60);
 
 #ifdef DEBUG
     Serial.println("\n✅ Wi-Fi Conectado!");
     Serial.print("IP del coche: ");
     Serial.println(WiFi.localIP());
+    Serial.printf("Potencia de Señal (RSSI): %d dBm\n", WiFi.RSSI());
 #endif
 
     server_Cmd.begin(4000);
     server_Camera.begin(7000);
 
-    // Tarea de streaming de video en el Core 0
     xTaskCreatePinnedToCore(
         cameraStreamTaskTCP,
         "CamTCPStream",
@@ -268,7 +277,9 @@ void initWiFi()
 
     ArduinoOTA.begin();
 
-    // Desactiva Bluetooth para liberar RAM
     btStop();
     esp_bt_controller_disable();
+
+    // 🚀 ENCENDIDO PERMANENTE (1 = Encendido)
+    ledIndicator(1);
 }

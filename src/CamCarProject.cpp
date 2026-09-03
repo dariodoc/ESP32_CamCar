@@ -11,7 +11,10 @@ void setup()
     setCpuFrequencyMhz(240);
 
 #ifdef DEBUG
+    // 🚀 Inicializa el puerto serial a 115200 baudios
     Serial.begin(115200);
+    vTaskDelay(pdMS_TO_TICKS(100)); // Pequeña pausa para estabilizar el puerto
+    Serial.println("\n--- INICIANDO ROBOT MECANUM ---");
 #endif
 
     initI2CManager();

@@ -16,20 +16,12 @@ volatile bool melodyOn = false;
 volatile bool enableObstacleAvoidance = false;
 volatile bool obstacleFound = false;
 
-volatile int panDirection = 0;
-volatile int tiltDirection = 0;
-
-// Variables de posición global para mantener sincronía interna
-static int currentPan = panCenter;   // 75
-static int currentTilt = tiltCenter; // 90
+static int currentPan = panCenter;
+static int currentTilt = tiltCenter;
 
 TaskHandle_t playMelodyTaskHandle = NULL;
 TaskHandle_t obstacleAvoidanceModeTaskHandle = NULL;
-TaskHandle_t servoControlTaskHandle = NULL;
 
-volatile bool isCentering = false; // Bandera de centrado suave
-
-// --- Control de LEDs Traseros ---
 void leftRearLed(int state)
 {
     if (lockI2C(20))
@@ -53,23 +45,7 @@ void rightRearLed(int state)
 void writeServoPCA(uint8_t channel, int angle)
 {
     int constrainedAngle = constrain(angle, 0, 180);
-    int uS = 0;
-
-    // Calibración independiente por servo / canal
-    if (channel == panPin) // Canal 4 (Pan)
-    {
-        // 🚀
-        uS = map(constrainedAngle, 0, 180, 600, 2400);
-    }
-    else if (channel == tiltPin) // Canal 5 (Tilt)
-    {
-        // Rango protegido para el Tilt para evitar que se brinque el engrane
-        uS = map(constrainedAngle, 0, 180, 600, 2400);
-    }
-    else
-    {
-        uS = map(constrainedAngle, 0, 180, 600, 2400);
-    }
+    int uS = map(constrainedAngle, 0, 180, 600, 2400);
 
     if (lockI2C(20))
     {
@@ -78,53 +54,29 @@ void writeServoPCA(uint8_t channel, int angle)
     }
 }
 
-// --- Control de Ángulos Pan y Tilt usando PCA9685 ---
 void setPanAngle(int angle)
 {
     currentPan = constrain(angle, 0, 180);
-    writeServoPCA(panPin, currentPan); // panPin = 4 en PCA9685
+    writeServoPCA(panPin, currentPan);
 }
 
 void setTiltAngle(int angle)
 {
-    // 🚀 Restringimos el rango a 10° - 170° para evitar que el servo toque el tope mecánico y se desenganche
     int safeAngle = constrain(angle, 10, 170);
-
-    currentTilt = 180 - safeAngle; // Mantiene la inversión vertical
+    currentTilt = 180 - safeAngle;
     writeServoPCA(tiltPin, currentTilt);
-}
-
-void configurePCFPins()
-{
-    FMCpcf8574.pinMode(motorFLIn1pin, OUTPUT);
-    FMCpcf8574.pinMode(motorFLIn2pin, OUTPUT);
-    FMCpcf8574.pinMode(motorFRIn1pin, OUTPUT);
-    FMCpcf8574.pinMode(motorFRIn2pin, OUTPUT);
-
-    BMCpcf8574.pinMode(motorBRIn1pin, OUTPUT);
-    BMCpcf8574.pinMode(motorBRIn2pin, OUTPUT);
-    BMCpcf8574.pinMode(motorBLIn1pin, OUTPUT);
-    BMCpcf8574.pinMode(motorBLIn2pin, OUTPUT);
-
-    BMCpcf8574.pinMode(STBYpin, OUTPUT);
-
-    FMCpcf8574.pinMode(obstacleDetectorPin1, INPUT_PULLUP);
-    FMCpcf8574.pinMode(obstacleDetectorPin2, INPUT_PULLUP);
-    FMCpcf8574.pinMode(obstacleDetectorPin3, INPUT_PULLUP);
-    FMCpcf8574.pinMode(obstacleDetectorPin4, INPUT_PULLUP);
 }
 
 void setupPeripherals()
 {
     pinMode(builtinLedPin, OUTPUT);
-    digitalWrite(builtinLedPin, HIGH); // LED OFF
+    digitalWrite(builtinLedPin, HIGH); // LED OFF inicial
     ledcDetachPin(buzzerPin);
 
     Wire.begin(SIOD_GPIO_NUM, SIOC_GPIO_NUM);
-    vTaskDelay(pdMS_TO_TICKS(100)); // 100 ms para arranque en frío
+    vTaskDelay(pdMS_TO_TICKS(100));
 
-    // 🚀 Reducir a 100 kHz para mayor tolerancia al ruido eléctrico
-    Wire.setClock(100000);
+    Wire.setClock(100000); // 100 kHz resistencia a ruido inductivo
     Wire.setTimeOut(100);
 
     FMCpcf8574.begin();
@@ -132,29 +84,43 @@ void setupPeripherals()
     pca9685.begin();
     pca9685.setPWMFreq(50);
 
-    configurePCFPins(); // Lógica centralizada de pines
+    // Sincronización inicial limpia en ambos expansores
+    if (lockI2C(20))
+    {
+        Wire.beginTransmission(0x20);
+        Wire.write(0xFF);
+        Wire.endTransmission();
+
+        Wire.beginTransmission(0x24);
+        Wire.write(0xFF);
+        Wire.endTransmission();
+
+        unlockI2C();
+    }
 
     turnLaserOn(false);
-
     centerServos();
-
     ledIndicator(3, 100);
+}
+
+void ledIndicator(int state)
+{
+    digitalWrite(builtinLedPin, state ? HIGH : LOW);
 }
 
 void ledIndicator(int blinkTimes, int delayTimeMS)
 {
     for (int i = 0; i < blinkTimes; i++)
     {
-        digitalWrite(builtinLedPin, LOW);
-        toneToPlay(buzzerPin, buzzerChannel, NOTE_G5, delayTimeMS);
         digitalWrite(builtinLedPin, HIGH);
-        vTaskDelay(pdMS_TO_TICKS(delayTimeMS));
-    }
-}
+        toneToPlay(buzzerPin, buzzerChannel, NOTE_G5, delayTimeMS);
+        digitalWrite(builtinLedPin, LOW);
 
-void ledIndicator(int state)
-{
-    digitalWrite(builtinLedPin, !state);
+        if (i < blinkTimes - 1)
+        {
+            vTaskDelay(pdMS_TO_TICKS(delayTimeMS));
+        }
+    }
 }
 
 void turnLaserOn(bool state)
@@ -180,8 +146,8 @@ void playMelody(void *parameters)
 
 void centerServos()
 {
-    setPanAngle(panCenter);   // panCenter = 75 en config.h
-    setTiltAngle(tiltCenter); // tiltCenter = 90 en config.h
+    setPanAngle(panCenter);
+    setTiltAngle(tiltCenter);
 }
 
 void obstacleAvoidanceMode(void *parameters)
