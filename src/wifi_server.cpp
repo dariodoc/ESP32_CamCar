@@ -45,7 +45,6 @@ int mapMotorValue(int rawValue)
 void cmdServerTask(void *pvParameters)
 {
     TickType_t lastCmdTime = xTaskGetTickCount();
-    // 🚀 MARGEN DE SEGURIDAD AMPLIADO: 1500ms para evitar falsos frenados al sostener la posición
     const TickType_t TIMEOUT_TICKS = pdMS_TO_TICKS(1500);
 
     for (;;)
@@ -63,10 +62,10 @@ void cmdServerTask(void *pvParameters)
             {
                 if (client.available())
                 {
-                    String lastInputString = "";
+                    String lastMotorCmd = "";
                     bool zeroBrakeFound = false;
 
-                    // Inspección inteligente del búfer TCP
+                    // 🚀 LECTURA COMPLETA DE LA RÁFAGA
                     while (client.available())
                     {
                         String temp = client.readStringUntil('\n');
@@ -74,108 +73,111 @@ void cmdServerTask(void *pvParameters)
 
                         if (temp.length() > 0)
                         {
-                            // Si en la cola TCP aparece un comando explícito de freno, lo priorizamos
-                            if (temp.startsWith("CMD_MOTOR#0#0#0#0"))
+                            lastCmdTime = xTaskGetTickCount();
+
+                            // Parseo rápido de la trama actual
+                            String localCmd[8];
+                            int localParam[8] = {0};
+                            int string_length = temp.length();
+
+                            for (int i = 0; i < 8; i++)
                             {
-                                zeroBrakeFound = true;
-                                lastInputString = temp;
-                                break; // Prioridad absoluta: procesar freno inmediatamente
+                                int index = temp.indexOf('#');
+                                if (index < 0)
+                                {
+                                    if (string_length > 0)
+                                    {
+                                        localCmd[i] = temp;
+                                        localParam[i] = temp.toInt();
+                                    }
+                                    break;
+                                }
+                                else
+                                {
+                                    string_length -= index;
+                                    localCmd[i] = temp.substring(0, index);
+                                    localParam[i] = localCmd[i].toInt();
+                                    temp = temp.substring(index + 1);
+                                }
                             }
-                            lastInputString = temp; // De lo contrario, conservamos la trama más reciente
+
+                            // A) LOS SERVOS Y OTROS PERIFÉRICOS SE EJECUTAN DE INMEDIATO
+                            if (localCmd[0] == "CMD_SERVO")
+                            {
+                                if (localParam[1] == 0)
+                                    setPanAngle(localParam[2]);
+                                else if (localParam[1] == 1)
+                                    setTiltAngle(localParam[2]);
+                            }
+                            else if (localCmd[0] == "CMD_CAMERA")
+                            {
+                                if (localParam[1] == panCenter && localParam[2] == tiltCenter)
+                                    centerServos();
+                                else
+                                {
+                                    setPanAngle(localParam[1]);
+                                    setTiltAngle(localParam[2]);
+                                }
+                            }
+                            else if (localCmd[0] == "CMD_VIDEO")
+                            {
+                                videoFlag = (localParam[1] == 1);
+                            }
+                            else if (localCmd[0] == "CMD_BUZZER")
+                            {
+                                if (localParam[1] == 1 && localParam[2] > 0)
+                                    toneToPlay(buzzerPin, buzzerChannel, localParam[2], 100);
+                                else
+                                    ledcWriteTone(buzzerChannel, 0);
+                            }
+                            else if (localCmd[0] == "CMD_LIGHT")
+                            {
+                                enableLaser = (localParam[1] == 1);
+                                turnLaserOn(enableLaser);
+                            }
+                            // B) LOS MOTORES SE GUARDAN PARA PROCESAR SOLO EL ÚLTIMO ESTADO
+                            else if (localCmd[0] == "CMD_MOTOR")
+                            {
+                                if (localParam[1] == 0 && localParam[2] == 0 && localParam[3] == 0 && localParam[4] == 0)
+                                {
+                                    zeroBrakeFound = true;
+                                }
+                                lastMotorCmd = "CMD_MOTOR#" + String(localParam[1]) + "#" + String(localParam[2]) + "#" + String(localParam[3]) + "#" + String(localParam[4]);
+                            }
                         }
                     }
 
-                    if (lastInputString.length() > 0)
+                    // 🚀 APLICACIÓN ATÓMICA PARA LOS MOTORES (ÚLTIMA TRAMA O FRENO)
+                    if (zeroBrakeFound)
                     {
-                        lastCmdTime = xTaskGetTickCount(); // Reset del reloj de seguridad al recibir datos
+                        brakeAllMotors();
+                        setStandbyPin(false);
+                        lastFL = lastBL = lastFR = lastBR = 0;
+                    }
+                    else if (lastMotorCmd.length() > 0)
+                    {
+                        // Extraer valores de la última trama de motor guardada
+                        int p1 = 0, p2 = 0, p3 = 0, p4 = 0;
+                        sscanf(lastMotorCmd.c_str(), "CMD_MOTOR#%d#%d#%d#%d", &p1, &p2, &p3, &p4);
 
-                        String localCmd[8];
-                        int localParam[8] = {0};
+                        int safeFL = mapMotorValue(p1);
+                        int safeBL = mapMotorValue(p2);
+                        int safeFR = mapMotorValue(p3);
+                        int safeBR = mapMotorValue(p4);
 
-                        int string_length = lastInputString.length();
-                        for (int i = 0; i < 8; i++)
+                        if (safeFL != lastFL || safeBL != lastBL || safeFR != lastFR || safeBR != lastBR)
                         {
-                            int index = lastInputString.indexOf('#');
-                            if (index < 0)
-                            {
-                                if (string_length > 0)
-                                {
-                                    localCmd[i] = lastInputString;
-                                    localParam[i] = lastInputString.toInt();
-                                }
-                                break;
-                            }
-                            else
-                            {
-                                string_length -= index;
-                                localCmd[i] = lastInputString.substring(0, index);
-                                localParam[i] = localCmd[i].toInt();
-                                lastInputString = lastInputString.substring(index + 1);
-                            }
-                        }
-
-                        // 1. Control de Motores
-                        if (localCmd[0] == "CMD_MOTOR")
-                        {
-                            int safeFL = mapMotorValue(localParam[1]);
-                            int safeBL = mapMotorValue(localParam[2]);
-                            int safeFR = mapMotorValue(localParam[3]);
-                            int safeBR = mapMotorValue(localParam[4]);
-
-                            // Si se detectó el freno (0,0,0,0) en cualquier parte del búfer
-                            if (zeroBrakeFound || (safeFL == 0 && safeBL == 0 && safeFR == 0 && safeBR == 0))
-                            {
-                                brakeAllMotors();
-                                setStandbyPin(false);
-                                lastFL = lastBL = lastFR = lastBR = 0;
-                            }
-                            else if (safeFL != lastFL || safeBL != lastBL || safeFR != lastFR || safeBR != lastBR)
-                            {
-                                driveDirectRaw(safeFL, safeBL, safeFR, safeBR);
-                                lastFL = safeFL;
-                                lastBL = safeBL;
-                                lastFR = safeFR;
-                                lastBR = safeBR;
-                            }
-                        }
-                        else if (localCmd[0] == "CMD_SERVO")
-                        {
-                            if (localParam[1] == 0)
-                                setPanAngle(localParam[2]);
-                            else if (localParam[1] == 1)
-                                setTiltAngle(localParam[2]);
-                        }
-                        else if (localCmd[0] == "CMD_CAMERA")
-                        {
-                            if (localParam[1] == panCenter && localParam[2] == tiltCenter)
-                                centerServos();
-                            else
-                            {
-                                setPanAngle(localParam[1]);
-                                setTiltAngle(localParam[2]);
-                            }
-                        }
-                        else if (localCmd[0] == "CMD_VIDEO")
-                        {
-                            videoFlag = (localParam[1] == 1);
-                        }
-                        else if (localCmd[0] == "CMD_BUZZER")
-                        {
-                            if (localParam[1] == 1 && localParam[2] > 0)
-                                toneToPlay(buzzerPin, buzzerChannel, localParam[2], 100);
-                            else
-                                ledcWriteTone(buzzerChannel, 0);
-                        }
-                        else if (localCmd[0] == "CMD_LIGHT")
-                        {
-                            enableLaser = (localParam[1] == 1);
-                            turnLaserOn(enableLaser);
+                            driveDirectRaw(safeFL, safeBL, safeFR, safeBR);
+                            lastFL = safeFL;
+                            lastBL = safeBL;
+                            lastFR = safeFR;
+                            lastBR = safeBR;
                         }
                     }
                 }
                 else
                 {
-                    // Watchdog de seguridad ampliado a 1.5s
+                    // Watchdog de seguridad (1.5s sin datos = freno)
                     if ((xTaskGetTickCount() - lastCmdTime) > TIMEOUT_TICKS)
                     {
                         if (lastFL != 0 || lastBL != 0 || lastFR != 0 || lastBR != 0)
