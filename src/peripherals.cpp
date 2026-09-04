@@ -70,13 +70,13 @@ void setTiltAngle(int angle)
 void setupPeripherals()
 {
     pinMode(builtinLedPin, OUTPUT);
-    digitalWrite(builtinLedPin, HIGH); // LED OFF inicial
+    digitalWrite(builtinLedPin, HIGH);
     ledcDetachPin(buzzerPin);
 
     Wire.begin(SIOD_GPIO_NUM, SIOC_GPIO_NUM);
     vTaskDelay(pdMS_TO_TICKS(100));
 
-    Wire.setClock(100000); // 100 kHz resistencia a ruido inductivo
+    Wire.setClock(100000);
     Wire.setTimeOut(100);
 
     FMCpcf8574.begin();
@@ -84,8 +84,10 @@ void setupPeripherals()
     pca9685.begin();
     pca9685.setPWMFreq(50);
 
-    // Sincronización inicial limpia en ambos expansores
-    if (lockI2C(20))
+    // 🚀 LIBERACIÓN OBLIGATORIA DEL PUERTO AL ARRANQUE:
+    // Fuerza a nivel físico que los 8 bits (incluyendo los sensores 0-3)
+    // inicien como ENTRADAS (1s lógicos) antes de que el motor toque el bus
+    if (lockI2C(50))
     {
         Wire.beginTransmission(0x20);
         Wire.write(0xFF);

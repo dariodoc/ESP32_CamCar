@@ -9,15 +9,12 @@ extern PCF8574 BMCpcf8574;
 extern bool lockI2C(TickType_t timeoutMs = 20);
 extern void unlockI2C();
 
-// 🚀 REGISTROS EN SOMBRA: Estado persistente en RAM para ambos PCF8574
-static uint8_t fmcPcfShadow = 0xFF; // Frente (0x20): Motores FL, FR y Sensores IR
-static uint8_t bmcPcfShadow = 0xFF; // Atrás  (0x24): Motores BL, BR y STBY
+static uint8_t fmcPcfShadow = 0xFF; // Expansor Frontal (0x20): Bits 0-3 en 1 (Entradas IR)
+static uint8_t bmcPcfShadow = 0xFF; // Expansor Trasero  (0x24): Motores BL, BR y STBY
 static bool currentStandbyState = false;
 
-// Control atómico y eficiente del pin STBY en el PCF8574 Trasero (0x24)
 void setStandbyPin(bool enable)
 {
-    // Solo transmitimos por I2C si el estado del STBY realmente cambia
     if (currentStandbyState == enable)
         return;
 
@@ -54,7 +51,7 @@ void Motor::setMotorState(int stateIn1, int stateIn2, int speed)
     {
         if (pcf == &FMCpcf8574)
         {
-            // --- EXPANSOR FRONTAL (0x20) ---
+            // Actualización de dirección para FL y FR (Pines 4, 5, 6, 7)
             if (stateIn1 == HIGH)
                 fmcPcfShadow |= (1 << In1);
             else
@@ -65,11 +62,8 @@ void Motor::setMotorState(int stateIn1, int stateIn2, int speed)
             else
                 fmcPcfShadow &= ~(1 << In2);
 
-            // Preservar SIEMPRE en 1 (entradas) los sensores de obstáculos
-            fmcPcfShadow |= (1 << obstacleDetectorPin1);
-            fmcPcfShadow |= (1 << obstacleDetectorPin2);
-            fmcPcfShadow |= (1 << obstacleDetectorPin3);
-            fmcPcfShadow |= (1 << obstacleDetectorPin4);
+            // 🚀 MÁSCARA ATÓMICA DE ENTRADAS: Forzar los pines 0, 1, 2 y 3 siempre a 1 (HIGH)
+            fmcPcfShadow |= 0x0F;
 
             Wire.beginTransmission(0x20);
             Wire.write(fmcPcfShadow);
@@ -77,7 +71,6 @@ void Motor::setMotorState(int stateIn1, int stateIn2, int speed)
         }
         else if (pcf == &BMCpcf8574)
         {
-            // --- EXPANSOR TRASERO (0x24) ---
             if (stateIn1 == HIGH)
                 bmcPcfShadow |= (1 << In1);
             else
@@ -93,9 +86,7 @@ void Motor::setMotorState(int stateIn1, int stateIn2, int speed)
             Wire.endTransmission();
         }
 
-        // Ajuste de velocidad PWM en el PCA9685
         pca->setPWM(PWM, 0, speed);
-
         unlockI2C();
     }
 }
