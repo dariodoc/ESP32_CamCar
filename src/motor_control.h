@@ -4,6 +4,6 @@
 #include <Arduino.h>
 
 void brakeAllMotors();
-void driveDirectRaw(int fl, int fr, int bl, int br);
+void driveDirectRaw(int fl, int bl, int fr, int br);
 
 #endif

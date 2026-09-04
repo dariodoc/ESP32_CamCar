@@ -43,13 +43,46 @@ void Get_Command(String inputStringTemp)
     }
 }
 
+int mapMotorValue(int rawValue)
+{
+    // 1. Reposo absoluto
+    if (rawValue == 0)
+    {
+        return 0;
+    }
+
+    // 2. Definición del rango del hardware (PCA9685 en 12 bits)
+    // Ajusta MIN_PWM al valor PWM donde físicamente el motor empieza a girar con carga
+    const int MIN_PWM = 800;
+    const int MAX_PWM = 4095; // 100% potencia física (12 bits)
+
+    int sign = (rawValue > 0) ? 1 : -1;
+    int absVal = abs(rawValue);
+
+    // 3. Salto directo para el rango bajo [1 a 210]
+    if (absVal <= 210)
+    {
+        return MIN_PWM * sign;
+    }
+    if (absVal >= 4095)
+    {
+        return MAX_PWM * sign;
+    }
+
+    // 4. Escalado lineal continuo para el rango alto [211 a 4095]
+    absVal = constrain(absVal, 210, 4095);
+    int mappedPWM = map(absVal, 210, 4095, MIN_PWM, MAX_PWM);
+
+    return mappedPWM * sign;
+}
+
 void loopCmdServer()
 {
     WiFiClient client = server_Cmd.accept();
     if (client)
     {
 #ifdef DEBUG
-        Serial.println("🕹️ Cliente de Comandos conectado (Puerto 4000)");
+        TelnetStream.println("🕹️ Cliente de Comandos conectado (Puerto 4000)");
 #endif
         while (client.connected())
         {
@@ -60,20 +93,20 @@ void loopCmdServer()
 
 #ifdef DEBUG
                 Serial.print("📩 Comando recibido: ");
-                Serial.println(inputStringTemp);
+                TelnetStream.println(inputStringTemp);
 #endif
 
                 Get_Command(inputStringTemp);
 
-                // 1. Control Directo de Motores (FL, BL, FR, BR)
                 if (CmdArray[0] == "CMD_MOTOR")
                 {
-                    int rawFL = paramters[1];
-                    int rawBL = paramters[2];
-                    int rawFR = paramters[3];
-                    int rawBR = paramters[4];
+                    // Lectura con mapeo de orden Freenove (1:FL, 2:BL, 3:FR, 4:BR)
+                    int safeFL = mapMotorValue(paramters[1]);
+                    int safeBL = mapMotorValue(paramters[2]);
+                    int safeFR = mapMotorValue(paramters[3]);
+                    int safeBR = mapMotorValue(paramters[4]);
 
-                    driveDirectRaw(rawFL, rawBL, rawFR, rawBR);
+                    driveDirectRaw(safeFL, safeBL, safeFR, safeBR);
                 }
 
                 // 2. Control de Servos Pan / Tilt
@@ -176,7 +209,7 @@ void cameraStreamTaskTCP(void *pvParameters)
         if (client)
         {
 #ifdef DEBUG
-            Serial.println("📷 Cliente de cámara conectado vía TCP (Puerto 7000)");
+            TelnetStream.println("📷 Cliente de cámara conectado vía TCP (Puerto 7000)");
 #endif
             while (client.connected())
             {
@@ -229,12 +262,12 @@ void initWiFi()
     if (!WiFi.config(staticIP, gateway, subnet, dns))
     {
 #ifdef DEBUG
-        Serial.println("❌ Fallo al configurar IP Estática en STA");
+        // TelnetStream.println("❌ Fallo al configurar IP Estática en STA");
 #endif
     }
 
 #ifdef DEBUG
-    Serial.print("Buscando y conectando a la red Tractorex");
+    // Serial.print("Buscando y conectando a la red Tractorex");
 #endif
 
     WiFi.begin("Tractorex", "9983476198");
@@ -244,7 +277,7 @@ void initWiFi()
         ledIndicator(1, 80);
 
 #ifdef DEBUG
-        Serial.print(".");
+        // Serial.print(".");
 #endif
         vTaskDelay(pdMS_TO_TICKS(1920));
 
@@ -253,13 +286,16 @@ void initWiFi()
             WiFi.begin("Tractorex", "9983476198");
         }
     }
+#ifdef DEBUG
+    TelnetStream.begin();
+#endif
 
     ledIndicator(2, 60);
 
 #ifdef DEBUG
-    Serial.println("\n✅ Wi-Fi Conectado!");
+    TelnetStream.println("\n✅ Wi-Fi Conectado!");
     Serial.print("IP del coche: ");
-    Serial.println(WiFi.localIP());
+    TelnetStream.println(WiFi.localIP());
     Serial.printf("Potencia de Señal (RSSI): %d dBm\n", WiFi.RSSI());
 #endif
 

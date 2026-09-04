@@ -34,13 +34,13 @@ bool lockI2C(TickType_t timeoutMs)
 
     i2cFailCounter++;
 #ifdef DEBUG
-    Serial.printf("⚠️ Fallo de acceso a I2C (%d/3)\n", i2cFailCounter);
+   // Serial.printf("⚠️ Fallo de acceso a I2C (%d/3)\n", i2cFailCounter);
 #endif
 
     if (i2cFailCounter >= 3)
     {
 #ifdef DEBUG
-        Serial.println("🔄 Reseteando hardware I2C por congelamiento de bus...");
+      //  Serial.println("🔄 Reseteando hardware I2C por congelamiento de bus...");
 #endif
         // Liberación de seguridad por si una tarea colgada se quedó con el mutex
         xSemaphoreGive(i2cMutex);
