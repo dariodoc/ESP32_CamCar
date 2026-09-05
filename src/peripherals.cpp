@@ -102,6 +102,10 @@ void setupPeripherals()
 
     turnLaserOn(false);
     centerServos();
+
+    // 🚀 LANZAMIENTO DE TAREAS FREERTOS PARA MÚSICA Y OBSTÁCULOS
+    xTaskCreatePinnedToCore(playMelody, "PlayMelodyTask", STACK_SIZE, NULL, 1, &playMelodyTaskHandle, 1);
+    xTaskCreatePinnedToCore(obstacleAvoidanceMode, "ObstacleTask", STACK_SIZE, NULL, 1, &obstacleAvoidanceModeTaskHandle, 1);
     ledIndicator(3, 100);
 }
 
@@ -152,32 +156,91 @@ void centerServos()
     setTiltAngle(tiltCenter);
 }
 
+void setupUltrasonic()
+{
+    pinMode(trigPin, OUTPUT);
+    pinMode(echoPin, INPUT);
+    digitalWrite(trigPin, LOW);
+}
+
+float getDistanceCM()
+{
+    digitalWrite(trigPin, LOW);
+    delayMicroseconds(2);
+    digitalWrite(trigPin, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(trigPin, LOW);
+
+    long duration = pulseIn(echoPin, HIGH, 25000); // Timeout de ~25ms (~4 metros)
+
+    if (duration == 0)
+        return -1.0;
+
+    return (duration * 0.0343) / 2.0;
+}
+
+// 🚀 Tarea unificada: Infrarrojos (PCF8574) + Ultrasónico (Trig 33 / Echo 32)
 void obstacleAvoidanceMode(void *parameters)
 {
+    setupUltrasonic();
     TickType_t lastWakeTime = xTaskGetTickCount();
-    int lastDetect = -1;
 
     for (;;)
     {
         if (!enableObstacleAvoidance)
         {
+            obstacleFound = false;
             ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-            lastDetect = -1;
+            lastWakeTime = xTaskGetTickCount();
         }
 
-        int detect = HIGH;
+        bool irObstacle = false;
 
+        // 1. Lectura segura del PCF8574 (0x20) sin afectar los motores delanteros
         if (lockI2C(20))
         {
-            detect = FMCpcf8574.digitalRead(obstacleDetectorPin1);
+            // Solicitamos el estado actual del puerto
+            Wire.requestFrom(0x20, 1);
+            if (Wire.available())
+            {
+                uint8_t currentData = Wire.read();
+
+                // 🚀 MÁSCARA INTELIGENTE: Solo aseguramos que P0-P3 (sensores) tengan pull-up (1)
+                // Manteniendo intactos los bits P4-P7 de los motores delanteros
+                uint8_t safeReadMask = currentData | 0x0F;
+
+                Wire.beginTransmission(0x20);
+                Wire.write(safeReadMask);
+                Wire.endTransmission();
+
+                // Evaluamos el estado real de los 4 sensores IR (P0 a P3)
+                bool ir1 = !(currentData & (1 << obstacleDetectorPin1));
+                bool ir2 = !(currentData & (1 << obstacleDetectorPin2));
+                bool ir3 = !(currentData & (1 << obstacleDetectorPin3));
+                bool ir4 = !(currentData & (1 << obstacleDetectorPin4));
+
+                irObstacle = (ir1 || ir2 || ir3 || ir4);
+            }
             unlockI2C();
         }
 
-        if (detect != lastDetect)
+        // 2. Lectura del Ultrasónico (Trig 33 / Echo 32)
+        float distance = getDistanceCM();
+        bool usObstacle = (distance >= 2.0 && distance <= 10.0);
+
+#ifdef DEBUG
+        if (irObstacle)
         {
-            obstacleFound = (detect == LOW);
-            lastDetect = detect;
+            TelnetStream.println("🛑 Obstáculo por INFRARROJOS\r");
         }
+        else if (usObstacle)
+        {
+            TelnetStream.printf("🛑 Obstáculo por ULTRASÓNICO: %.2f cm\r\n", distance);
+        }
+#endif
+
+        // 3. Respuesta a obstáculo
+        obstacleFound = (irObstacle || usObstacle);
 
         vTaskDelayUntil(&lastWakeTime, pdMS_TO_TICKS(50));
     }

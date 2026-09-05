@@ -56,7 +56,7 @@ void cmdServerTask(void *pvParameters)
             lastCmdTime = xTaskGetTickCount();
 
 #ifdef DEBUG
-            TelnetStream.println("🕹️ Cliente de Comandos conectado (Puerto 4000)");
+            TelnetStream.println("🕹️ Cliente de Comandos conectado (Puerto 4000)\r");
 #endif
             while (client.connected())
             {
@@ -74,6 +74,10 @@ void cmdServerTask(void *pvParameters)
                         if (temp.length() > 0)
                         {
                             lastCmdTime = xTaskGetTickCount();
+
+#ifdef DEBUG
+                            TelnetStream.printf("📥 RX: %s\r\n", temp.c_str());
+#endif
 
                             // Parseo rápido de la trama actual
                             String localCmd[8];
@@ -135,6 +139,24 @@ void cmdServerTask(void *pvParameters)
                                 enableLaser = (localParam[1] == 1);
                                 turnLaserOn(enableLaser);
                             }
+                            // 🚀 CONTROL DEL MODO ESQUIVA DE OBSTÁCULOS
+                            else if (localCmd[0] == "CMD_LED_MOD")
+                            {
+                                if (localParam[1] == 2) // CMD_LED_MOD#2 -> Activar evasión
+                                {
+                                    enableObstacleAvoidance = true;
+                                    if (obstacleAvoidanceModeTaskHandle != NULL)
+                                    {
+                                        xTaskNotifyGive(obstacleAvoidanceModeTaskHandle);
+                                    }
+                                }
+                                else // Al cambiar a cualquier otro modo, apaga la evasión
+                                {
+
+                                    enableObstacleAvoidance = false;
+                                    brakeAllMotors();
+                                }
+                            }
                             // B) LOS MOTORES SE GUARDAN PARA PROCESAR SOLO EL ÚLTIMO ESTADO
                             else if (localCmd[0] == "CMD_MOTOR")
                             {
@@ -156,7 +178,6 @@ void cmdServerTask(void *pvParameters)
                     }
                     else if (lastMotorCmd.length() > 0)
                     {
-                        // Extraer valores de la última trama de motor guardada
                         int p1 = 0, p2 = 0, p3 = 0, p4 = 0;
                         sscanf(lastMotorCmd.c_str(), "CMD_MOTOR#%d#%d#%d#%d", &p1, &p2, &p3, &p4);
 
@@ -165,8 +186,20 @@ void cmdServerTask(void *pvParameters)
                         int safeFR = mapMotorValue(p3);
                         int safeBR = mapMotorValue(p4);
 
-                        if (safeFL != lastFL || safeBL != lastBL || safeFR != lastFR || safeBR != lastBR)
+                        // 🚀 Si hay obstáculo Y la orden intenta ir hacia adelante (> 0), bloquea el avance
+                        bool isTryingToGoForward = (p1 > 0 || p2 > 0 || p3 > 0 || p4 > 0);
+
+                        if (enableObstacleAvoidance && obstacleFound && isTryingToGoForward)
                         {
+#ifdef DEBUG
+                            TelnetStream.println("⚠️ Intento de avance bloqueado por obstáculo\r");
+#endif
+                            brakeAllMotors();
+                            lastFL = lastBL = lastFR = lastBR = 0;
+                        }
+                        else if (safeFL != lastFL || safeBL != lastBL || safeFR != lastFR || safeBR != lastBR)
+                        {
+                            // Si va hacia atrás (p1, p2, p3, p4 < 0), pasa directo a driveDirectRaw sin frenar
                             driveDirectRaw(safeFL, safeBL, safeFR, safeBR);
                             lastFL = safeFL;
                             lastBL = safeBL;

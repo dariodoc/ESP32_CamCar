@@ -4,7 +4,7 @@
 #include <Arduino.h>
 
 // 🚀 Define DEBUG para habilitar las impresiones por el puerto serial
-//#define DEBUG
+// #define DEBUG
 
 #ifdef DEBUG
 #include <TelnetStream.h>
@@ -46,6 +46,9 @@ const int builtinLedPin = 2;    // Pin del LED incorporado en la placa ESP32
 const int laserPin = 13;        // Pin del PCA9685 para el láser
 const int leftRearLedPin = 15;  // Pin del PCA9685 para el led trasero izquierdo
 const int rightRearLedPin = 14; // Pin del PCA9685 para el led trasero derecho
+// --- PINES DEL SENSOR ULTRASÓNICO ---
+const int trigPin = 33; // Disparo (Trigger) - Salida ESP32 (3.3V)
+const int echoPin = 32; // Eco (Echo) - Entrada ESP32 (Requiere divisor de voltaje a 3.3V)
 
 const int obstacleDetectorPin1 = 3; // Pin del pcf8574
 const int obstacleDetectorPin2 = 2; // Pin del pcf8574
