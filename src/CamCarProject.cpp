@@ -4,15 +4,17 @@
 #include "motor_control.h"
 #include "peripherals.h"
 #include "wifi_server.h"
+#include "display_control.h"
 #include <ArduinoOTA.h>
 
 void setup()
 {
     setCpuFrequencyMhz(240);
-
+    
     initI2CManager();
-    setupCamera();
+    setupCamera();    
     setupPeripherals();
+    initDisplayTask();
     initWiFi();
 }
 

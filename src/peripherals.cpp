@@ -5,6 +5,7 @@
 #include "PCF8574.h"
 #include "Adafruit_PWMServoDriver.h"
 #include "Melodies.h"
+#include <display_control.h>
 #include <Wire.h>
 
 PCF8574 FMCpcf8574(&Wire, 0x20);
@@ -62,7 +63,7 @@ void setPanAngle(int angle)
 
 void setTiltAngle(int angle)
 {
-    int safeAngle = constrain(angle, 10, 170);
+    int safeAngle = constrain(angle, 30, 170);
     currentTilt = 180 - safeAngle;
     writeServoPCA(tiltPin, currentTilt);
 }
@@ -239,8 +240,22 @@ void obstacleAvoidanceMode(void *parameters)
         }
 #endif
 
-        // 3. Respuesta a obstáculo
+        // 3. Respuesta a obstáculo (optimizada por cambio de estado)
+        bool previousObstacleState = obstacleFound;
         obstacleFound = (irObstacle || usObstacle);
+
+        // Solo enviamos a la pantalla si HUBO UN CAMBIO de estado
+        if (obstacleFound != previousObstacleState)
+        {
+            if (obstacleFound)
+            {
+                updateDisplayState(DISPLAY_OBSTACLE_ALERT);
+            }
+            else
+            {
+                updateDisplayState(DISPLAY_CLEAR_ALERT);
+            }
+        }
 
         vTaskDelayUntil(&lastWakeTime, pdMS_TO_TICKS(50));
     }

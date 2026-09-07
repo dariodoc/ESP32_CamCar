@@ -12,6 +12,7 @@
 #include <Preferences.h>
 #include <SPIFFS.h>
 #include <esp_camera.h>
+#include <display_control.h>
 #include "esp_bt.h"
 #include <ArduinoOTA.h>
 #include "Melodies.h"
@@ -336,6 +337,8 @@ void initWiFi()
 
     WiFi.mode(WIFI_STA);
     WiFi.setAutoReconnect(true);
+    // Justo antes de WiFi.begin(...)
+    updateDisplayState(DISPLAY_CONNECTING_WIFI, storedSSID.c_str());
     WiFi.begin(storedSSID.c_str(), storedPASS.c_str());
 
     int attempts = 0;
@@ -348,6 +351,8 @@ void initWiFi()
 
     if (WiFi.status() != WL_CONNECTED)
     {
+        // Al inicio de startCaptivePortal()
+        updateDisplayState(DISPLAY_PORTAL_ACTIVE);
         startCaptivePortal();
     }
 
@@ -355,6 +360,8 @@ void initWiFi()
     TelnetStream.begin();
 #endif
 
+    // Justo después de obtener la IP
+    updateDisplayState(DISPLAY_CONNECTED, WiFi.localIP().toString().c_str());
     ledIndicator(2, 60);
 
     server_Cmd.begin(4000);
