@@ -7,6 +7,10 @@
 #include <WiFi.h>
 #include <WiFiClient.h>
 #include <WiFiServer.h>
+#include <WebServer.h>
+#include <DNSServer.h>
+#include <Preferences.h>
+#include <SPIFFS.h>
 #include <esp_camera.h>
 #include "esp_bt.h"
 #include <ArduinoOTA.h>
@@ -14,6 +18,9 @@
 
 WiFiServer server_Cmd(4000);
 WiFiServer server_Camera(7000);
+WebServer webServer(80);
+DNSServer dnsServer;
+Preferences preferences;
 
 volatile bool videoFlag = false;
 TaskHandle_t cmdServerTaskHandle = NULL;
@@ -65,7 +72,6 @@ void cmdServerTask(void *pvParameters)
                     String lastMotorCmd = "";
                     bool zeroBrakeFound = false;
 
-                    // 🚀 LECTURA COMPLETA DE LA RÁFAGA
                     while (client.available())
                     {
                         String temp = client.readStringUntil('\n');
@@ -79,7 +85,6 @@ void cmdServerTask(void *pvParameters)
                             TelnetStream.printf("📥 RX: %s\r\n", temp.c_str());
 #endif
 
-                            // Parseo rápido de la trama actual
                             String localCmd[8];
                             int localParam[8] = {0};
                             int string_length = temp.length();
@@ -105,7 +110,6 @@ void cmdServerTask(void *pvParameters)
                                 }
                             }
 
-                            // A) LOS SERVOS Y OTROS PERIFÉRICOS SE EJECUTAN DE INMEDIATO
                             if (localCmd[0] == "CMD_SERVO")
                             {
                                 if (localParam[1] == 0)
@@ -139,10 +143,9 @@ void cmdServerTask(void *pvParameters)
                                 enableLaser = (localParam[1] == 1);
                                 turnLaserOn(enableLaser);
                             }
-                            // 🚀 CONTROL DEL MODO ESQUIVA DE OBSTÁCULOS
                             else if (localCmd[0] == "CMD_LED_MOD")
                             {
-                                if (localParam[1] == 2) // CMD_LED_MOD#2 -> Activar evasión
+                                if (localParam[1] == 2)
                                 {
                                     enableObstacleAvoidance = true;
                                     if (obstacleAvoidanceModeTaskHandle != NULL)
@@ -150,14 +153,12 @@ void cmdServerTask(void *pvParameters)
                                         xTaskNotifyGive(obstacleAvoidanceModeTaskHandle);
                                     }
                                 }
-                                else // Al cambiar a cualquier otro modo, apaga la evasión
+                                else
                                 {
-
                                     enableObstacleAvoidance = false;
                                     brakeAllMotors();
                                 }
                             }
-                            // B) LOS MOTORES SE GUARDAN PARA PROCESAR SOLO EL ÚLTIMO ESTADO
                             else if (localCmd[0] == "CMD_MOTOR")
                             {
                                 if (localParam[1] == 0 && localParam[2] == 0 && localParam[3] == 0 && localParam[4] == 0)
@@ -169,7 +170,6 @@ void cmdServerTask(void *pvParameters)
                         }
                     }
 
-                    // 🚀 APLICACIÓN ATÓMICA PARA LOS MOTORES (ÚLTIMA TRAMA O FRENO)
                     if (zeroBrakeFound)
                     {
                         brakeAllMotors();
@@ -186,7 +186,6 @@ void cmdServerTask(void *pvParameters)
                         int safeFR = mapMotorValue(p3);
                         int safeBR = mapMotorValue(p4);
 
-                        // 🚀 Si hay obstáculo Y la orden intenta ir hacia adelante (> 0), bloquea el avance
                         bool isTryingToGoForward = (p1 > 0 || p2 > 0 || p3 > 0 || p4 > 0);
 
                         if (enableObstacleAvoidance && obstacleFound && isTryingToGoForward)
@@ -199,7 +198,6 @@ void cmdServerTask(void *pvParameters)
                         }
                         else if (safeFL != lastFL || safeBL != lastBL || safeFR != lastFR || safeBR != lastBR)
                         {
-                            // Si va hacia atrás (p1, p2, p3, p4 < 0), pasa directo a driveDirectRaw sin frenar
                             driveDirectRaw(safeFL, safeBL, safeFR, safeBR);
                             lastFL = safeFL;
                             lastBL = safeBL;
@@ -210,7 +208,6 @@ void cmdServerTask(void *pvParameters)
                 }
                 else
                 {
-                    // Watchdog de seguridad (1.5s sin datos = freno)
                     if ((xTaskGetTickCount() - lastCmdTime) > TIMEOUT_TICKS)
                     {
                         if (lastFL != 0 || lastBL != 0 || lastFR != 0 || lastBR != 0)
@@ -271,6 +268,98 @@ void cameraStreamTaskTCP(void *pvParameters)
     }
 }
 
+// 📂 MANEJADORES DEL PORTAL WEB (CARGADOS DESDE SPIFFS/DATA)
+void handleRoot()
+{
+    if (SPIFFS.exists("/wifimanager.html"))
+    {
+        File file = SPIFFS.open("/wifimanager.html", "r");
+        webServer.streamFile(file, "text/html; charset=utf-8"); // 🚀 Header HTTP explícito
+        file.close();
+    }
+    else
+    {
+        webServer.send(404, "text/plain", "Archivo wifimanager.html no encontrado en data/");
+    }
+}
+
+void handleCSS()
+{
+    if (SPIFFS.exists("/wifimanager.css"))
+    {
+        File file = SPIFFS.open("/wifimanager.css", "r");
+        webServer.streamFile(file, "text/css");
+        file.close();
+    }
+    else
+    {
+        webServer.send(404, "text/plain", "CSS no encontrado");
+    }
+}
+
+void handleSave()
+{
+    String reqSSID = webServer.arg("ssid");
+    String reqPASS = webServer.arg("pass");
+    String reqIP = webServer.arg("ip");
+    String reqGW = webServer.arg("gateway");
+
+    preferences.begin("wifi_config", false);
+    preferences.putString("ssid", reqSSID);
+    preferences.putString("pass", reqPASS);
+    preferences.putString("ip", reqIP);
+    preferences.putString("gw", reqGW);
+    preferences.end();
+
+    webServer.send(200, "text/html", "<html><body><h1>Configuracion guardada!</h1><p>El robot se reiniciara para conectarse a " + reqSSID + "...</p></body></html>");
+    delay(2000);
+    ESP.restart();
+}
+
+void startCaptivePortal()
+{
+    if (!SPIFFS.begin(true))
+    {
+#ifdef DEBUG
+        TelnetStream.println("❌ Fallo al montar SPIFFS\r");
+#endif
+    }
+
+    WiFi.mode(WIFI_AP);
+    WiFi.softAP("ESP-CAMERA-CAR", "carbondioxide");
+
+    IPAddress apIP(192, 168, 4, 1);
+    WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
+
+    dnsServer.start(53, "*", apIP);
+
+    webServer.on("/", handleRoot);
+    webServer.on("/wifimanager.css", handleCSS);
+    webServer.on("/save", HTTP_POST, handleSave);
+    webServer.onNotFound(handleRoot);
+    webServer.begin();
+
+    // 🚀 Uso correcto de ledIndicator(state) para parpadeo silencioso
+    int currentLedState = 0;
+    TickType_t lastBlink = xTaskGetTickCount();
+
+    while (true)
+    {
+        dnsServer.processNextRequest();
+        webServer.handleClient();
+
+        // Alterna el estado del LED cada 500 ms usando tu función
+        if ((xTaskGetTickCount() - lastBlink) >= pdMS_TO_TICKS(500))
+        {
+            currentLedState = !currentLedState;
+            ledIndicator(currentLedState); // 🔇 Solo prende/apaga LED sin buzzer
+            lastBlink = xTaskGetTickCount();
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
 void initWiFi()
 {
     ledIndicator(0);
@@ -279,26 +368,48 @@ void initWiFi()
     WiFi.setSleep(WIFI_PS_NONE);
     WiFi.setTxPower(WIFI_POWER_19_5dBm);
 
-    IPAddress staticIP(192, 168, 0, 202);
-    IPAddress gateway(192, 168, 0, 1);
-    IPAddress subnet(255, 255, 255, 0);
-    IPAddress dns(8, 8, 8, 8);
+    btStop();
+    esp_bt_controller_disable();
+
+    // 🚀 LECTURA DINÁMICA: Si la memoria Flash está vacía, la cadena vendrá en ""
+    preferences.begin("wifi_config", true);
+    String storedSSID = preferences.getString("ssid", "");
+    String storedPASS = preferences.getString("pass", "");
+    String storedIP = preferences.getString("ip", "");
+    String storedGW = preferences.getString("gw", "");
+    preferences.end();
+
+    // Si no existen credenciales guardadas previamente, abre el Portal Web de inmediato
+    if (storedSSID.length() == 0)
+    {
+        startCaptivePortal();
+    }
+
+    // Configuración IP
+    IPAddress staticIP, gateway, subnet(255, 255, 255, 0), dns(8, 8, 8, 8);
+    if (storedIP.length() > 0 && storedGW.length() > 0)
+    {
+        staticIP.fromString(storedIP);
+        gateway.fromString(storedGW);
+        WiFi.config(staticIP, gateway, subnet, dns);
+    }
 
     WiFi.mode(WIFI_STA);
     WiFi.setAutoReconnect(true);
+    WiFi.begin(storedSSID.c_str(), storedPASS.c_str());
 
-    WiFi.config(staticIP, gateway, subnet, dns);
-    WiFi.begin("Tractorex", "9983476198");
-
-    while (WiFi.status() != WL_CONNECTED)
+    int attempts = 0;
+    while (WiFi.status() != WL_CONNECTED && attempts < 12)
     {
         ledIndicator(1, 80);
-        vTaskDelay(pdMS_TO_TICKS(1920));
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        attempts++;
+    }
 
-        if (WiFi.status() == WL_CONNECT_FAILED || WiFi.status() == WL_DISCONNECTED)
-        {
-            WiFi.begin("Tractorex", "9983476198");
-        }
+    // Si pasados 12 segundos no logra conectarse a la red guardada, abre el Portal Cautivo
+    if (WiFi.status() != WL_CONNECTED)
+    {
+        startCaptivePortal();
     }
 
 #ifdef DEBUG
@@ -314,9 +425,5 @@ void initWiFi()
     xTaskCreatePinnedToCore(cameraStreamTaskTCP, "CamTCPStream", 1024 * 4, NULL, 1, NULL, 0);
 
     ArduinoOTA.begin();
-
-    btStop();
-    esp_bt_controller_disable();
-
     ledIndicator(1);
 }

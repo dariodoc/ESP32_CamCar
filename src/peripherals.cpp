@@ -45,7 +45,7 @@ void rightRearLed(int state)
 void writeServoPCA(uint8_t channel, int angle)
 {
     int constrainedAngle = constrain(angle, 0, 180);
-    int uS = map(constrainedAngle, 0, 180, 600, 2400);
+    int uS = map(constrainedAngle, 0, 180, 550, 2650);
 
     if (lockI2C(20))
     {
