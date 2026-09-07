@@ -25,30 +25,6 @@ Preferences preferences;
 volatile bool videoFlag = false;
 TaskHandle_t cmdServerTaskHandle = NULL;
 
-static int lastFL = -9999, lastBL = -9999, lastFR = -9999, lastBR = -9999;
-
-int mapMotorValue(int rawValue)
-{
-    if (rawValue == 0)
-        return 0;
-
-    const int MIN_PWM = 800;
-    const int MAX_PWM = 4095;
-
-    int sign = (rawValue > 0) ? 1 : -1;
-    int absVal = abs(rawValue);
-
-    if (absVal <= 210)
-        return MIN_PWM * sign;
-    if (absVal >= 4095)
-        return MAX_PWM * sign;
-
-    absVal = constrain(absVal, 210, 4095);
-    int mappedPWM = map(absVal, 210, 4095, MIN_PWM, MAX_PWM);
-
-    return mappedPWM * sign;
-}
-
 void cmdServerTask(void *pvParameters)
 {
     TickType_t lastCmdTime = xTaskGetTickCount();
@@ -156,7 +132,6 @@ void cmdServerTask(void *pvParameters)
                                 else
                                 {
                                     enableObstacleAvoidance = false;
-                                    brakeAllMotors();
                                 }
                             }
                             else if (localCmd[0] == "CMD_MOTOR")
@@ -173,59 +148,29 @@ void cmdServerTask(void *pvParameters)
                     if (zeroBrakeFound)
                     {
                         brakeAllMotors();
-                        setStandbyPin(false);
-                        lastFL = lastBL = lastFR = lastBR = 0;
                     }
                     else if (lastMotorCmd.length() > 0)
                     {
                         int p1 = 0, p2 = 0, p3 = 0, p4 = 0;
                         sscanf(lastMotorCmd.c_str(), "CMD_MOTOR#%d#%d#%d#%d", &p1, &p2, &p3, &p4);
 
-                        int safeFL = mapMotorValue(p1);
-                        int safeBL = mapMotorValue(p2);
-                        int safeFR = mapMotorValue(p3);
-                        int safeBR = mapMotorValue(p4);
-
-                        bool isTryingToGoForward = (p1 > 0 || p2 > 0 || p3 > 0 || p4 > 0);
-
-                        if (enableObstacleAvoidance && obstacleFound && isTryingToGoForward)
-                        {
-#ifdef DEBUG
-                            TelnetStream.println("⚠️ Intento de avance bloqueado por obstáculo\r");
-#endif
-                            brakeAllMotors();
-                            lastFL = lastBL = lastFR = lastBR = 0;
-                        }
-                        else if (safeFL != lastFL || safeBL != lastBL || safeFR != lastFR || safeBR != lastBR)
-                        {
-                            driveDirectRaw(safeFL, safeBL, safeFR, safeBR);
-                            lastFL = safeFL;
-                            lastBL = safeBL;
-                            lastFR = safeFR;
-                            lastBR = safeBR;
-                        }
+                        // 🚀 Toda la delegación de tracción y seguridad a motor_control
+                        driveSafe(p1, p2, p3, p4);
                     }
                 }
                 else
                 {
+                    // Watchdog de seguridad (1.5s sin recibir datos -> frena)
                     if ((xTaskGetTickCount() - lastCmdTime) > TIMEOUT_TICKS)
                     {
-                        if (lastFL != 0 || lastBL != 0 || lastFR != 0 || lastBR != 0)
-                        {
-                            brakeAllMotors();
-                            setStandbyPin(false);
-                            lastFL = lastBL = lastFR = lastBR = 0;
-                        }
+                        brakeAllMotors();
                     }
                 }
 
                 vTaskDelay(pdMS_TO_TICKS(10));
             }
             client.stop();
-
             brakeAllMotors();
-            setStandbyPin(false);
-            lastFL = lastBL = lastFR = lastBR = -9999;
         }
 
         vTaskDelay(pdMS_TO_TICKS(20));
@@ -268,13 +213,13 @@ void cameraStreamTaskTCP(void *pvParameters)
     }
 }
 
-// 📂 MANEJADORES DEL PORTAL WEB (CARGADOS DESDE SPIFFS/DATA)
+// 📂 MANEJADORES DEL PORTAL WEB CONFIGURADOR (CARGADOS DESDE SPIFFS)
 void handleRoot()
 {
     if (SPIFFS.exists("/wifimanager.html"))
     {
         File file = SPIFFS.open("/wifimanager.html", "r");
-        webServer.streamFile(file, "text/html; charset=utf-8"); // 🚀 Header HTTP explícito
+        webServer.streamFile(file, "text/html; charset=utf-8");
         file.close();
     }
     else
@@ -339,7 +284,6 @@ void startCaptivePortal()
     webServer.onNotFound(handleRoot);
     webServer.begin();
 
-    // 🚀 Uso correcto de ledIndicator(state) para parpadeo silencioso
     int currentLedState = 0;
     TickType_t lastBlink = xTaskGetTickCount();
 
@@ -348,11 +292,10 @@ void startCaptivePortal()
         dnsServer.processNextRequest();
         webServer.handleClient();
 
-        // Alterna el estado del LED cada 500 ms usando tu función
         if ((xTaskGetTickCount() - lastBlink) >= pdMS_TO_TICKS(500))
         {
             currentLedState = !currentLedState;
-            ledIndicator(currentLedState); // 🔇 Solo prende/apaga LED sin buzzer
+            ledIndicator(currentLedState);
             lastBlink = xTaskGetTickCount();
         }
 
@@ -371,7 +314,6 @@ void initWiFi()
     btStop();
     esp_bt_controller_disable();
 
-    // 🚀 LECTURA DINÁMICA: Si la memoria Flash está vacía, la cadena vendrá en ""
     preferences.begin("wifi_config", true);
     String storedSSID = preferences.getString("ssid", "");
     String storedPASS = preferences.getString("pass", "");
@@ -379,13 +321,11 @@ void initWiFi()
     String storedGW = preferences.getString("gw", "");
     preferences.end();
 
-    // Si no existen credenciales guardadas previamente, abre el Portal Web de inmediato
     if (storedSSID.length() == 0)
     {
         startCaptivePortal();
     }
 
-    // Configuración IP
     IPAddress staticIP, gateway, subnet(255, 255, 255, 0), dns(8, 8, 8, 8);
     if (storedIP.length() > 0 && storedGW.length() > 0)
     {
@@ -406,7 +346,6 @@ void initWiFi()
         attempts++;
     }
 
-    // Si pasados 12 segundos no logra conectarse a la red guardada, abre el Portal Cautivo
     if (WiFi.status() != WL_CONNECTED)
     {
         startCaptivePortal();
