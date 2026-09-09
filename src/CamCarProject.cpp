@@ -10,12 +10,17 @@
 void setup()
 {
     setCpuFrequencyMhz(240);
+
+    initI2CManager();     // 1. Hardware I2C
+    setupPeripherals();   // 2. Expansores PCF y PCA
     
-    initI2CManager();
-    setupCamera();    
-    setupPeripherals();
-    initDisplayTask();
-    initWiFi();
+    initDisplayTask();    // 3. Iniciar tarea del display (ejecuta el reset por P5)
+
+    // 🚀 Pausa de guarda obligatoria: Espera a que la pantalla complete sus 500ms de secuencia antes de encender la radio Wi-Fi
+    vTaskDelay(pdMS_TO_TICKS(600)); 
+
+    setupCamera();        // 4. Cámara
+    initWiFi();           // 5. Wi-Fi (Picos de RF aislados)
 }
 
 void loop()

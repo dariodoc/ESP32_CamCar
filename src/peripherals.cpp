@@ -2,10 +2,11 @@
 #include "peripherals.h"
 #include "i2c_manager.h"
 #include "motor_control.h"
-#include "PCF8574.h"
-#include "Adafruit_PWMServoDriver.h"
+#include "custom_motor_driver.h"
+#include <PCF8574.h>
+#include <Adafruit_PWMServoDriver.h>
 #include "Melodies.h"
-#include <display_control.h>
+#include "display_control.h"
 #include <Wire.h>
 
 PCF8574 FMCpcf8574(&Wire, 0x20);
@@ -88,6 +89,7 @@ void setupPeripherals()
     // 🚀 LIBERACIÓN OBLIGATORIA DEL PUERTO AL ARRANQUE:
     // Fuerza a nivel físico que los 8 bits (incluyendo los sensores 0-3)
     // inicien como ENTRADAS (1s lógicos) antes de que el motor toque el bus
+    // Reemplazar las escrituras directas Wire.write(0xFF) por la sombra sincronizada:
     if (lockI2C(50))
     {
         Wire.beginTransmission(0x20);
@@ -95,7 +97,7 @@ void setupPeripherals()
         Wire.endTransmission();
 
         Wire.beginTransmission(0x24);
-        Wire.write(0xFF);
+        Wire.write(getBmcPcfShadow()); // Respeta el estado del Pin 5
         Wire.endTransmission();
 
         unlockI2C();

@@ -2,10 +2,12 @@
 #define CUSTOM_MOTOR_DRIVER_H
 
 #include <Arduino.h>
-#include "PCF8574.h"
+#include <PCF8574.h>
 #include "Adafruit_PWMServoDriver.h"
 
 void setStandbyPin(bool enable);
+void setPcfDisplayResetPin(bool state);
+uint8_t getBmcPcfShadow();
 
 class Motor
 {

@@ -1,27 +1,22 @@
 #include "display_control.h"
 #include "config.h"
+#include "i2c_manager.h"
+#include "custom_motor_driver.h"
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7735.h>
 #include <SPI.h>
+#include <Wire.h>
 
-// Asignación de pines: 100% limpia sin compartición de líneas
-#define TFT_SCLK 14  // SCL
-#define TFT_MOSI 13  // SDA
-#define TFT_DC   15  // DC
-#define TFT_CS   -1  // Amarrado físicamente a GND
-#define TFT_RST  -1  // Amarrado físicamente a 3.3V
-
-#ifndef ST77XX_YELLOW
-  #define ST77XX_YELLOW 0xFFE0
-#endif
-
-#ifndef ST77XX_ORANGE
-  #define ST77XX_ORANGE 0xFD20
-#endif
+#define TFT_SCLK 14
+#define TFT_MOSI 13
+#define TFT_DC 15
+#define TFT_CS -1
+#define TFT_RST -1
 
 static Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_MOSI, TFT_SCLK, TFT_RST);
 static QueueHandle_t displayQueue = NULL;
 
+// Función de renderizado de pantallas
 static void renderScreen(const DisplayMessage &msg)
 {
     switch (msg.state)
@@ -85,38 +80,46 @@ static void renderScreen(const DisplayMessage &msg)
     }
 }
 
+static void hardResetDisplayViaPCF()
+{
+    // 1. Asegurar HIGH inicial
+    setPcfDisplayResetPin(true);
+    vTaskDelay(pdMS_TO_TICKS(50));
+
+    // 2. Pulso LOW sostenido para garantizar descarga completa de la línea RST
+    setPcfDisplayResetPin(false);
+    vTaskDelay(pdMS_TO_TICKS(150));
+
+    // 3. Subir a HIGH y dar tiempo al oscilador RC del ST7735 para arrancar
+    setPcfDisplayResetPin(true);
+    vTaskDelay(pdMS_TO_TICKS(200));
+}
+
 static void displayTask(void *pvParameters)
 {
-    // 1. Pausa inicial para que la fuente de poder se estabilice
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    // 1. Forzar un reset físico seguro por I2C
+    hardResetDisplayViaPCF();
 
-    // 2. Apagar la interfaz SPI por hardware y reiniciar el periférico del ESP32
+    // 2. Reiniciar el bus SPI del ESP32 por software
     SPI.end();
     vTaskDelay(pdMS_TO_TICKS(50));
-    SPI.begin(TFT_SCLK, -1, TFT_MOSI, TFT_CS); // Iniciar SPI limpio
+    SPI.begin(TFT_SCLK, -1, TFT_MOSI, TFT_CS);
 
-    // 3. Primer init para cargar parámetros de hardware
+    // 3. Inicializar la librería Adafruit
     tft.initR(INITR_MINI160x80_PLUGIN);
 
-    // 4. Secuencia de despertar con tiempos extendidos (Garantizados por datasheet)
-    tft.sendCommand(ST77XX_SWRESET);  // Reset por software
-    vTaskDelay(pdMS_TO_TICKS(200));    // Subido a 200ms para asegurar descarga interna
+    // 4. Bajar temporalmente la velocidad SPI a 4 MHz para asegurar recepción limpia de comandos de inicialización
+    tft.setSPISpeed(4000000);
 
-    tft.sendCommand(ST77XX_SLPOUT);   // Salir de Sleep
-    vTaskDelay(pdMS_TO_TICKS(200));    // Subido a 200ms
-
-    tft.sendCommand(ST77XX_DISPON);   // Encender pantalla
-    vTaskDelay(pdMS_TO_TICKS(100));
-
-    // 5. Segundo init definitivo (lo que te estaba funcionando a ti)
-    tft.initR(INITR_MINI160x80_PLUGIN);
+    // 5. Enviar secuencia limpia de orientación e inversión
     tft.setRotation(3);
     tft.invertDisplay(false);
-
-    // 6. Limpieza completa de memoria RAM del ST7735
     tft.fillScreen(ST77XX_BLACK);
 
-    // 7. Primer frame
+    // 6. Subir velocidad SPI a 16 MHz para un renderizado rápido en operación normal
+    tft.setSPISpeed(16000000);
+
+    // 7. Mostrar primer frame
     DisplayMessage initMsg = {DISPLAY_BOOT, ""};
     renderScreen(initMsg);
 
@@ -143,8 +146,7 @@ void initDisplayTask()
             NULL,
             1,
             NULL,
-            0
-        );
+            0);
     }
 }
 
@@ -154,8 +156,15 @@ void updateDisplayState(DisplayState state, const char *extraText)
     {
         DisplayMessage msg;
         msg.state = state;
-        strncpy(msg.textExtra, extraText, sizeof(msg.textExtra) - 1);
-        msg.textExtra[sizeof(msg.textExtra) - 1] = '\0';
+        if (extraText != NULL)
+        {
+            strncpy(msg.textExtra, extraText, sizeof(msg.textExtra) - 1);
+            msg.textExtra[sizeof(msg.textExtra) - 1] = '\0';
+        }
+        else
+        {
+            msg.textExtra[0] = '\0';
+        }
 
         xQueueSend(displayQueue, &msg, 0);
     }

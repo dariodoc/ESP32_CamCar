@@ -2,8 +2,8 @@
 #include "motor_control.h"
 #include "peripherals.h"
 #include "i2c_manager.h"
-#include "PCF8574.h"
-#include "Adafruit_PWMServoDriver.h"
+#include <PCF8574.h>
+#include <Adafruit_PWMServoDriver.h>
 #include "custom_motor_driver.h"
 
 extern PCF8574 FMCpcf8574;

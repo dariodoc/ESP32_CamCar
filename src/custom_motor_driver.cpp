@@ -10,8 +10,30 @@ extern bool lockI2C(TickType_t timeoutMs = 20);
 extern void unlockI2C();
 
 static uint8_t fmcPcfShadow = 0xFF; // Expansor Frontal (0x20): Bits 0-3 en 1 (Entradas IR)
-static uint8_t bmcPcfShadow = 0xFF; // Expansor Trasero  (0x24): Motores BL, BR y STBY
+static uint8_t bmcPcfShadow = 0xFF; // Expansor Trasero  (0x24): Motores BL, BR, STBY y Reset TFT
 static bool currentStandbyState = false;
+
+uint8_t getBmcPcfShadow()
+{
+    return bmcPcfShadow;
+}
+
+void setPcfDisplayResetPin(bool state)
+{
+    if (lockI2C(50))
+    {
+        if (state)
+            bmcPcfShadow |= (1 << tftResetPcfPin);
+        else
+            bmcPcfShadow &= ~(1 << tftResetPcfPin);
+
+        Wire.beginTransmission(0x24);
+        Wire.write(bmcPcfShadow);
+        Wire.endTransmission();
+
+        unlockI2C();
+    }
+}
 
 void setStandbyPin(bool enable)
 {

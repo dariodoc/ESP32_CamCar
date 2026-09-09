@@ -12,8 +12,8 @@
 #include <Preferences.h>
 #include <SPIFFS.h>
 #include <esp_camera.h>
-#include <display_control.h>
-#include "esp_bt.h"
+#include "display_control.h"
+#include <esp_bt.h>
 #include <ArduinoOTA.h>
 #include "Melodies.h"
 

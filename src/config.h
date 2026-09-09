@@ -79,6 +79,9 @@ const int motorBRPWMPin = 2; // Pin del PCA9685 para el motor trasero derecho
 
 const int STBYpin = 4; // Pin de PCF8574 para Standby
 
+// --- PINES DEL PCF8574 Y PCA9685 PARA LOS MOTORES Y PANTALLA ---
+const int tftResetPcfPin = 5; // Pin P5 del PCF8574 Trasero (0x24) para Reset del ST7735
+
 // --- CONFIGURACIÓN DE FREERTOS ---
 #define STACK_SIZE (1024 * 4)
 
