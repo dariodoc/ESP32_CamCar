@@ -93,7 +93,7 @@ void Motor::setMotorState(int stateIn1, int stateIn2, int speed)
 
 void Motor::fwd(int speed) { setMotorState(HIGH, LOW, speed); }
 void Motor::rev(int speed) { setMotorState(LOW, HIGH, speed); }
-void Motor::brake() { setMotorState(HIGH, HIGH, 0); }
+void Motor::brake() { setMotorState(HIGH, HIGH, 4095); }
 
 void Motor::drive(int speed)
 {

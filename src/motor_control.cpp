@@ -15,14 +15,23 @@ Motor motorBL(motorBLIn1pin, motorBLIn2pin, motorBLPWMPin, motorBLoffset, &BMCpc
 Motor motorFR(motorFRIn1pin, motorFRIn2pin, motorFRPWMPin, motorFRoffset, &FMCpcf8574, &pca9685);
 Motor motorBR(motorBRIn1pin, motorBRIn2pin, motorBRPWMPin, motorBRoffset, &BMCpcf8574, &pca9685);
 
+void stopAllMotors()
+{
+    // Desactivar Standby para apagar los transistores y ahorrar energía
+    setStandbyPin(false);
+
+    leftRearLed(HIGH);
+    rightRearLed(HIGH);
+}
+
 void brakeAllMotors()
 {
+    setStandbyPin(true);
+    
     motorFL.brake();
     motorBL.brake();
     motorFR.brake();
     motorBR.brake();
-
-    setStandbyPin(false);
 
     leftRearLed(HIGH);
     rightRearLed(HIGH);
@@ -30,12 +39,14 @@ void brakeAllMotors()
 
 int mapMotorValue(int rawValue)
 {
-    if (rawValue == 0) return 0;
+    if (rawValue == 0)
+        return 0;
     const int MIN_PWM = 800, MAX_PWM = 4095;
     int sign = (rawValue > 0) ? 1 : -1;
     int absVal = constrain(abs(rawValue), 210, 4095);
-    
-    if (absVal <= 210) return MIN_PWM * sign;
+
+    if (absVal <= 210)
+        return MIN_PWM * sign;
     return map(absVal, 210, 4095, MIN_PWM, MAX_PWM) * sign;
 }
 
@@ -62,7 +73,7 @@ void driveDirectRaw(int fl, int bl, int fr, int br)
 {
     if (fl == 0 && bl == 0 && fr == 0 && br == 0)
     {
-        brakeAllMotors();
+        stopAllMotors();
         return;
     }
 
@@ -70,7 +81,7 @@ void driveDirectRaw(int fl, int bl, int fr, int br)
 
     motorFL.drive(fl);
     motorBL.drive(bl);
-    motorFR.drive(fr);    
+    motorFR.drive(fr);
     motorBR.drive(br);
 
     leftRearLed(LOW);

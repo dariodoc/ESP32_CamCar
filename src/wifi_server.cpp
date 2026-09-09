@@ -39,15 +39,12 @@ void cmdServerTask(void *pvParameters)
             client.setTimeout(50);
             lastCmdTime = xTaskGetTickCount();
 
-#ifdef DEBUG
-            TelnetStream.println("🕹️ Cliente de Comandos conectado (Puerto 4000)\r");
-#endif
             while (client.connected())
             {
                 if (client.available())
                 {
-                    String lastMotorCmd = "";
-                    bool zeroBrakeFound = false;
+                    bool hasNewMotorCmd = false;
+                    int lastMotorParams[4] = {0, 0, 0, 0};
 
                     while (client.available())
                     {
@@ -57,10 +54,6 @@ void cmdServerTask(void *pvParameters)
                         if (temp.length() > 0)
                         {
                             lastCmdTime = xTaskGetTickCount();
-
-#ifdef DEBUG
-                            TelnetStream.printf("📥 RX: %s\r\n", temp.c_str());
-#endif
 
                             String localCmd[8];
                             int localParam[8] = {0};
@@ -126,52 +119,41 @@ void cmdServerTask(void *pvParameters)
                                 {
                                     enableObstacleAvoidance = true;
                                     if (obstacleAvoidanceModeTaskHandle != NULL)
-                                    {
                                         xTaskNotifyGive(obstacleAvoidanceModeTaskHandle);
-                                    }
                                 }
                                 else
-                                {
                                     enableObstacleAvoidance = false;
-                                }
                             }
                             else if (localCmd[0] == "CMD_MOTOR")
                             {
-                                if (localParam[1] == 0 && localParam[2] == 0 && localParam[3] == 0 && localParam[4] == 0)
-                                {
-                                    zeroBrakeFound = true;
-                                }
-                                lastMotorCmd = "CMD_MOTOR#" + String(localParam[1]) + "#" + String(localParam[2]) + "#" + String(localParam[3]) + "#" + String(localParam[4]);
+                                // Guardamos directo los enteros extraídos sin concatenar cadenas
+                                lastMotorParams[0] = localParam[1];
+                                lastMotorParams[1] = localParam[2];
+                                lastMotorParams[2] = localParam[3];
+                                lastMotorParams[3] = localParam[4];
+                                hasNewMotorCmd = true;
                             }
                         }
                     }
 
-                    if (zeroBrakeFound)
+                    // Enviar directo a driveSafe sin pasar por sscanf
+                    if (hasNewMotorCmd)
                     {
-                        brakeAllMotors();
-                    }
-                    else if (lastMotorCmd.length() > 0)
-                    {
-                        int p1 = 0, p2 = 0, p3 = 0, p4 = 0;
-                        sscanf(lastMotorCmd.c_str(), "CMD_MOTOR#%d#%d#%d#%d", &p1, &p2, &p3, &p4);
-
-                        // 🚀 Toda la delegación de tracción y seguridad a motor_control
-                        driveSafe(p1, p2, p3, p4);
+                        driveSafe(lastMotorParams[0], lastMotorParams[1], lastMotorParams[2], lastMotorParams[3]);
                     }
                 }
                 else
                 {
-                    // Watchdog de seguridad (1.5s sin recibir datos -> frena)
                     if ((xTaskGetTickCount() - lastCmdTime) > TIMEOUT_TICKS)
                     {
-                        brakeAllMotors();
+                        stopAllMotors();
                     }
                 }
 
                 vTaskDelay(pdMS_TO_TICKS(10));
             }
             client.stop();
-            brakeAllMotors();
+            stopAllMotors();
         }
 
         vTaskDelay(pdMS_TO_TICKS(20));

@@ -87,28 +87,36 @@ static void renderScreen(const DisplayMessage &msg)
 
 static void displayTask(void *pvParameters)
 {
-    // 1. Pausa amplia de 1 segundo para asegurar que la rampa de voltaje de la fuente del robot llegue a 3.3V estables
+    // 1. Pausa inicial para que la fuente de poder se estabilice
     vTaskDelay(pdMS_TO_TICKS(1000));
 
-    // 2. Pre-inicializar bus SPI
+    // 2. Apagar la interfaz SPI por hardware y reiniciar el periférico del ESP32
+    SPI.end();
+    vTaskDelay(pdMS_TO_TICKS(50));
+    SPI.begin(TFT_SCLK, -1, TFT_MOSI, TFT_CS); // Iniciar SPI limpio
+
+    // 3. Primer init para cargar parámetros de hardware
     tft.initR(INITR_MINI160x80_PLUGIN);
 
-    // 3. 🚀SECUENCIA MANUAL DE DESPERTAR SEGÚN DATASHEET ST7735S
-    tft.sendCommand(ST77XX_SWRESET);  // 0x01: Reset de Software
-    vTaskDelay(pdMS_TO_TICKS(150));   // Espera obligatoria (mínimo 120ms)
+    // 4. Secuencia de despertar con tiempos extendidos (Garantizados por datasheet)
+    tft.sendCommand(ST77XX_SWRESET);  // Reset por software
+    vTaskDelay(pdMS_TO_TICKS(200));    // Subido a 200ms para asegurar descarga interna
 
-    tft.sendCommand(ST77XX_SLPOUT);   // 0x11: Salir de Sleep Mode
-    vTaskDelay(pdMS_TO_TICKS(150));   // Espera obligatoria (mínimo 120ms)
+    tft.sendCommand(ST77XX_SLPOUT);   // Salir de Sleep
+    vTaskDelay(pdMS_TO_TICKS(200));    // Subido a 200ms
 
-    tft.sendCommand(ST77XX_DISPON);   // 0x29: Encender pantalla
-    vTaskDelay(pdMS_TO_TICKS(50));
+    tft.sendCommand(ST77XX_DISPON);   // Encender pantalla
+    vTaskDelay(pdMS_TO_TICKS(100));
 
-    // 4. Inicialización definitiva de la librería con registros limpios
+    // 5. Segundo init definitivo (lo que te estaba funcionando a ti)
     tft.initR(INITR_MINI160x80_PLUGIN);
     tft.setRotation(3);
     tft.invertDisplay(false);
 
-    // 5. Mostrar primer frame
+    // 6. Limpieza completa de memoria RAM del ST7735
+    tft.fillScreen(ST77XX_BLACK);
+
+    // 7. Primer frame
     DisplayMessage initMsg = {DISPLAY_BOOT, ""};
     renderScreen(initMsg);
 
