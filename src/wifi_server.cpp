@@ -34,18 +34,21 @@ static SemaphoreHandle_t frameMutex = NULL;
 
 void cameraCaptureTask(void *pvParameters)
 {
-    const TickType_t FRAME_TARGET_TIME = pdMS_TO_TICKS(40); // Target ~25 FPS para liberar ciclos de CPU
+    const TickType_t FRAME_TARGET_TIME = pdMS_TO_TICKS(40); // ~25 FPS
+    int consecutiveFailures = 0;
+    const int MAX_FAILURES = 25; // ~1 segundo sin imagen
 
     for (;;)
     {
         TickType_t startTime = xTaskGetTickCount();
 
-        // Capturar frame solo si el video está activo
         if (videoFlag)
         {
             camera_fb_t *fb = esp_camera_fb_get();
             if (fb)
             {
+                consecutiveFailures = 0;
+
                 if (xSemaphoreTake(frameMutex, pdMS_TO_TICKS(5)) == pdTRUE)
                 {
                     if (latestFrame != NULL)
@@ -60,6 +63,48 @@ void cameraCaptureTask(void *pvParameters)
                     esp_camera_fb_return(fb);
                 }
             }
+            else
+            {
+                consecutiveFailures++;
+
+                // 🚀 RECUPERACIÓN ATÓMICA SIN DEINIT (No corrompe la PSRAM ni la DMA)
+                if (consecutiveFailures >= MAX_FAILURES)
+                {
+                    sensor_t *s = esp_camera_sensor_get();
+                    if (s)
+                    {
+                        // Forzar refresco de registros de sincronía de reloj
+                        s->set_pixformat(s, PIXFORMAT_JPEG);
+                    }
+
+                    // Limpiar el buffer retenido si existe
+                    if (xSemaphoreTake(frameMutex, pdMS_TO_TICKS(5)) == pdTRUE)
+                    {
+                        if (latestFrame != NULL)
+                        {
+                            esp_camera_fb_return(latestFrame);
+                            latestFrame = NULL;
+                        }
+                        xSemaphoreGive(frameMutex);
+                    }
+
+                    consecutiveFailures = 0;
+                }
+            }
+        }
+        else
+        {
+            consecutiveFailures = 0;
+
+            if (xSemaphoreTake(frameMutex, pdMS_TO_TICKS(5)) == pdTRUE)
+            {
+                if (latestFrame != NULL)
+                {
+                    esp_camera_fb_return(latestFrame);
+                    latestFrame = NULL;
+                }
+                xSemaphoreGive(frameMutex);
+            }
         }
 
         TickType_t elapsedTime = xTaskGetTickCount() - startTime;
@@ -69,7 +114,7 @@ void cameraCaptureTask(void *pvParameters)
         }
         else
         {
-            vTaskDelay(pdMS_TO_TICKS(10)); // Ceder explícitamente CPU a otras tareas
+            vTaskDelay(pdMS_TO_TICKS(5));
         }
     }
 }
@@ -291,7 +336,7 @@ void cameraStreamTaskTCP(void *pvParameters)
     }
     listen(serverFd, 1);
 
-    const TickType_t FRAME_TARGET_TIME = pdMS_TO_TICKS(33);
+    const TickType_t FRAME_TARGET_TIME = pdMS_TO_TICKS(40); // ~25 FPS
 
     for (;;)
     {
@@ -310,10 +355,10 @@ void cameraStreamTaskTCP(void *pvParameters)
             int nodelay = 1;
             setsockopt(clientFd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(int));
 
-            // 🚀 TIMEOUT DE ESCRITURA ESTRICTO DE 100ms
+            // Timeout de envío estricto
             struct timeval sendTimeout;
             sendTimeout.tv_sec = 0;
-            sendTimeout.tv_usec = 100000; // 100 ms max para despachar frame
+            sendTimeout.tv_usec = 100000; // 100 ms max
             setsockopt(clientFd, SOL_SOCKET, SO_SNDTIMEO, &sendTimeout, sizeof(sendTimeout));
 
             int keepAlive = 1, keepIdle = 2, keepInterval = 1, keepCount = 2;
@@ -330,11 +375,10 @@ void cameraStreamTaskTCP(void *pvParameters)
                 {
                     camera_fb_t *fbToSend = NULL;
 
-                    // Extraer de forma segura la foto del Punto 2
-                    if (xSemaphoreTake(frameMutex, pdMS_TO_TICKS(10)) == pdTRUE)
+                    if (xSemaphoreTake(frameMutex, pdMS_TO_TICKS(5)) == pdTRUE)
                     {
                         fbToSend = latestFrame;
-                        latestFrame = NULL; // Asignamos posesión del pointer
+                        latestFrame = NULL;
                         xSemaphoreGive(frameMutex);
                     }
 
@@ -348,18 +392,46 @@ void cameraStreamTaskTCP(void *pvParameters)
                         header[2] = (uint8_t)((jpg_buf_len >> 16) & 0xFF);
                         header[3] = (uint8_t)((jpg_buf_len >> 24) & 0xFF);
 
-                        // Envío nativo POSIX
+                        // 1. Enviar encabezado de tamaño (4 bytes)
                         int sentHeader = send(clientFd, header, 4, 0);
 
                         if (sentHeader == 4)
                         {
-                            int sentBody = send(clientFd, fbToSend->buf, jpg_buf_len, 0);
+                            // 🚀 2. ENVÍO FRAGMENTADO POR BLOQUES (Evita saturación pbuf/LwIP)
+                            uint8_t *buf = fbToSend->buf;
+                            size_t bytesLeft = jpg_buf_len;
+                            bool sendError = false;
 
-                            // Si el envío falla o expira el timeout de 100ms, abortamos
-                            if (sentBody < 0)
+                            // 🚀 AHORA: Envío a máxima velocidad de red (Cero latencia añadida)
+                            while (bytesLeft > 0)
+                            {
+                                size_t chunkSize = (bytesLeft > 1460) ? 1460 : bytesLeft;
+                                int written = send(clientFd, buf, chunkSize, MSG_DONTWAIT);
+
+                                if (written > 0)
+                                {
+                                    buf += written;
+                                    bytesLeft -= written;
+                                }
+                                else if (written < 0)
+                                {
+                                    if (errno == EWOULDBLOCK || errno == EAGAIN)
+                                    {
+                                        // Solo si el buffer de la antena se llena, esperamos 1ms
+                                        vTaskDelay(pdMS_TO_TICKS(1));
+                                    }
+                                    else
+                                    {
+                                        sendError = true;
+                                        break; // Error real de desconexión
+                                    }
+                                }
+                            }
+
+                            if (sendError)
                             {
                                 esp_camera_fb_return(fbToSend);
-                                break;
+                                break; // Cortar sesión si la red falló
                             }
                         }
                         else
@@ -368,7 +440,6 @@ void cameraStreamTaskTCP(void *pvParameters)
                             break;
                         }
 
-                        // Liberación de la memoria DMA
                         esp_camera_fb_return(fbToSend);
                     }
                 }
@@ -384,7 +455,6 @@ void cameraStreamTaskTCP(void *pvParameters)
                 }
             }
 
-            // 🚀 PURGA ATÓMICA DE CÁMARA Y RED
             shutdown(clientFd, SHUT_RDWR);
             close(clientFd);
         }
