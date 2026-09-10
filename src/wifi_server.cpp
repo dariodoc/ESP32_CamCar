@@ -162,37 +162,74 @@ void cmdServerTask(void *pvParameters)
 
 void cameraStreamTaskTCP(void *pvParameters)
 {
+    const TickType_t FRAME_TARGET_TIME = pdMS_TO_TICKS(33); // Target: 30 FPS
+
     for (;;)
     {
         WiFiClient client = server_Camera.accept();
         if (client)
         {
+            client.setNoDelay(true);
+            client.setTimeout(3); // 🚀 Timeout agresivo de 3ms para reaccionar al instante si la red flaquea
+
             while (client.connected())
             {
+                TickType_t startTime = xTaskGetTickCount();
+
                 if (videoFlag)
                 {
                     camera_fb_t *fb = esp_camera_fb_get();
                     if (fb)
                     {
                         uint32_t jpg_buf_len = fb->len;
-                        uint8_t *jpg_buf = fb->buf;
 
-                        uint8_t slen[4];
-                        slen[0] = (uint8_t)(jpg_buf_len & 0xFF);
-                        slen[1] = (uint8_t)((jpg_buf_len >> 8) & 0xFF);
-                        slen[2] = (uint8_t)((jpg_buf_len >> 16) & 0xFF);
-                        slen[3] = (uint8_t)((jpg_buf_len >> 24) & 0xFF);
+                        uint8_t header[4];
+                        header[0] = (uint8_t)(jpg_buf_len & 0xFF);
+                        header[1] = (uint8_t)((jpg_buf_len >> 8) & 0xFF);
+                        header[2] = (uint8_t)((jpg_buf_len >> 16) & 0xFF);
+                        header[3] = (uint8_t)((jpg_buf_len >> 24) & 0xFF);
 
-                        client.write(slen, 4);
-                        client.write(jpg_buf, jpg_buf_len);
+                        // Envío atómico del encabezado
+                        if (client.write(header, 4) == 4)
+                        {
+                            uint8_t *buf = fb->buf;
+                            size_t bytesLeft = jpg_buf_len;
+
+                            while (bytesLeft > 0 && client.connected())
+                            {
+                                size_t chunkSize = (bytesLeft > 1460) ? 1460 : bytesLeft;
+                                size_t written = client.write(buf, chunkSize);
+
+                                if (written == 0)
+                                {
+                                    // Si la radio no pudo despachar los bytes, abortamos el frame para no congelar
+                                    break;
+                                }
+
+                                buf += written;
+                                bytesLeft -= written;
+                            }
+                        }
+
+                        // Liberación síncrona inmediata para el DMA
                         esp_camera_fb_return(fb);
                     }
                 }
-                vTaskDelay(pdMS_TO_TICKS(35));
+
+                // Control de ritmo estable (Pacing)
+                TickType_t elapsedTime = xTaskGetTickCount() - startTime;
+                if (elapsedTime < FRAME_TARGET_TIME)
+                {
+                    vTaskDelay(FRAME_TARGET_TIME - elapsedTime);
+                }
+                else
+                {
+                    vTaskDelay(pdMS_TO_TICKS(1));
+                }
             }
             client.stop();
         }
-        vTaskDelay(pdMS_TO_TICKS(100));
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
 }
 
@@ -350,7 +387,7 @@ void initWiFi()
     server_Camera.begin(7000);
 
     xTaskCreatePinnedToCore(cmdServerTask, "CmdServerTask", 1024 * 4, NULL, 2, &cmdServerTaskHandle, 1);
-    xTaskCreatePinnedToCore(cameraStreamTaskTCP, "CamTCPStream", 1024 * 4, NULL, 1, NULL, 0);
+    xTaskCreatePinnedToCore(cameraStreamTaskTCP, "CamTCPStream", 1024 * 4, NULL, 3, NULL, 0);
 
     ArduinoOTA.begin();
     ledIndicator(1);

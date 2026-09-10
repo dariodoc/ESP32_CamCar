@@ -182,6 +182,7 @@ float getDistanceCM()
     return (duration * 0.0343) / 2.0;
 }
 
+
 // 🚀 Tarea unificada: Infrarrojos (PCF8574) + Ultrasónico (Trig 33 / Echo 32)
 void obstacleAvoidanceMode(void *parameters)
 {
@@ -202,21 +203,17 @@ void obstacleAvoidanceMode(void *parameters)
         // 1. Lectura segura del PCF8574 (0x20) sin afectar los motores delanteros
         if (lockI2C(20))
         {
-            // Solicitamos el estado actual del puerto
             Wire.requestFrom(0x20, 1);
             if (Wire.available())
             {
                 uint8_t currentData = Wire.read();
 
-                // 🚀 MÁSCARA INTELIGENTE: Solo aseguramos que P0-P3 (sensores) tengan pull-up (1)
-                // Manteniendo intactos los bits P4-P7 de los motores delanteros
                 uint8_t safeReadMask = currentData | 0x0F;
 
                 Wire.beginTransmission(0x20);
                 Wire.write(safeReadMask);
                 Wire.endTransmission();
 
-                // Evaluamos el estado real de los 4 sensores IR (P0 a P3)
                 bool ir1 = !(currentData & (1 << obstacleDetectorPin1));
                 bool ir2 = !(currentData & (1 << obstacleDetectorPin2));
                 bool ir3 = !(currentData & (1 << obstacleDetectorPin3));
@@ -242,11 +239,10 @@ void obstacleAvoidanceMode(void *parameters)
         }
 #endif
 
-        // 3. Respuesta a obstáculo (optimizada por cambio de estado)
+        // 3. Respuesta a obstáculo
         bool previousObstacleState = obstacleFound;
         obstacleFound = (irObstacle || usObstacle);
 
-        // Solo enviamos a la pantalla si HUBO UN CAMBIO de estado
         if (obstacleFound != previousObstacleState)
         {
             if (obstacleFound)
@@ -259,6 +255,7 @@ void obstacleAvoidanceMode(void *parameters)
             }
         }
 
-        vTaskDelayUntil(&lastWakeTime, pdMS_TO_TICKS(50));
+        // 🚀 Ajustado a 60 ms para reducir la contención del bus I2C y priorizar la cámara
+        vTaskDelayUntil(&lastWakeTime, pdMS_TO_TICKS(60));
     }
 }

@@ -97,38 +97,45 @@ static void hardResetDisplayViaPCF()
 
 static void displayTask(void *pvParameters)
 {
-    // 1. Forzar un reset físico seguro por I2C
+    // 1. Reset físico por I2C
     hardResetDisplayViaPCF();
 
-    // 2. Reiniciar el bus SPI del ESP32 por software
+    // 2. Reiniciar bus SPI e inicializar ST7735
     SPI.end();
-    vTaskDelay(pdMS_TO_TICKS(50));
+    vTaskDelay(pdMS_TO_TICKS(20));
     SPI.begin(TFT_SCLK, -1, TFT_MOSI, TFT_CS);
 
-    // 3. Inicializar la librería Adafruit
     tft.initR(INITR_MINI160x80_PLUGIN);
+    tft.setSPISpeed(4000000); // 4 MHz para arranque seguro
 
-    // 4. Bajar temporalmente la velocidad SPI a 4 MHz para asegurar recepción limpia de comandos de inicialización
-    tft.setSPISpeed(4000000);
-
-    // 5. Enviar secuencia limpia de orientación e inversión
     tft.setRotation(3);
     tft.invertDisplay(false);
     tft.fillScreen(ST77XX_BLACK);
-
-    // 6. Subir velocidad SPI a 16 MHz para un renderizado rápido en operación normal
     tft.setSPISpeed(16000000);
 
-    // 7. Mostrar primer frame
+    // 3. Primer mensaje
     DisplayMessage initMsg = {DISPLAY_BOOT, ""};
     renderScreen(initMsg);
 
     DisplayMessage rxMsg;
+    DisplayState currentState = DISPLAY_BOOT;
+
     for (;;)
     {
+        // 🚀 La tarea se duerme aquí al 100% en FreeRTOS esperando un evento real.
+        // Mientras no lleguen mensajes nuevos, la pantalla MANTIENE la imagen bonita fija
+        // sin tocar la CPU ni el bus SPI.
         if (xQueueReceive(displayQueue, &rxMsg, portMAX_DELAY) == pdTRUE)
         {
+            // Filtro inteligente: Si el estado recibido es el mismo que ya está dibujado, NO redibujamos
+            if (rxMsg.state == currentState && rxMsg.state == DISPLAY_CONNECTED)
+            {
+                continue;
+            }
+
+            // Solo si el texto/estado realmente cambió, enviamos datos por SPI
             renderScreen(rxMsg);
+            currentState = rxMsg.state;
         }
     }
 }
