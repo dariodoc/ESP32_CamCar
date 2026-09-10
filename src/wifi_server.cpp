@@ -16,6 +16,7 @@
 #include <esp_bt.h>
 #include <ArduinoOTA.h>
 #include "Melodies.h"
+#include <lwip/sockets.h>
 
 WiFiServer server_Cmd(4000);
 WiFiServer server_Camera(7000);
@@ -33,31 +34,55 @@ void cmdServerTask(void *pvParameters)
 
     for (;;)
     {
+        // 🚀 VERIFICACIÓN Y RECONEXIÓN AUTOMÁTICA DE RED
+        if (WiFi.status() != WL_CONNECTED)
+        {
+            stopAllMotors();
+            vTaskDelay(pdMS_TO_TICKS(500));
+            continue;
+        }
+
         WiFiClient client = server_Cmd.accept();
         if (client)
         {
-            client.setTimeout(50);
-            lastCmdTime = xTaskGetTickCount();
+            client.setNoDelay(true);
+            client.setTimeout(10); // Timeout bajo para operaciones I/O
+
+            // 🚀 MATAR SOCKETS ZOMBIES DE COMANDOS (3s Keep-Alive)
+            int socketFd = client.fd();
+            if (socketFd >= 0)
+            {
+                int keepAlive = 1;
+                int keepIdle = 2;
+                int keepInterval = 1;
+                int keepCount = 2;
+
+                setsockopt(socketFd, SOL_SOCKET, SO_KEEPALIVE, &keepAlive, sizeof(int));
+                setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPIDLE, &keepIdle, sizeof(int));
+                setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPINTVL, &keepInterval, sizeof(int));
+                setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPCNT, &keepCount, sizeof(int));
+            }
+
+            String rxBuffer = "";
+            rxBuffer.reserve(128);
 
             while (client.connected())
             {
-                if (client.available())
+                // 🚀 LECTURA DE BYTES NO BLOQUEANTE (Evita cuelgues en readStringUntil)
+                while (client.available() > 0)
                 {
-                    bool hasNewMotorCmd = false;
-                    int lastMotorParams[4] = {0, 0, 0, 0};
-
-                    while (client.available())
+                    char c = client.read();
+                    if (c == '\n')
                     {
-                        String temp = client.readStringUntil('\n');
-                        temp.trim();
-
-                        if (temp.length() > 0)
+                        rxBuffer.trim();
+                        if (rxBuffer.length() > 0)
                         {
                             lastCmdTime = xTaskGetTickCount();
 
                             String localCmd[8];
                             int localParam[8] = {0};
-                            int string_length = temp.length();
+                            int string_length = rxBuffer.length();
+                            String temp = rxBuffer;
 
                             for (int i = 0; i < 8; i++)
                             {
@@ -126,34 +151,32 @@ void cmdServerTask(void *pvParameters)
                             }
                             else if (localCmd[0] == "CMD_MOTOR")
                             {
-                                // Guardamos directo los enteros extraídos sin concatenar cadenas
-                                lastMotorParams[0] = localParam[1];
-                                lastMotorParams[1] = localParam[2];
-                                lastMotorParams[2] = localParam[3];
-                                lastMotorParams[3] = localParam[4];
-                                hasNewMotorCmd = true;
+                                driveSafe(localParam[1], localParam[2], localParam[3], localParam[4]);
                             }
                         }
+                        rxBuffer = ""; // Limpiar buffer tras procesar el comando
                     }
-
-                    // Enviar directo a driveSafe sin pasar por sscanf
-                    if (hasNewMotorCmd)
+                    else if (c != '\r')
                     {
-                        driveSafe(lastMotorParams[0], lastMotorParams[1], lastMotorParams[2], lastMotorParams[3]);
+                        rxBuffer += c;
                     }
                 }
-                else
+
+                // Paro de seguridad por inactividad
+                if ((xTaskGetTickCount() - lastCmdTime) > TIMEOUT_TICKS)
                 {
-                    if ((xTaskGetTickCount() - lastCmdTime) > TIMEOUT_TICKS)
-                    {
-                        stopAllMotors();
-                    }
+                    stopAllMotors();
                 }
 
                 vTaskDelay(pdMS_TO_TICKS(10));
             }
+
             client.stop();
             stopAllMotors();
+
+            // 🚀 REINICIO DE EMERGENCIA: Limpia la radio, la PSRAM y los sockets al 100%
+            vTaskDelay(pdMS_TO_TICKS(100));
+            ESP.restart();
         }
 
         vTaskDelay(pdMS_TO_TICKS(20));
@@ -166,11 +189,31 @@ void cameraStreamTaskTCP(void *pvParameters)
 
     for (;;)
     {
+        if (WiFi.status() != WL_CONNECTED)
+        {
+            vTaskDelay(pdMS_TO_TICKS(500));
+            continue;
+        }
+
         WiFiClient client = server_Camera.accept();
         if (client)
         {
             client.setNoDelay(true);
-            client.setTimeout(3); // 🚀 Timeout agresivo de 3ms para reaccionar al instante si la red flaquea
+            client.setTimeout(3);
+
+            int socketFd = client.fd();
+            if (socketFd >= 0)
+            {
+                int keepAlive = 1;
+                int keepIdle = 2;
+                int keepInterval = 1;
+                int keepCount = 2;
+
+                setsockopt(socketFd, SOL_SOCKET, SO_KEEPALIVE, &keepAlive, sizeof(int));
+                setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPIDLE, &keepIdle, sizeof(int));
+                setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPINTVL, &keepInterval, sizeof(int));
+                setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPCNT, &keepCount, sizeof(int));
+            }
 
             while (client.connected())
             {
@@ -189,7 +232,6 @@ void cameraStreamTaskTCP(void *pvParameters)
                         header[2] = (uint8_t)((jpg_buf_len >> 16) & 0xFF);
                         header[3] = (uint8_t)((jpg_buf_len >> 24) & 0xFF);
 
-                        // Envío atómico del encabezado
                         if (client.write(header, 4) == 4)
                         {
                             uint8_t *buf = fb->buf;
@@ -202,7 +244,6 @@ void cameraStreamTaskTCP(void *pvParameters)
 
                                 if (written == 0)
                                 {
-                                    // Si la radio no pudo despachar los bytes, abortamos el frame para no congelar
                                     break;
                                 }
 
@@ -211,12 +252,10 @@ void cameraStreamTaskTCP(void *pvParameters)
                             }
                         }
 
-                        // Liberación síncrona inmediata para el DMA
                         esp_camera_fb_return(fb);
                     }
                 }
 
-                // Control de ritmo estable (Pacing)
                 TickType_t elapsedTime = xTaskGetTickCount() - startTime;
                 if (elapsedTime < FRAME_TARGET_TIME)
                 {
@@ -227,8 +266,14 @@ void cameraStreamTaskTCP(void *pvParameters)
                     vTaskDelay(pdMS_TO_TICKS(1));
                 }
             }
+
             client.stop();
+
+            // 🚀 REINICIO DE EMERGENCIA
+            vTaskDelay(pdMS_TO_TICKS(100));
+            ESP.restart();
         }
+
         vTaskDelay(pdMS_TO_TICKS(50));
     }
 }
@@ -356,7 +401,7 @@ void initWiFi()
 
     WiFi.mode(WIFI_STA);
     WiFi.setAutoReconnect(true);
-    // Justo antes de WiFi.begin(...)
+
     updateDisplayState(DISPLAY_CONNECTING_WIFI, storedSSID.c_str());
     WiFi.begin(storedSSID.c_str(), storedPASS.c_str());
 
@@ -370,7 +415,6 @@ void initWiFi()
 
     if (WiFi.status() != WL_CONNECTED)
     {
-        // Al inicio de startCaptivePortal()
         updateDisplayState(DISPLAY_PORTAL_ACTIVE);
         startCaptivePortal();
     }
@@ -379,7 +423,6 @@ void initWiFi()
     TelnetStream.begin();
 #endif
 
-    // Justo después de obtener la IP
     updateDisplayState(DISPLAY_CONNECTED, WiFi.localIP().toString().c_str());
     ledIndicator(2, 60);
 
