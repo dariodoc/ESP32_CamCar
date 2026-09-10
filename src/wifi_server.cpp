@@ -5,8 +5,6 @@
 #include "peripherals.h"
 #include "custom_motor_driver.h"
 #include <WiFi.h>
-#include <WiFiClient.h>
-#include <WiFiServer.h>
 #include <WebServer.h>
 #include <DNSServer.h>
 #include <Preferences.h>
@@ -16,10 +14,11 @@
 #include <esp_bt.h>
 #include <ArduinoOTA.h>
 #include "Melodies.h"
-#include <lwip/sockets.h>
 
-WiFiServer server_Cmd(4000);
-WiFiServer server_Camera(7000);
+// 🚀 LIBRERÍAS DE SOCKETS POSIX NATIVOS DE LwIP
+#include <lwip/sockets.h>
+#include <lwip/netdb.h>
+
 WebServer webServer(80);
 DNSServer dnsServer;
 Preferences preferences;
@@ -27,14 +26,85 @@ Preferences preferences;
 volatile bool videoFlag = false;
 TaskHandle_t cmdServerTaskHandle = NULL;
 
+// ----------------------------------------------------------------------
+// 🚀 PUNTO 2: ESTRUCTURA PARA DESACOPLAR LA CÁMARA DE LA RED
+// ----------------------------------------------------------------------
+static camera_fb_t *latestFrame = NULL;
+static SemaphoreHandle_t frameMutex = NULL;
+
+void cameraCaptureTask(void *pvParameters)
+{
+    const TickType_t FRAME_TARGET_TIME = pdMS_TO_TICKS(40); // Target ~25 FPS para liberar ciclos de CPU
+
+    for (;;)
+    {
+        TickType_t startTime = xTaskGetTickCount();
+
+        // Capturar frame solo si el video está activo
+        if (videoFlag)
+        {
+            camera_fb_t *fb = esp_camera_fb_get();
+            if (fb)
+            {
+                if (xSemaphoreTake(frameMutex, pdMS_TO_TICKS(5)) == pdTRUE)
+                {
+                    if (latestFrame != NULL)
+                    {
+                        esp_camera_fb_return(latestFrame);
+                    }
+                    latestFrame = fb;
+                    xSemaphoreGive(frameMutex);
+                }
+                else
+                {
+                    esp_camera_fb_return(fb);
+                }
+            }
+        }
+
+        TickType_t elapsedTime = xTaskGetTickCount() - startTime;
+        if (elapsedTime < FRAME_TARGET_TIME)
+        {
+            vTaskDelay(FRAME_TARGET_TIME - elapsedTime);
+        }
+        else
+        {
+            vTaskDelay(pdMS_TO_TICKS(10)); // Ceder explícitamente CPU a otras tareas
+        }
+    }
+}
+
+// ----------------------------------------------------------------------
+// 🚀 PUNTO 3: TARES DE SERVIDOR CON SOCKETS NATIVOS POSIX
+// ----------------------------------------------------------------------
+
 void cmdServerTask(void *pvParameters)
 {
+    int serverFd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (serverFd < 0)
+        return;
+
+    int enable = 1;
+    setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int));
+
+    struct sockaddr_in serverAddr;
+    memset(&serverAddr, 0, sizeof(serverAddr));
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    serverAddr.sin_port = htons(4000);
+
+    if (bind(serverFd, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) < 0)
+    {
+        close(serverFd);
+        return;
+    }
+    listen(serverFd, 1);
+
     TickType_t lastCmdTime = xTaskGetTickCount();
     const TickType_t TIMEOUT_TICKS = pdMS_TO_TICKS(1500);
 
     for (;;)
     {
-        // 🚀 VERIFICACIÓN Y RECONEXIÓN AUTOMÁTICA DE RED
         if (WiFi.status() != WL_CONNECTED)
         {
             stopAllMotors();
@@ -42,47 +112,60 @@ void cmdServerTask(void *pvParameters)
             continue;
         }
 
-        WiFiClient client = server_Cmd.accept();
-        if (client)
+        struct sockaddr_in clientAddr;
+        socklen_t clientAddrLen = sizeof(clientAddr);
+        int clientFd = accept(serverFd, (struct sockaddr *)&clientAddr, &clientAddrLen);
+
+        if (clientFd >= 0)
         {
-            client.setNoDelay(true);
-            client.setTimeout(10); // Timeout bajo para operaciones I/O
+            // 🚀 ACTIVAR TCP_NODELAY: Envío y recepción inmediata sin algoritmo de Nagle
+            int nodelay = 1;
+            setsockopt(clientFd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(int));
 
-            // 🚀 MATAR SOCKETS ZOMBIES DE COMANDOS (3s Keep-Alive)
-            int socketFd = client.fd();
-            if (socketFd >= 0)
-            {
-                int keepAlive = 1;
-                int keepIdle = 2;
-                int keepInterval = 1;
-                int keepCount = 2;
+            // Timeout de recepción ultrarrápido (1 ms) para no frenar la tarea
+            struct timeval recvTimeout;
+            recvTimeout.tv_sec = 0;
+            recvTimeout.tv_usec = 1000; // 1 ms
+            setsockopt(clientFd, SOL_SOCKET, SO_RCVTIMEO, &recvTimeout, sizeof(recvTimeout));
 
-                setsockopt(socketFd, SOL_SOCKET, SO_KEEPALIVE, &keepAlive, sizeof(int));
-                setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPIDLE, &keepIdle, sizeof(int));
-                setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPINTVL, &keepInterval, sizeof(int));
-                setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPCNT, &keepCount, sizeof(int));
-            }
+            int keepAlive = 1, keepIdle = 2, keepInterval = 1, keepCount = 2;
+            setsockopt(clientFd, SOL_SOCKET, SO_KEEPALIVE, &keepAlive, sizeof(int));
+            setsockopt(clientFd, IPPROTO_TCP, TCP_KEEPIDLE, &keepIdle, sizeof(int));
+            setsockopt(clientFd, IPPROTO_TCP, TCP_KEEPINTVL, &keepInterval, sizeof(int));
+            setsockopt(clientFd, IPPROTO_TCP, TCP_KEEPCNT, &keepCount, sizeof(int));
 
+            lastCmdTime = xTaskGetTickCount();
             String rxBuffer = "";
-            rxBuffer.reserve(128);
+            rxBuffer.reserve(256);
 
-            while (client.connected())
+            char tempChunk[128];
+
+            while (WiFi.status() == WL_CONNECTED)
             {
-                // 🚀 LECTURA DE BYTES NO BLOQUEANTE (Evita cuelgues en readStringUntil)
-                while (client.available() > 0)
+                // 🚀 LECTURA EN RÁFARGA: Lee hasta 128 bytes de un solo golpe
+                int bytesRead = recv(clientFd, tempChunk, sizeof(tempChunk) - 1, 0);
+
+                if (bytesRead > 0)
                 {
-                    char c = client.read();
-                    if (c == '\n')
+                    tempChunk[bytesRead] = '\0'; // Asegurar fin de cadena C
+                    rxBuffer += tempChunk;
+
+                    // Procesar todas las líneas completas recibidas en el buffer
+                    int newLineIdx;
+                    while ((newLineIdx = rxBuffer.indexOf('\n')) >= 0)
                     {
-                        rxBuffer.trim();
-                        if (rxBuffer.length() > 0)
+                        String line = rxBuffer.substring(0, newLineIdx);
+                        rxBuffer = rxBuffer.substring(newLineIdx + 1);
+                        line.trim();
+
+                        if (line.length() > 0)
                         {
                             lastCmdTime = xTaskGetTickCount();
 
                             String localCmd[8];
                             int localParam[8] = {0};
-                            int string_length = rxBuffer.length();
-                            String temp = rxBuffer;
+                            int string_length = line.length();
+                            String temp = line;
 
                             for (int i = 0; i < 8; i++)
                             {
@@ -154,11 +237,17 @@ void cmdServerTask(void *pvParameters)
                                 driveSafe(localParam[1], localParam[2], localParam[3], localParam[4]);
                             }
                         }
-                        rxBuffer = ""; // Limpiar buffer tras procesar el comando
                     }
-                    else if (c != '\r')
+                }
+                else if (bytesRead == 0)
+                {
+                    break; // Cliente cerrado
+                }
+                else
+                {
+                    if (errno != EWOULDBLOCK && errno != EAGAIN)
                     {
-                        rxBuffer += c;
+                        break; // Error real de red
                     }
                 }
 
@@ -168,24 +257,41 @@ void cmdServerTask(void *pvParameters)
                     stopAllMotors();
                 }
 
-                vTaskDelay(pdMS_TO_TICKS(10));
+                vTaskDelay(pdMS_TO_TICKS(5)); // Delay mínimo para respuesta en tiempo real
             }
 
-            client.stop();
             stopAllMotors();
-
-            // 🚀 REINICIO DE EMERGENCIA: Limpia la radio, la PSRAM y los sockets al 100%
-            vTaskDelay(pdMS_TO_TICKS(100));
-            ESP.restart();
+            shutdown(clientFd, SHUT_RDWR);
+            close(clientFd);
         }
 
-        vTaskDelay(pdMS_TO_TICKS(20));
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
 void cameraStreamTaskTCP(void *pvParameters)
 {
-    const TickType_t FRAME_TARGET_TIME = pdMS_TO_TICKS(33); // Target: 30 FPS
+    int serverFd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (serverFd < 0)
+        return;
+
+    int enable = 1;
+    setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int));
+
+    struct sockaddr_in serverAddr;
+    memset(&serverAddr, 0, sizeof(serverAddr));
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    serverAddr.sin_port = htons(7000);
+
+    if (bind(serverFd, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) < 0)
+    {
+        close(serverFd);
+        return;
+    }
+    listen(serverFd, 1);
+
+    const TickType_t FRAME_TARGET_TIME = pdMS_TO_TICKS(33);
 
     for (;;)
     {
@@ -195,36 +301,46 @@ void cameraStreamTaskTCP(void *pvParameters)
             continue;
         }
 
-        WiFiClient client = server_Camera.accept();
-        if (client)
+        struct sockaddr_in clientAddr;
+        socklen_t clientAddrLen = sizeof(clientAddr);
+        int clientFd = accept(serverFd, (struct sockaddr *)&clientAddr, &clientAddrLen);
+
+        if (clientFd >= 0)
         {
-            client.setNoDelay(true);
-            client.setTimeout(3);
+            int nodelay = 1;
+            setsockopt(clientFd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(int));
 
-            int socketFd = client.fd();
-            if (socketFd >= 0)
-            {
-                int keepAlive = 1;
-                int keepIdle = 2;
-                int keepInterval = 1;
-                int keepCount = 2;
+            // 🚀 TIMEOUT DE ESCRITURA ESTRICTO DE 100ms
+            struct timeval sendTimeout;
+            sendTimeout.tv_sec = 0;
+            sendTimeout.tv_usec = 100000; // 100 ms max para despachar frame
+            setsockopt(clientFd, SOL_SOCKET, SO_SNDTIMEO, &sendTimeout, sizeof(sendTimeout));
 
-                setsockopt(socketFd, SOL_SOCKET, SO_KEEPALIVE, &keepAlive, sizeof(int));
-                setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPIDLE, &keepIdle, sizeof(int));
-                setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPINTVL, &keepInterval, sizeof(int));
-                setsockopt(socketFd, IPPROTO_TCP, TCP_KEEPCNT, &keepCount, sizeof(int));
-            }
+            int keepAlive = 1, keepIdle = 2, keepInterval = 1, keepCount = 2;
+            setsockopt(clientFd, SOL_SOCKET, SO_KEEPALIVE, &keepAlive, sizeof(int));
+            setsockopt(clientFd, IPPROTO_TCP, TCP_KEEPIDLE, &keepIdle, sizeof(int));
+            setsockopt(clientFd, IPPROTO_TCP, TCP_KEEPINTVL, &keepInterval, sizeof(int));
+            setsockopt(clientFd, IPPROTO_TCP, TCP_KEEPCNT, &keepCount, sizeof(int));
 
-            while (client.connected())
+            while (WiFi.status() == WL_CONNECTED)
             {
                 TickType_t startTime = xTaskGetTickCount();
 
                 if (videoFlag)
                 {
-                    camera_fb_t *fb = esp_camera_fb_get();
-                    if (fb)
+                    camera_fb_t *fbToSend = NULL;
+
+                    // Extraer de forma segura la foto del Punto 2
+                    if (xSemaphoreTake(frameMutex, pdMS_TO_TICKS(10)) == pdTRUE)
                     {
-                        uint32_t jpg_buf_len = fb->len;
+                        fbToSend = latestFrame;
+                        latestFrame = NULL; // Asignamos posesión del pointer
+                        xSemaphoreGive(frameMutex);
+                    }
+
+                    if (fbToSend)
+                    {
+                        uint32_t jpg_buf_len = fbToSend->len;
 
                         uint8_t header[4];
                         header[0] = (uint8_t)(jpg_buf_len & 0xFF);
@@ -232,27 +348,28 @@ void cameraStreamTaskTCP(void *pvParameters)
                         header[2] = (uint8_t)((jpg_buf_len >> 16) & 0xFF);
                         header[3] = (uint8_t)((jpg_buf_len >> 24) & 0xFF);
 
-                        if (client.write(header, 4) == 4)
+                        // Envío nativo POSIX
+                        int sentHeader = send(clientFd, header, 4, 0);
+
+                        if (sentHeader == 4)
                         {
-                            uint8_t *buf = fb->buf;
-                            size_t bytesLeft = jpg_buf_len;
+                            int sentBody = send(clientFd, fbToSend->buf, jpg_buf_len, 0);
 
-                            while (bytesLeft > 0 && client.connected())
+                            // Si el envío falla o expira el timeout de 100ms, abortamos
+                            if (sentBody < 0)
                             {
-                                size_t chunkSize = (bytesLeft > 1460) ? 1460 : bytesLeft;
-                                size_t written = client.write(buf, chunkSize);
-
-                                if (written == 0)
-                                {
-                                    break;
-                                }
-
-                                buf += written;
-                                bytesLeft -= written;
+                                esp_camera_fb_return(fbToSend);
+                                break;
                             }
                         }
+                        else
+                        {
+                            esp_camera_fb_return(fbToSend);
+                            break;
+                        }
 
-                        esp_camera_fb_return(fb);
+                        // Liberación de la memoria DMA
+                        esp_camera_fb_return(fbToSend);
                     }
                 }
 
@@ -267,18 +384,19 @@ void cameraStreamTaskTCP(void *pvParameters)
                 }
             }
 
-            client.stop();
-
-            // 🚀 REINICIO DE EMERGENCIA
-            vTaskDelay(pdMS_TO_TICKS(100));
-            ESP.restart();
+            // 🚀 PURGA ATÓMICA DE CÁMARA Y RED
+            shutdown(clientFd, SHUT_RDWR);
+            close(clientFd);
         }
 
         vTaskDelay(pdMS_TO_TICKS(50));
     }
 }
 
-// 📂 MANEJADORES DEL PORTAL WEB CONFIGURADOR (CARGADOS DESDE SPIFFS)
+// ----------------------------------------------------------------------
+// 📂 MANEJADORES DEL PORTAL WEB Y CONFIGURACIÓN DE RED
+// ----------------------------------------------------------------------
+
 void handleRoot()
 {
     if (SPIFFS.exists("/wifimanager.html"))
@@ -372,6 +490,9 @@ void initWiFi()
 {
     ledIndicator(0);
 
+    // Inicializar Mutex para el búfer de fotos desacoplado
+    frameMutex = xSemaphoreCreateMutex();
+
     WiFi.persistent(false);
     WiFi.setSleep(WIFI_PS_NONE);
     WiFi.setTxPower(WIFI_POWER_19_5dBm);
@@ -426,9 +547,10 @@ void initWiFi()
     updateDisplayState(DISPLAY_CONNECTED, WiFi.localIP().toString().c_str());
     ledIndicator(2, 60);
 
-    server_Cmd.begin(4000);
-    server_Camera.begin(7000);
+    // 🚀 LER TAREA INDEPENDIENTE DE CAPTURA DE CÁMARA (Core 0, Prioridad 4)
+    xTaskCreatePinnedToCore(cameraCaptureTask, "CamCaptureTask", 1024 * 3, NULL, 1, NULL, 0);
 
+    // 🚀 CREAR TAREAS DE SERVIDORES DE RED POSIX
     xTaskCreatePinnedToCore(cmdServerTask, "CmdServerTask", 1024 * 4, NULL, 2, &cmdServerTaskHandle, 1);
     xTaskCreatePinnedToCore(cameraStreamTaskTCP, "CamTCPStream", 1024 * 4, NULL, 3, NULL, 0);
 
