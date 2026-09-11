@@ -132,7 +132,7 @@ void cameraStreamTaskTCP(void *pvParameters)
                             int hSentTotal = 0;
                             while (hSentTotal < 4)
                             {
-                                int s = send(clientFd, header + hSentTotal, 4 - hSentTotal, 0);
+                                int s = send(clientFd, header + hSentTotal, 4 - hSentTotal, MSG_NOSIGNAL);
                                 if (s < 0)
                                 {
                                     if (errno == EAGAIN || errno == EWOULDBLOCK)
@@ -159,7 +159,7 @@ void cameraStreamTaskTCP(void *pvParameters)
                                 retries = 0;
                                 while (bytesWrittenTotal < fb->len)
                                 {
-                                    int s = send(clientFd, fb->buf + bytesWrittenTotal, fb->len - bytesWrittenTotal, 0);
+                                    int s = send(clientFd, fb->buf + bytesWrittenTotal, fb->len - bytesWrittenTotal, MSG_NOSIGNAL);
                                     if (s < 0)
                                     {
                                         if (errno == EAGAIN || errno == EWOULDBLOCK)
