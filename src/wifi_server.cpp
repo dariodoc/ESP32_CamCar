@@ -69,7 +69,6 @@ void cameraStreamTaskTCP(void *pvParameters)
         {
             Serial.println("\n[VIDEO] 🟢 Cliente conectado al puerto 7000 (Video).");
             
-            // ELIMINADO EL LINGER BRUTAL. Cierre TCP estándar.
             int nodelay = 1;
             setsockopt(clientFd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(int));
 
@@ -155,9 +154,9 @@ void cameraStreamTaskTCP(void *pvParameters)
 
                             if (socketError)
                             {
-                                Serial.println("[VIDEO] ⚠️ Saturación de red. Cortando conexión de video suavemente.");
+                                Serial.println("[VIDEO] ⚠️ Saturación de red severa. Cortando conexión de video.");
                                 esp_camera_fb_return(fb);
-                                break; // Rompe el ciclo limpio, sin crashear el chip
+                                break; 
                             }
                         }
                         esp_camera_fb_return(fb);
@@ -166,8 +165,9 @@ void cameraStreamTaskTCP(void *pvParameters)
                 else
                 {
                     if (wasStreaming) {
-                        Serial.println("[VIDEO] 🛑 CMD_VIDEO 0 detectado.");
-                        break; 
+                        // 🚀 LA MAGIA: Solo reiniciamos la bandera, NO rompemos el bucle ni cerramos el puerto
+                        Serial.println("[VIDEO] 🛑 CMD_VIDEO 0 detectado. Pausando stream (Modo Mute)...");
+                        wasStreaming = false; 
                     }
                     vTaskDelay(pdMS_TO_TICKS(50));
                 }
@@ -184,7 +184,7 @@ void cameraStreamTaskTCP(void *pvParameters)
             }
 
             videoFlag = false;
-            close(clientFd); // Cierre natural
+            close(clientFd); 
             Serial.println("[VIDEO] 🔴 Puerto 7000 cerrado y libre.");
         }
         vTaskDelay(pdMS_TO_TICKS(50));
@@ -302,6 +302,7 @@ void cmdServerTask(void *pvParameters)
                             }
                             else if (localCmd[0] == "CMD_VIDEO") {
                                 videoFlag = (localParam[1] == 1);
+                                // Telemetría removida para evitar spam
                             }
                             else if (localCmd[0] == "CMD_BUZZER") {
                                 if (localParam[1] == 1 && localParam[2] > 0) toneToPlay(buzzerPin, buzzerChannel, localParam[2], 100);
@@ -324,7 +325,7 @@ void cmdServerTask(void *pvParameters)
                 }
                 else if (bytesRead == 0)
                 {
-                    Serial.println("[CMD] ℹ️ Conexión cerrada normalmente.");
+                    Serial.println("[CMD] ℹ️ Conexión cerrada normalmente por la app.");
                     break; 
                 }
                 else
@@ -352,7 +353,7 @@ void cmdServerTask(void *pvParameters)
                 }
 
                 if (timeSinceLastCmd > pdMS_TO_TICKS(60000)) {
-                    Serial.println("🚨 60s sin actividad. Reiniciando...");
+                    Serial.println("🚨 60s sin actividad. Reiniciando por seguridad...");
                     stopAllMotors(); vTaskDelay(pdMS_TO_TICKS(1000)); ESP.restart(); 
                 }
 
