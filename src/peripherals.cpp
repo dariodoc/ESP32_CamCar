@@ -21,8 +21,7 @@ volatile bool obstacleFound = false;
 static int currentPan = panCenter;
 static int currentTilt = tiltCenter;
 
-TaskHandle_t playMelodyTaskHandle = NULL;
-TaskHandle_t obstacleAvoidanceModeTaskHandle = NULL;
+
 
 void leftRearLed(int state)
 {
@@ -106,9 +105,6 @@ void setupPeripherals()
     turnLaserOn(false);
     centerServos();
 
-    // 🚀 LANZAMIENTO DE TAREAS FREERTOS PARA MÚSICA Y OBSTÁCULOS
-    xTaskCreatePinnedToCore(playMelody, "PlayMelodyTask", STACK_SIZE, NULL, 1, &playMelodyTaskHandle, 1);
-    xTaskCreatePinnedToCore(obstacleAvoidanceMode, "ObstacleTask", STACK_SIZE, NULL, 1, &obstacleAvoidanceModeTaskHandle, 1);
     ledIndicator(3, 100);
 }
 
@@ -182,7 +178,6 @@ float getDistanceCM()
     return (duration * 0.0343) / 2.0;
 }
 
-
 // 🚀 Tarea unificada: Infrarrojos (PCF8574) + Ultrasónico (Trig 33 / Echo 32)
 void obstacleAvoidanceMode(void *parameters)
 {
@@ -231,11 +226,11 @@ void obstacleAvoidanceMode(void *parameters)
 #ifdef DEBUG
         if (irObstacle)
         {
-            TelnetStream.println("🛑 Obstáculo por INFRARROJOS\r");
+            Serial.println("🛑 Obstáculo por INFRARROJOS\r");
         }
         else if (usObstacle)
         {
-            TelnetStream.printf("🛑 Obstáculo por ULTRASÓNICO: %.2f cm\r\n", distance);
+            Serial.printf("🛑 Obstáculo por ULTRASÓNICO: %.2f cm\r\n", distance);
         }
 #endif
 
@@ -248,6 +243,10 @@ void obstacleAvoidanceMode(void *parameters)
             if (obstacleFound)
             {
                 updateDisplayState(DISPLAY_OBSTACLE_ALERT);
+                // 🚀 EL FRENO DE EMERGENCIA DIRECTO
+                // Al ser la tarea de mayor prioridad (3), frena los motores 
+                // instantáneamente sin esperar a que el servidor TCP reaccione.
+                brakeAllMotors();
             }
             else
             {

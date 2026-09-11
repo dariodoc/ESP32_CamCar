@@ -24,52 +24,49 @@ void setupCamera()
     config.pin_pwdn = PWDN_GPIO_NUM;
     config.pin_reset = RESET_GPIO_NUM;
 
-    // 🚀 16MHz otorga un refresco suave a QVGA sin saturar el bus
-    config.xclk_freq_hz = 16000000;
+    // 🚀 Reducido a 10MHz para evitar tearing de hardware y enfriar el sensor
+    config.xclk_freq_hz = 10000000;
     config.pixel_format = PIXFORMAT_JPEG;
 
     if (psramFound())
     {
         config.fb_location = CAMERA_FB_IN_PSRAM;
         config.frame_size = FRAMESIZE_QVGA;
-        config.jpeg_quality = 18;
-        config.fb_count = 2;                   // Volvemos a 2
-        config.grab_mode = CAMERA_GRAB_LATEST; // Volvemos a LATEST
+        
+        // 🚀 EL ESCUDO: Compresión altísima (30). Los frames pesarán gramos, no kilos.
+        config.jpeg_quality = 30; 
+        
+        config.fb_count = 2;                   
+        config.grab_mode = CAMERA_GRAB_LATEST; 
     }
     else
     {
         config.fb_location = CAMERA_FB_IN_DRAM;
         config.frame_size = FRAMESIZE_QVGA;
-        config.jpeg_quality = 20;
+        config.jpeg_quality = 30;
         config.fb_count = 1;
         config.grab_mode = CAMERA_GRAB_LATEST;
     }
 
     esp_err_t err = esp_camera_init(&config);
-    if (err != ESP_OK)
-        return;
+    if (err != ESP_OK) return;
 
     sensor_t *s = esp_camera_sensor_get();
     if (s != NULL)
     {
         s->set_hmirror(s, 0);
         s->set_vflip(s, 0);
-
         s->set_brightness(s, 0);
         s->set_contrast(s, 0);
         s->set_saturation(s, 1);
-
         s->set_whitebal(s, 1);
         s->set_awb_gain(s, 1);
         s->set_wb_mode(s, 0);
-
         s->set_exposure_ctrl(s, 1);
         s->set_aec2(s, 1);
         s->set_ae_level(s, 0);
-
         s->set_gain_ctrl(s, 1);
         s->set_gainceiling(s, GAINCEILING_4X);
-
         s->set_bpc(s, 1);
         s->set_wpc(s, 1);
         s->set_lenc(s, 1);

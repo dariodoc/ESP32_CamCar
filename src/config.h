@@ -4,11 +4,8 @@
 #include <Arduino.h>
 
 // 🚀 Define DEBUG para habilitar las impresiones por el puerto serial
-// #define DEBUG
+ #define DEBUG
 
-#ifdef DEBUG
-#include <TelnetStream.h>
-#endif
 // ======================================================
 // CONFIGURACIÓN DE PINES - FREENOVE ESP32-WROVER
 // ======================================================
