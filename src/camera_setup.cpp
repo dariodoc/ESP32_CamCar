@@ -32,7 +32,7 @@ void setupCamera()
     {
         config.fb_location = CAMERA_FB_IN_PSRAM;
         config.frame_size = FRAMESIZE_QVGA;
-        config.jpeg_quality = 15;
+        config.jpeg_quality = 18;
         config.fb_count = 2;                   // Volvemos a 2
         config.grab_mode = CAMERA_GRAB_LATEST; // Volvemos a LATEST
     }

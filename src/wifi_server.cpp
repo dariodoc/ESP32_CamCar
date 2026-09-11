@@ -631,7 +631,8 @@ void initWiFi()
     xTaskCreatePinnedToCore(cameraCaptureTask, "CamCaptureTask", 1024 * 4, NULL, 2, NULL, 1);
 
     // 3. STREAMING: Prioridad baja (1). Regresa al Core 0 para trabajar junto al Wi-Fi.
-    xTaskCreatePinnedToCore(cameraStreamTaskTCP, "CamTCPStream", 1024 * 4, NULL, 1, NULL, 0);
+    // Cambia el 1 por un 2 en esta línea:
+    xTaskCreatePinnedToCore(cameraStreamTaskTCP, "CamTCPStream", 1024 * 4, NULL, 2, NULL, 0);
 
     ArduinoOTA.begin();
     ledIndicator(1);
