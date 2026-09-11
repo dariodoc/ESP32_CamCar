@@ -15,7 +15,7 @@
 #include <ArduinoOTA.h>
 #include "Melodies.h"
 
-// 🚀 LIBRERÍAS DE SOCKETS POSIX NATIVOS DE LwIP
+// LIBRERÍAS DE SOCKETS POSIX NATIVOS DE LwIP
 #include <lwip/sockets.h>
 #include <lwip/netdb.h>
 
@@ -27,16 +27,38 @@ volatile bool videoFlag = false;
 TaskHandle_t cmdServerTaskHandle = NULL;
 
 // ----------------------------------------------------------------------
-// 🚀 PUNTO 2: ESTRUCTURA PARA DESACOPLAR LA CÁMARA DE LA RED
+// GESTIÓN DE DOBLE BÚFER (PING-PONG) EN MEMORIA INTERNA
 // ----------------------------------------------------------------------
-static camera_fb_t *latestFrame = NULL;
+#define INTERNAL_BUF_SIZE 32768
+static uint8_t *internalBufA = NULL;
+static uint8_t *internalBufB = NULL;
+static size_t lenBufA = 0;
+static size_t lenBufB = 0;
+
+// Punteros activos para intercambiar
+static uint8_t *writeBuf = NULL;
+static size_t *writeLen = NULL;
+static uint8_t *readBuf = NULL;
+static size_t *readLen = NULL;
+
 static SemaphoreHandle_t frameMutex = NULL;
+static bool newFrameReady = false;
+static volatile bool isTransmitting = false; // Bloqueo de concurrencia
 
 void cameraCaptureTask(void *pvParameters)
 {
-    const TickType_t FRAME_TARGET_TIME = pdMS_TO_TICKS(40); // ~25 FPS
-    int consecutiveFailures = 0;
-    const int MAX_FAILURES = 25; // ~1 segundo sin imagen
+    const TickType_t FRAME_TARGET_TIME = pdMS_TO_TICKS(33); // ~30 FPS
+
+    // Reservar los dos búferes en DRAM (ultra rápida, libre de colisiones SPI)
+    if (internalBufA == NULL)
+        internalBufA = (uint8_t *)malloc(INTERNAL_BUF_SIZE);
+    if (internalBufB == NULL)
+        internalBufB = (uint8_t *)malloc(INTERNAL_BUF_SIZE);
+
+    writeBuf = internalBufA;
+    writeLen = &lenBufA;
+    readBuf = internalBufB;
+    readLen = &lenBufB;
 
     for (;;)
     {
@@ -45,92 +67,231 @@ void cameraCaptureTask(void *pvParameters)
         if (videoFlag)
         {
             camera_fb_t *fb = esp_camera_fb_get();
+
             if (fb)
             {
-                consecutiveFailures = 0;
-
-                if (xSemaphoreTake(frameMutex, pdMS_TO_TICKS(5)) == pdTRUE)
+                // Validación estricta sin consumir ciclos extraños
+                bool isValid = false;
+                if (fb->len > 2000 && fb->len < INTERNAL_BUF_SIZE)
                 {
-                    if (latestFrame != NULL)
+                    if (fb->buf[0] == 0xFF && fb->buf[1] == 0xD8) // SOI Check
                     {
-                        esp_camera_fb_return(latestFrame);
+                        size_t endStart = fb->len - 16;
+                        for (size_t i = endStart; i < fb->len - 1; i++)
+                        {
+                            if (fb->buf[i] == 0xFF && fb->buf[i + 1] == 0xD9) // EOI Check
+                            {
+                                isValid = true;
+                                break;
+                            }
+                        }
                     }
-                    latestFrame = fb;
-                    xSemaphoreGive(frameMutex);
                 }
-                else
-                {
-                    esp_camera_fb_return(fb);
-                }
-            }
-            else
-            {
-                consecutiveFailures++;
 
-                // 🚀 RECUPERACIÓN ATÓMICA SIN DEINIT (No corrompe la PSRAM ni la DMA)
-                if (consecutiveFailures >= MAX_FAILURES)
+                if (isValid && writeBuf != NULL)
                 {
-                    sensor_t *s = esp_camera_sensor_get();
-                    if (s)
-                    {
-                        // Forzar refresco de registros de sincronía de reloj
-                        s->set_pixformat(s, PIXFORMAT_JPEG);
-                    }
+                    // Copiamos a nuestro búfer de ESCRITURA sin bloquear a la red
+                    memcpy(writeBuf, fb->buf, fb->len);
+                    *writeLen = fb->len;
 
-                    // Limpiar el buffer retenido si existe
                     if (xSemaphoreTake(frameMutex, pdMS_TO_TICKS(5)) == pdTRUE)
                     {
-                        if (latestFrame != NULL)
+                        // SOLO intercambia si el Wi-Fi NO está transmitiendo el búfer opuesto
+                        if (!isTransmitting)
                         {
-                            esp_camera_fb_return(latestFrame);
-                            latestFrame = NULL;
+                            uint8_t *tempBuf = readBuf;
+                            size_t *tempLen = readLen;
+
+                            readBuf = writeBuf;
+                            readLen = writeLen;
+
+                            writeBuf = tempBuf;
+                            writeLen = tempLen;
+
+                            newFrameReady = true;
                         }
                         xSemaphoreGive(frameMutex);
                     }
-
-                    consecutiveFailures = 0;
                 }
-            }
-        }
-        else
-        {
-            consecutiveFailures = 0;
 
-            if (xSemaphoreTake(frameMutex, pdMS_TO_TICKS(5)) == pdTRUE)
-            {
-                if (latestFrame != NULL)
-                {
-                    esp_camera_fb_return(latestFrame);
-                    latestFrame = NULL;
-                }
-                xSemaphoreGive(frameMutex);
+                // Devolvemos el buffer PSRAM inmediatamente a la cámara
+                esp_camera_fb_return(fb);
             }
         }
 
         TickType_t elapsedTime = xTaskGetTickCount() - startTime;
         if (elapsedTime < FRAME_TARGET_TIME)
-        {
             vTaskDelay(FRAME_TARGET_TIME - elapsedTime);
-        }
         else
+            vTaskDelay(pdMS_TO_TICKS(1));
+    }
+}
+
+void cameraStreamTaskTCP(void *pvParameters)
+{
+    int serverFd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (serverFd < 0)
+        vTaskDelete(NULL);
+
+    int enable = 1;
+    setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int));
+
+    struct linger so_linger = {1, 0};
+    setsockopt(serverFd, SOL_SOCKET, SO_LINGER, &so_linger, sizeof(so_linger));
+
+    struct sockaddr_in serverAddr;
+    memset(&serverAddr, 0, sizeof(serverAddr));
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    serverAddr.sin_port = htons(7000);
+
+    if (bind(serverFd, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) < 0)
+    {
+        close(serverFd);
+        vTaskDelete(NULL);
+    }
+    listen(serverFd, 1);
+
+    const TickType_t FRAME_TARGET_TIME = pdMS_TO_TICKS(33); // ~30 FPS
+
+    for (;;)
+    {
+        if (WiFi.status() != WL_CONNECTED)
         {
-            vTaskDelay(pdMS_TO_TICKS(5));
+            vTaskDelay(pdMS_TO_TICKS(500));
+            continue;
         }
+
+        struct sockaddr_in clientAddr;
+        socklen_t clientAddrLen = sizeof(clientAddr);
+        int clientFd = accept(serverFd, (struct sockaddr *)&clientAddr, &clientAddrLen);
+
+        if (clientFd >= 0)
+        {
+            setsockopt(clientFd, SOL_SOCKET, SO_LINGER, &so_linger, sizeof(so_linger));
+            int nodelay = 1;
+            setsockopt(clientFd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(int));
+
+            struct timeval sendTimeout = {0, 200000}; // 200ms
+            setsockopt(clientFd, SOL_SOCKET, SO_SNDTIMEO, &sendTimeout, sizeof(sendTimeout));
+
+            int keepAlive = 1, keepIdle = 1, keepInterval = 1, keepCount = 2;
+            setsockopt(clientFd, SOL_SOCKET, SO_KEEPALIVE, &keepAlive, sizeof(int));
+            setsockopt(clientFd, IPPROTO_TCP, TCP_KEEPIDLE, &keepIdle, sizeof(int));
+            setsockopt(clientFd, IPPROTO_TCP, TCP_KEEPINTVL, &keepInterval, sizeof(int));
+            setsockopt(clientFd, IPPROTO_TCP, TCP_KEEPCNT, &keepCount, sizeof(int));
+
+            while (WiFi.status() == WL_CONNECTED)
+            {
+                TickType_t startTime = xTaskGetTickCount();
+
+                if (videoFlag)
+                {
+                    bool sendFrame = false;
+                    size_t txLen = 0;
+                    uint8_t *txBuf = NULL;
+
+                    if (xSemaphoreTake(frameMutex, pdMS_TO_TICKS(5)) == pdTRUE)
+                    {
+                        if (newFrameReady)
+                        {
+                            txLen = *readLen;
+                            txBuf = readBuf;
+                            newFrameReady = false;
+                            sendFrame = true;
+                            isTransmitting = true; // Bloquea la cámara de intercambiar punteros
+                        }
+                        xSemaphoreGive(frameMutex);
+                    }
+
+                    if (sendFrame && txLen > 0 && txBuf != NULL)
+                    {
+                        uint8_t header[4];
+                        header[0] = (uint8_t)(txLen & 0xFF);
+                        header[1] = (uint8_t)((txLen >> 8) & 0xFF);
+                        header[2] = (uint8_t)((txLen >> 16) & 0xFF);
+                        header[3] = (uint8_t)((txLen >> 24) & 0xFF);
+
+                        bool socketError = false;
+                        int hSentTotal = 0;
+
+                        // Envío estricto de cabecera
+                        while (hSentTotal < 4)
+                        {
+                            int s = send(clientFd, header + hSentTotal, 4 - hSentTotal, 0);
+                            if (s < 0)
+                            {
+                                if (errno == EAGAIN || errno == EWOULDBLOCK)
+                                {
+                                    vTaskDelay(1);
+                                    continue;
+                                }
+                                socketError = true;
+                                break;
+                            }
+                            hSentTotal += s;
+                        }
+
+                        // Envío estricto de payload
+                        if (!socketError)
+                        {
+                            size_t bytesWrittenTotal = 0;
+                            while (bytesWrittenTotal < txLen)
+                            {
+                                int s = send(clientFd, txBuf + bytesWrittenTotal, txLen - bytesWrittenTotal, 0);
+                                if (s < 0)
+                                {
+                                    if (errno == EAGAIN || errno == EWOULDBLOCK)
+                                    {
+                                        vTaskDelay(1);
+                                        continue;
+                                    }
+                                    socketError = true;
+                                    break;
+                                }
+                                bytesWrittenTotal += s;
+                            }
+                        }
+
+                        isTransmitting = false; // Libera el búfer al finalizar el envío
+
+                        if (socketError)
+                        {
+                            break;
+                        }
+                    }
+                }
+
+                TickType_t elapsedTime = xTaskGetTickCount() - startTime;
+                if (elapsedTime < FRAME_TARGET_TIME)
+                    vTaskDelay(FRAME_TARGET_TIME - elapsedTime);
+                else
+                    vTaskDelay(pdMS_TO_TICKS(1));
+            }
+
+            videoFlag = false;
+            shutdown(clientFd, SHUT_RDWR);
+            close(clientFd);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
 }
 
 // ----------------------------------------------------------------------
-// 🚀 PUNTO 3: TARES DE SERVIDOR CON SOCKETS NATIVOS POSIX
+// SERVIDOR TCP DE COMANDOS (Puerto 4000)
 // ----------------------------------------------------------------------
-
 void cmdServerTask(void *pvParameters)
 {
     int serverFd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (serverFd < 0)
-        return;
+        vTaskDelete(NULL);
 
     int enable = 1;
     setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int));
+
+    struct linger so_linger = {1, 0};
+    setsockopt(serverFd, SOL_SOCKET, SO_LINGER, &so_linger, sizeof(so_linger));
 
     struct sockaddr_in serverAddr;
     memset(&serverAddr, 0, sizeof(serverAddr));
@@ -141,7 +302,7 @@ void cmdServerTask(void *pvParameters)
     if (bind(serverFd, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) < 0)
     {
         close(serverFd);
-        return;
+        vTaskDelete(NULL);
     }
     listen(serverFd, 1);
 
@@ -163,17 +324,15 @@ void cmdServerTask(void *pvParameters)
 
         if (clientFd >= 0)
         {
-            // 🚀 ACTIVAR TCP_NODELAY: Envío y recepción inmediata sin algoritmo de Nagle
+            setsockopt(clientFd, SOL_SOCKET, SO_LINGER, &so_linger, sizeof(so_linger));
+
             int nodelay = 1;
             setsockopt(clientFd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(int));
 
-            // Timeout de recepción ultrarrápido (1 ms) para no frenar la tarea
-            struct timeval recvTimeout;
-            recvTimeout.tv_sec = 0;
-            recvTimeout.tv_usec = 1000; // 1 ms
+            struct timeval recvTimeout = {0, 100000};
             setsockopt(clientFd, SOL_SOCKET, SO_RCVTIMEO, &recvTimeout, sizeof(recvTimeout));
 
-            int keepAlive = 1, keepIdle = 2, keepInterval = 1, keepCount = 2;
+            int keepAlive = 1, keepIdle = 1, keepInterval = 1, keepCount = 2;
             setsockopt(clientFd, SOL_SOCKET, SO_KEEPALIVE, &keepAlive, sizeof(int));
             setsockopt(clientFd, IPPROTO_TCP, TCP_KEEPIDLE, &keepIdle, sizeof(int));
             setsockopt(clientFd, IPPROTO_TCP, TCP_KEEPINTVL, &keepInterval, sizeof(int));
@@ -187,15 +346,13 @@ void cmdServerTask(void *pvParameters)
 
             while (WiFi.status() == WL_CONNECTED)
             {
-                // 🚀 LECTURA EN RÁFARGA: Lee hasta 128 bytes de un solo golpe
                 int bytesRead = recv(clientFd, tempChunk, sizeof(tempChunk) - 1, 0);
 
                 if (bytesRead > 0)
                 {
-                    tempChunk[bytesRead] = '\0'; // Asegurar fin de cadena C
+                    tempChunk[bytesRead] = '\0';
                     rxBuffer += tempChunk;
 
-                    // Procesar todas las líneas completas recibidas en el buffer
                     int newLineIdx;
                     while ((newLineIdx = rxBuffer.indexOf('\n')) >= 0)
                     {
@@ -286,23 +443,22 @@ void cmdServerTask(void *pvParameters)
                 }
                 else if (bytesRead == 0)
                 {
-                    break; // Cliente cerrado
+                    break;
                 }
                 else
                 {
                     if (errno != EWOULDBLOCK && errno != EAGAIN)
                     {
-                        break; // Error real de red
+                        break;
                     }
                 }
 
-                // Paro de seguridad por inactividad
                 if ((xTaskGetTickCount() - lastCmdTime) > TIMEOUT_TICKS)
                 {
                     stopAllMotors();
                 }
 
-                vTaskDelay(pdMS_TO_TICKS(5)); // Delay mínimo para respuesta en tiempo real
+                vTaskDelay(pdMS_TO_TICKS(5));
             }
 
             stopAllMotors();
@@ -314,159 +470,9 @@ void cmdServerTask(void *pvParameters)
     }
 }
 
-void cameraStreamTaskTCP(void *pvParameters)
-{
-    int serverFd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (serverFd < 0)
-        return;
-
-    int enable = 1;
-    setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int));
-
-    struct sockaddr_in serverAddr;
-    memset(&serverAddr, 0, sizeof(serverAddr));
-    serverAddr.sin_family = AF_INET;
-    serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    serverAddr.sin_port = htons(7000);
-
-    if (bind(serverFd, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) < 0)
-    {
-        close(serverFd);
-        return;
-    }
-    listen(serverFd, 1);
-
-    const TickType_t FRAME_TARGET_TIME = pdMS_TO_TICKS(40); // ~25 FPS
-
-    for (;;)
-    {
-        if (WiFi.status() != WL_CONNECTED)
-        {
-            vTaskDelay(pdMS_TO_TICKS(500));
-            continue;
-        }
-
-        struct sockaddr_in clientAddr;
-        socklen_t clientAddrLen = sizeof(clientAddr);
-        int clientFd = accept(serverFd, (struct sockaddr *)&clientAddr, &clientAddrLen);
-
-        if (clientFd >= 0)
-        {
-            int nodelay = 1;
-            setsockopt(clientFd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(int));
-
-            // Timeout de envío estricto
-            struct timeval sendTimeout;
-            sendTimeout.tv_sec = 0;
-            sendTimeout.tv_usec = 100000; // 100 ms max
-            setsockopt(clientFd, SOL_SOCKET, SO_SNDTIMEO, &sendTimeout, sizeof(sendTimeout));
-
-            int keepAlive = 1, keepIdle = 2, keepInterval = 1, keepCount = 2;
-            setsockopt(clientFd, SOL_SOCKET, SO_KEEPALIVE, &keepAlive, sizeof(int));
-            setsockopt(clientFd, IPPROTO_TCP, TCP_KEEPIDLE, &keepIdle, sizeof(int));
-            setsockopt(clientFd, IPPROTO_TCP, TCP_KEEPINTVL, &keepInterval, sizeof(int));
-            setsockopt(clientFd, IPPROTO_TCP, TCP_KEEPCNT, &keepCount, sizeof(int));
-
-            while (WiFi.status() == WL_CONNECTED)
-            {
-                TickType_t startTime = xTaskGetTickCount();
-
-                if (videoFlag)
-                {
-                    camera_fb_t *fbToSend = NULL;
-
-                    if (xSemaphoreTake(frameMutex, pdMS_TO_TICKS(5)) == pdTRUE)
-                    {
-                        fbToSend = latestFrame;
-                        latestFrame = NULL;
-                        xSemaphoreGive(frameMutex);
-                    }
-
-                    if (fbToSend)
-                    {
-                        uint32_t jpg_buf_len = fbToSend->len;
-
-                        uint8_t header[4];
-                        header[0] = (uint8_t)(jpg_buf_len & 0xFF);
-                        header[1] = (uint8_t)((jpg_buf_len >> 8) & 0xFF);
-                        header[2] = (uint8_t)((jpg_buf_len >> 16) & 0xFF);
-                        header[3] = (uint8_t)((jpg_buf_len >> 24) & 0xFF);
-
-                        // 1. Enviar encabezado de tamaño (4 bytes)
-                        int sentHeader = send(clientFd, header, 4, 0);
-
-                        if (sentHeader == 4)
-                        {
-                            // 🚀 2. ENVÍO FRAGMENTADO POR BLOQUES (Evita saturación pbuf/LwIP)
-                            uint8_t *buf = fbToSend->buf;
-                            size_t bytesLeft = jpg_buf_len;
-                            bool sendError = false;
-
-                            // 🚀 AHORA: Envío a máxima velocidad de red (Cero latencia añadida)
-                            while (bytesLeft > 0)
-                            {
-                                size_t chunkSize = (bytesLeft > 1460) ? 1460 : bytesLeft;
-                                int written = send(clientFd, buf, chunkSize, MSG_DONTWAIT);
-
-                                if (written > 0)
-                                {
-                                    buf += written;
-                                    bytesLeft -= written;
-                                }
-                                else if (written < 0)
-                                {
-                                    if (errno == EWOULDBLOCK || errno == EAGAIN)
-                                    {
-                                        // Solo si el buffer de la antena se llena, esperamos 1ms
-                                        vTaskDelay(pdMS_TO_TICKS(1));
-                                    }
-                                    else
-                                    {
-                                        sendError = true;
-                                        break; // Error real de desconexión
-                                    }
-                                }
-                            }
-
-                            if (sendError)
-                            {
-                                esp_camera_fb_return(fbToSend);
-                                break; // Cortar sesión si la red falló
-                            }
-                        }
-                        else
-                        {
-                            esp_camera_fb_return(fbToSend);
-                            break;
-                        }
-
-                        esp_camera_fb_return(fbToSend);
-                    }
-                }
-
-                TickType_t elapsedTime = xTaskGetTickCount() - startTime;
-                if (elapsedTime < FRAME_TARGET_TIME)
-                {
-                    vTaskDelay(FRAME_TARGET_TIME - elapsedTime);
-                }
-                else
-                {
-                    vTaskDelay(pdMS_TO_TICKS(1));
-                }
-            }
-
-            shutdown(clientFd, SHUT_RDWR);
-            close(clientFd);
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(50));
-    }
-}
-
 // ----------------------------------------------------------------------
-// 📂 MANEJADORES DEL PORTAL WEB Y CONFIGURACIÓN DE RED
+// GESTIÓN DE CONFIGURACIÓN Y PORTAL CAUTIVO
 // ----------------------------------------------------------------------
-
 void handleRoot()
 {
     if (SPIFFS.exists("/wifimanager.html"))
@@ -560,7 +566,6 @@ void initWiFi()
 {
     ledIndicator(0);
 
-    // Inicializar Mutex para el búfer de fotos desacoplado
     frameMutex = xSemaphoreCreateMutex();
 
     WiFi.persistent(false);
@@ -617,12 +622,16 @@ void initWiFi()
     updateDisplayState(DISPLAY_CONNECTED, WiFi.localIP().toString().c_str());
     ledIndicator(2, 60);
 
-    // 🚀 LER TAREA INDEPENDIENTE DE CAPTURA DE CÁMARA (Core 0, Prioridad 4)
-    xTaskCreatePinnedToCore(cameraCaptureTask, "CamCaptureTask", 1024 * 3, NULL, 1, NULL, 0);
+    // 🚀 TAREAS PINNED TO CORE: BALANCEO Y PRIORIDADES CORREGIDAS
 
-    // 🚀 CREAR TAREAS DE SERVIDORES DE RED POSIX
-    xTaskCreatePinnedToCore(cmdServerTask, "CmdServerTask", 1024 * 4, NULL, 2, &cmdServerTaskHandle, 1);
-    xTaskCreatePinnedToCore(cameraStreamTaskTCP, "CamTCPStream", 1024 * 4, NULL, 3, NULL, 0);
+    // 1. MOTORES: Máxima prioridad (3). Responde al instante sin lag.
+    xTaskCreatePinnedToCore(cmdServerTask, "CmdServerTask", 1024 * 4, NULL, 3, &cmdServerTaskHandle, 1);
+
+    // 2. CÁMARA: Prioridad media (2). Captura fotos en el núcleo de la aplicación.
+    xTaskCreatePinnedToCore(cameraCaptureTask, "CamCaptureTask", 1024 * 4, NULL, 2, NULL, 1);
+
+    // 3. STREAMING: Prioridad baja (1). Regresa al Core 0 para trabajar junto al Wi-Fi.
+    xTaskCreatePinnedToCore(cameraStreamTaskTCP, "CamTCPStream", 1024 * 4, NULL, 1, NULL, 0);
 
     ArduinoOTA.begin();
     ledIndicator(1);

@@ -23,26 +23,24 @@ void setupCamera()
     config.pin_sccb_scl = SIOC_GPIO_NUM;
     config.pin_pwdn = PWDN_GPIO_NUM;
     config.pin_reset = RESET_GPIO_NUM;
-    
-    // 🚀 1. BAJAR A 10 MHz: Elimina la desincronización por ruido magnético/caídas de voltaje
-    config.xclk_freq_hz = 10000000; 
+
+    // 🚀 16MHz otorga un refresco suave a QVGA sin saturar el bus
+    config.xclk_freq_hz = 16000000;
     config.pixel_format = PIXFORMAT_JPEG;
 
     if (psramFound())
     {
         config.fb_location = CAMERA_FB_IN_PSRAM;
-        config.frame_size = FRAMESIZE_QVGA;   // 320x240
-        config.jpeg_quality = 22;             // Peso ligero (~6KB)
-        config.fb_count = 2;                  // Búfer doble en PSRAM
-        
-        // 🚀 2. MODO LATEST: Garantiza que la DMA entregue el frame más reciente sin trabar la captura
-        config.grab_mode = CAMERA_GRAB_LATEST; 
+        config.frame_size = FRAMESIZE_QVGA;
+        config.jpeg_quality = 15;
+        config.fb_count = 2;                   // Volvemos a 2
+        config.grab_mode = CAMERA_GRAB_LATEST; // Volvemos a LATEST
     }
     else
     {
         config.fb_location = CAMERA_FB_IN_DRAM;
         config.frame_size = FRAMESIZE_QVGA;
-        config.jpeg_quality = 24;
+        config.jpeg_quality = 20;
         config.fb_count = 1;
         config.grab_mode = CAMERA_GRAB_LATEST;
     }
@@ -54,30 +52,26 @@ void setupCamera()
     sensor_t *s = esp_camera_sensor_get();
     if (s != NULL)
     {
-        // Orientación de la imagen
         s->set_hmirror(s, 0);
         s->set_vflip(s, 0);
 
-        // Control de color y contraste base
-        s->set_brightness(s, 0); 
-        s->set_contrast(s, 0);   
-        s->set_saturation(s, 1); 
+        s->set_brightness(s, 0);
+        s->set_contrast(s, 0);
+        s->set_saturation(s, 1);
 
-        // Control de Exposición y Ganancia
-        s->set_whitebal(s, 1); 
-        s->set_awb_gain(s, 1); 
-        s->set_wb_mode(s, 0);  
+        s->set_whitebal(s, 1);
+        s->set_awb_gain(s, 1);
+        s->set_wb_mode(s, 0);
 
-        s->set_exposure_ctrl(s, 1); 
-        s->set_aec2(s, 1);          
-        s->set_ae_level(s, 0);      
+        s->set_exposure_ctrl(s, 1);
+        s->set_aec2(s, 1);
+        s->set_ae_level(s, 0);
 
-        s->set_gain_ctrl(s, 1);                
-        s->set_gainceiling(s, GAINCEILING_4X); 
+        s->set_gain_ctrl(s, 1);
+        s->set_gainceiling(s, GAINCEILING_4X);
 
-        // Corrección de lente
-        s->set_bpc(s, 1);  
-        s->set_wpc(s, 1);  
-        s->set_lenc(s, 1); 
+        s->set_bpc(s, 1);
+        s->set_wpc(s, 1);
+        s->set_lenc(s, 1);
     }
 }
