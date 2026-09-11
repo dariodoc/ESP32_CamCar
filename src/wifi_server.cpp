@@ -15,7 +15,6 @@
 #include <ArduinoOTA.h>
 #include "Melodies.h"
 
-// LIBRERÍAS DE SOCKETS POSIX NATIVOS DE LwIP
 #include <lwip/sockets.h>
 #include <lwip/netdb.h>
 
@@ -27,106 +26,8 @@ volatile bool videoFlag = false;
 TaskHandle_t cmdServerTaskHandle = NULL;
 
 // ----------------------------------------------------------------------
-// GESTIÓN DE DOBLE BÚFER (PING-PONG) EN MEMORIA INTERNA
+// STREAMING TCP ULTRA-LIGERO (SIN SEMÁFOROS NI COPIAS DE MEMORIA)
 // ----------------------------------------------------------------------
-#define INTERNAL_BUF_SIZE 32768
-static uint8_t *internalBufA = NULL;
-static uint8_t *internalBufB = NULL;
-static size_t lenBufA = 0;
-static size_t lenBufB = 0;
-
-// Punteros activos para intercambiar
-static uint8_t *writeBuf = NULL;
-static size_t *writeLen = NULL;
-static uint8_t *readBuf = NULL;
-static size_t *readLen = NULL;
-
-static SemaphoreHandle_t frameMutex = NULL;
-static bool newFrameReady = false;
-static volatile bool isTransmitting = false; // Bloqueo de concurrencia
-
-void cameraCaptureTask(void *pvParameters)
-{
-    const TickType_t FRAME_TARGET_TIME = pdMS_TO_TICKS(33); // ~30 FPS
-
-    // Reservar los dos búferes en DRAM (ultra rápida, libre de colisiones SPI)
-    if (internalBufA == NULL)
-        internalBufA = (uint8_t *)malloc(INTERNAL_BUF_SIZE);
-    if (internalBufB == NULL)
-        internalBufB = (uint8_t *)malloc(INTERNAL_BUF_SIZE);
-
-    writeBuf = internalBufA;
-    writeLen = &lenBufA;
-    readBuf = internalBufB;
-    readLen = &lenBufB;
-
-    for (;;)
-    {
-        TickType_t startTime = xTaskGetTickCount();
-
-        if (videoFlag)
-        {
-            camera_fb_t *fb = esp_camera_fb_get();
-
-            if (fb)
-            {
-                // Validación estricta sin consumir ciclos extraños
-                bool isValid = false;
-                if (fb->len > 2000 && fb->len < INTERNAL_BUF_SIZE)
-                {
-                    if (fb->buf[0] == 0xFF && fb->buf[1] == 0xD8) // SOI Check
-                    {
-                        size_t endStart = fb->len - 16;
-                        for (size_t i = endStart; i < fb->len - 1; i++)
-                        {
-                            if (fb->buf[i] == 0xFF && fb->buf[i + 1] == 0xD9) // EOI Check
-                            {
-                                isValid = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                if (isValid && writeBuf != NULL)
-                {
-                    // Copiamos a nuestro búfer de ESCRITURA sin bloquear a la red
-                    memcpy(writeBuf, fb->buf, fb->len);
-                    *writeLen = fb->len;
-
-                    if (xSemaphoreTake(frameMutex, pdMS_TO_TICKS(5)) == pdTRUE)
-                    {
-                        // SOLO intercambia si el Wi-Fi NO está transmitiendo el búfer opuesto
-                        if (!isTransmitting)
-                        {
-                            uint8_t *tempBuf = readBuf;
-                            size_t *tempLen = readLen;
-
-                            readBuf = writeBuf;
-                            readLen = writeLen;
-
-                            writeBuf = tempBuf;
-                            writeLen = tempLen;
-
-                            newFrameReady = true;
-                        }
-                        xSemaphoreGive(frameMutex);
-                    }
-                }
-
-                // Devolvemos el buffer PSRAM inmediatamente a la cámara
-                esp_camera_fb_return(fb);
-            }
-        }
-
-        TickType_t elapsedTime = xTaskGetTickCount() - startTime;
-        if (elapsedTime < FRAME_TARGET_TIME)
-            vTaskDelay(FRAME_TARGET_TIME - elapsedTime);
-        else
-            vTaskDelay(pdMS_TO_TICKS(1));
-    }
-}
-
 void cameraStreamTaskTCP(void *pvParameters)
 {
     int serverFd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -152,8 +53,6 @@ void cameraStreamTaskTCP(void *pvParameters)
     }
     listen(serverFd, 1);
 
-    const TickType_t FRAME_TARGET_TIME = pdMS_TO_TICKS(33); // ~30 FPS
-
     for (;;)
     {
         if (WiFi.status() != WL_CONNECTED)
@@ -169,8 +68,14 @@ void cameraStreamTaskTCP(void *pvParameters)
         if (clientFd >= 0)
         {
             setsockopt(clientFd, SOL_SOCKET, SO_LINGER, &so_linger, sizeof(so_linger));
+
             int nodelay = 1;
             setsockopt(clientFd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(int));
+
+            // 🚀 EL SECRETO DE LA VELOCIDAD: Agrandar el búfer TX a 32 KB
+            // Permite que `send()` termine al instante sin bloquear a la cámara
+            int sndBufSize = 32768;
+            setsockopt(clientFd, SOL_SOCKET, SO_SNDBUF, &sndBufSize, sizeof(sndBufSize));
 
             struct timeval sendTimeout = {0, 200000}; // 200ms
             setsockopt(clientFd, SOL_SOCKET, SO_SNDTIMEO, &sendTimeout, sizeof(sendTimeout));
@@ -183,90 +88,87 @@ void cameraStreamTaskTCP(void *pvParameters)
 
             while (WiFi.status() == WL_CONNECTED)
             {
-                TickType_t startTime = xTaskGetTickCount();
-
                 if (videoFlag)
                 {
-                    bool sendFrame = false;
-                    size_t txLen = 0;
-                    uint8_t *txBuf = NULL;
+                    // 1. PEDIR el fotograma más reciente (GRAB_LATEST se encarga de que sea nuevo)
+                    camera_fb_t *fb = esp_camera_fb_get();
 
-                    if (xSemaphoreTake(frameMutex, pdMS_TO_TICKS(5)) == pdTRUE)
+                    if (fb)
                     {
-                        if (newFrameReady)
+                        // Validación ultrarrápida del JPEG
+                        bool isValid = false;
+                        if (fb->len > 2000)
                         {
-                            txLen = *readLen;
-                            txBuf = readBuf;
-                            newFrameReady = false;
-                            sendFrame = true;
-                            isTransmitting = true; // Bloquea la cámara de intercambiar punteros
-                        }
-                        xSemaphoreGive(frameMutex);
-                    }
-
-                    if (sendFrame && txLen > 0 && txBuf != NULL)
-                    {
-                        uint8_t header[4];
-                        header[0] = (uint8_t)(txLen & 0xFF);
-                        header[1] = (uint8_t)((txLen >> 8) & 0xFF);
-                        header[2] = (uint8_t)((txLen >> 16) & 0xFF);
-                        header[3] = (uint8_t)((txLen >> 24) & 0xFF);
-
-                        bool socketError = false;
-                        int hSentTotal = 0;
-
-                        // Envío estricto de cabecera
-                        while (hSentTotal < 4)
-                        {
-                            int s = send(clientFd, header + hSentTotal, 4 - hSentTotal, 0);
-                            if (s < 0)
+                            if (fb->buf[0] == 0xFF && fb->buf[1] == 0xD8) // SOI
                             {
-                                if (errno == EAGAIN || errno == EWOULDBLOCK)
+                                for (size_t i = fb->len - 16; i < fb->len - 1; i++)
                                 {
-                                    vTaskDelay(1);
-                                    continue;
-                                }
-                                socketError = true;
-                                break;
-                            }
-                            hSentTotal += s;
-                        }
-
-                        // Envío estricto de payload
-                        if (!socketError)
-                        {
-                            size_t bytesWrittenTotal = 0;
-                            while (bytesWrittenTotal < txLen)
-                            {
-                                int s = send(clientFd, txBuf + bytesWrittenTotal, txLen - bytesWrittenTotal, 0);
-                                if (s < 0)
-                                {
-                                    if (errno == EAGAIN || errno == EWOULDBLOCK)
+                                    if (fb->buf[i] == 0xFF && fb->buf[i + 1] == 0xD9) // EOI
                                     {
-                                        vTaskDelay(1);
-                                        continue;
+                                        isValid = true;
+                                        break;
                                     }
-                                    socketError = true;
-                                    break;
                                 }
-                                bytesWrittenTotal += s;
                             }
                         }
 
-                        isTransmitting = false; // Libera el búfer al finalizar el envío
-
-                        if (socketError)
+                        if (isValid)
                         {
-                            break;
+                            uint8_t header[4];
+                            header[0] = (uint8_t)(fb->len & 0xFF);
+                            header[1] = (uint8_t)((fb->len >> 8) & 0xFF);
+                            header[2] = (uint8_t)((fb->len >> 16) & 0xFF);
+                            header[3] = (uint8_t)((fb->len >> 24) & 0xFF);
+
+                            bool socketError = false;
+
+                            // 2. ENVIAR la cabecera
+                            int hSent = send(clientFd, header, 4, 0);
+                            if (hSent == 4)
+                            {
+                                // 3. ENVIAR los píxeles directo desde la memoria de la cámara (Zero-Copy real)
+                                size_t bytesWrittenTotal = 0;
+                                while (bytesWrittenTotal < fb->len)
+                                {
+                                    int s = send(clientFd, fb->buf + bytesWrittenTotal, fb->len - bytesWrittenTotal, 0);
+                                    if (s < 0)
+                                    {
+                                        if (errno == EAGAIN || errno == EWOULDBLOCK)
+                                        {
+                                            vTaskDelay(1);
+                                            continue;
+                                        }
+                                        socketError = true;
+                                        break;
+                                    }
+                                    bytesWrittenTotal += s;
+                                }
+                            }
+                            else
+                            {
+                                socketError = true;
+                            }
+
+                            if (socketError)
+                            {
+                                esp_camera_fb_return(fb);
+                                break; // Romper el bucle interno para reconectar
+                            }
                         }
+
+                        // 4. DEVOLVER el búfer.
+                        // Si el Wi-Fi tardó, el driver de la cámara ya descartó los frames intermedios por nosotros.
+                        esp_camera_fb_return(fb);
+                    }
+                    else
+                    {
+                        vTaskDelay(pdMS_TO_TICKS(5)); // Pausa breve si no hay frame disponible
                     }
                 }
-
-                TickType_t elapsedTime = xTaskGetTickCount() - startTime;
-                if (elapsedTime < FRAME_TARGET_TIME)
-                    vTaskDelay(FRAME_TARGET_TIME - elapsedTime);
                 else
-                    vTaskDelay(pdMS_TO_TICKS(1));
+                {
+                    vTaskDelay(pdMS_TO_TICKS(50));
+                }
             }
 
             videoFlag = false;
@@ -566,8 +468,6 @@ void initWiFi()
 {
     ledIndicator(0);
 
-    frameMutex = xSemaphoreCreateMutex();
-
     WiFi.persistent(false);
     WiFi.setSleep(WIFI_PS_NONE);
     WiFi.setTxPower(WIFI_POWER_19_5dBm);
@@ -622,17 +522,9 @@ void initWiFi()
     updateDisplayState(DISPLAY_CONNECTED, WiFi.localIP().toString().c_str());
     ledIndicator(2, 60);
 
-    // 🚀 TAREAS PINNED TO CORE: BALANCEO Y PRIORIDADES CORREGIDAS
-
-    // 1. MOTORES: Máxima prioridad (3). Responde al instante sin lag.
-    xTaskCreatePinnedToCore(cmdServerTask, "CmdServerTask", 1024 * 4, NULL, 3, &cmdServerTaskHandle, 1);
-
-    // 2. CÁMARA: Prioridad media (2). Captura fotos en el núcleo de la aplicación.
-    xTaskCreatePinnedToCore(cameraCaptureTask, "CamCaptureTask", 1024 * 4, NULL, 2, NULL, 1);
-
-    // 3. STREAMING: Prioridad baja (1). Regresa al Core 0 para trabajar junto al Wi-Fi.
-    // Cambia el 1 por un 2 en esta línea:
-    xTaskCreatePinnedToCore(cameraStreamTaskTCP, "CamTCPStream", 1024 * 4, NULL, 2, NULL, 0);
+    // 🚀 TAREAS PINNED TO CORE 1 (Solo 2 tareas, sin hilos de captura innecesarios)
+    xTaskCreatePinnedToCore(cmdServerTask, "CmdServerTask", 1024 * 4, NULL, 1, &cmdServerTaskHandle, 1);
+    xTaskCreatePinnedToCore(cameraStreamTaskTCP, "CamTCPStream", 1024 * 4, NULL, 2, NULL, 1);
 
     ArduinoOTA.begin();
     ledIndicator(1);
