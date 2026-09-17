@@ -155,45 +155,28 @@ void centerServos()
     setTiltAngle(tiltCenter);
 }
 
-volatile unsigned long echoStart = 0;
-volatile float usDistanceCM = -1.0;
-
-void IRAM_ATTR echoISR()
-{
-    if (digitalRead(echoPin) == HIGH)
-    {
-        echoStart = esp_timer_get_time();
-    }
-    else
-    {
-        unsigned long duration = esp_timer_get_time() - echoStart;
-        if (duration > 100 && duration < 25000) { // Filtrar ruido y limitar al rango máximo
-            usDistanceCM = (duration * 0.0343) / 2.0;
-        } else if (duration >= 25000) {
-            usDistanceCM = -1.0;
-        }
-    }
-}
-
 void setupUltrasonic()
 {
     pinMode(trigPin, OUTPUT);
     pinMode(echoPin, INPUT);
     digitalWrite(trigPin, LOW);
-    attachInterrupt(digitalPinToInterrupt(echoPin), echoISR, CHANGE);
 }
 
 float getDistanceCM()
 {
-    float currentDistance = usDistanceCM;
-
     digitalWrite(trigPin, LOW);
     delayMicroseconds(2);
     digitalWrite(trigPin, HIGH);
     delayMicroseconds(10);
     digitalWrite(trigPin, LOW);
 
-    return currentDistance;
+    // Timeout de 4ms (~68 cm max), suficiente para el radar y no bloquea el RTOS/WiFi
+    long duration = pulseIn(echoPin, HIGH, 4000); 
+
+    if (duration == 0)
+        return -1.0;
+
+    return (duration * 0.0343) / 2.0;
 }
 
 // 🚀 Tarea unificada: Infrarrojos (PCF8574) + Ultrasónico (Trig 33 / Echo 32)
@@ -213,20 +196,15 @@ void obstacleAvoidanceMode(void *parameters)
 
         bool irObstacle = false;
 
-        // 1. Lectura segura del PCF8574 (0x20) sin afectar los motores delanteros
+        // 1. Lectura segura del PCF8574 (0x20)
         if (lockI2C(20))
         {
             Wire.requestFrom(0x20, 1);
             if (Wire.available())
             {
                 uint8_t currentData = Wire.read();
-
-                uint8_t safeReadMask = currentData | 0x0F;
-
-                Wire.beginTransmission(0x20);
-                Wire.write(safeReadMask);
-                Wire.endTransmission();
-
+                // Ya no sobreescribimos el PCF8574 aquí. Dejamos que cmdServerTask lo maneje.
+                
                 bool ir1 = !(currentData & (1 << obstacleDetectorPin1));
                 bool ir2 = !(currentData & (1 << obstacleDetectorPin2));
                 bool ir3 = !(currentData & (1 << obstacleDetectorPin3));
@@ -239,22 +217,26 @@ void obstacleAvoidanceMode(void *parameters)
 
         // 2. Lectura del Ultrasónico (Trig 33 / Echo 32)
         float distance = getDistanceCM();
-        bool usObstacle = (distance >= 2.0 && distance <= 10.0);
+        // Aumentado a 25 cm para tener tiempo de frenado real
+        bool usObstacle = (distance >= 2.0 && distance <= 25.0);
 
-#ifdef DEBUG
-        if (irObstacle)
-        {
-            Serial.println("🛑 Obstáculo por INFRARROJOS\r");
-        }
-        else if (usObstacle)
-        {
-            Serial.printf("🛑 Obstáculo por ULTRASÓNICO: %.2f cm\r\n", distance);
-        }
-#endif
-
-        // 3. Respuesta a obstáculo
+        // 3. Histeresis (Decay Timer) para evitar "tartamudeo"
+        // Activación instantánea, liberación retardada (300ms)
+        static int obstacleCounter = 0;
+        bool rawObstacle = (irObstacle || usObstacle);
+        
         bool previousObstacleState = obstacleFound;
-        obstacleFound = (irObstacle || usObstacle);
+        
+        if (rawObstacle) {
+            obstacleCounter = 5; // 5 ticks * 60ms = 300ms de retención
+            obstacleFound = true;
+        } else {
+            if (obstacleCounter > 0) {
+                obstacleCounter--;
+            } else {
+                obstacleFound = false;
+            }
+        }
 
         if (obstacleFound != previousObstacleState)
         {

@@ -262,6 +262,9 @@ void cmdServerTask(void *pvParameters)
     }
     listen(serverFd, 1);
 
+    int flags = fcntl(serverFd, F_GETFL, 0);
+    fcntl(serverFd, F_SETFL, flags | O_NONBLOCK);
+
     TickType_t lastCmdTime = xTaskGetTickCount();
     const TickType_t TIMEOUT_TICKS = pdMS_TO_TICKS(1500);
 
@@ -277,6 +280,14 @@ void cmdServerTask(void *pvParameters)
         struct sockaddr_in clientAddr;
         socklen_t clientAddrLen = sizeof(clientAddr);
         int clientFd = accept(serverFd, (struct sockaddr *)&clientAddr, &clientAddrLen);
+
+        if (clientFd < 0)
+        {
+            // No hay clientes pendientes
+            ArduinoOTA.handle(); // <-- OTA VIVE!
+            vTaskDelay(pdMS_TO_TICKS(50));
+            continue;
+        }
 
         if (clientFd >= 0)
         {
@@ -432,11 +443,9 @@ void cmdServerTask(void *pvParameters)
                         if (errno == 113 || errno == 104 || errno == 128)
                         {
 #ifdef DEBUG
-                            Serial.println("🚨 RED MUERTA. REINICIO DE EMERGENCIA.");
+                            Serial.println("🚨 RED MUERTA. FRENANDO.");
 #endif
                             stopAllMotors();
-                            vTaskDelay(pdMS_TO_TICKS(1000));
-                            ESP.restart();
                         }
                         break;
                     }
@@ -561,18 +570,19 @@ void onWiFiEvent(WiFiEvent_t event)
     if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP) 
     {
         isWiFiConnected = true;
+        updateDisplayState(DISPLAY_CONNECTED, WiFi.localIP().toString().c_str());
     }
     else if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED)
     {
-        // Solo reiniciamos si ya estábamos conectados y se cayó la red
         if (isWiFiConnected) 
         {
 #ifdef DEBUG
-            Serial.println("🚨 EVENTO WIFI: Desconectado. Cortando motores inmediatamente...");
+            Serial.println("🚨 EVENTO WIFI: Desconectado. Cortando motores e intentando reconexión...");
 #endif
             stopAllMotors();
-            updateDisplayState(DISPLAY_PORTAL_ACTIVE);
-            ESP.restart(); 
+            isWiFiConnected = false;
+            updateDisplayState(DISPLAY_CONNECTING_WIFI, "Reconectando...");
+            WiFi.reconnect();
         }
     }
 }
