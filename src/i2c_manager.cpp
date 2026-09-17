@@ -48,6 +48,21 @@ bool lockI2C(TickType_t timeoutMs)
         Wire.end();
         vTaskDelay(pdMS_TO_TICKS(10));
 
+        // 🚀 RECUPERACIÓN FÍSICA DEL BUS (I2C Bus Clear)
+        // Mandamos 9 pulsos de reloj para obligar a los esclavos a soltar SDA
+        pinMode(SIOD_GPIO_NUM, INPUT_PULLUP);
+        pinMode(SIOC_GPIO_NUM, OUTPUT);
+        for (int i = 0; i < 9; i++) {
+            digitalWrite(SIOC_GPIO_NUM, LOW);
+            delayMicroseconds(5);
+            digitalWrite(SIOC_GPIO_NUM, HIGH);
+            delayMicroseconds(5);
+            if (digitalRead(SIOD_GPIO_NUM) == HIGH) {
+                break; // El esclavo ya soltó la línea
+            }
+        }
+        pinMode(SIOC_GPIO_NUM, INPUT);
+
         Wire.begin(SIOD_GPIO_NUM, SIOC_GPIO_NUM);
         vTaskDelay(pdMS_TO_TICKS(50));
 

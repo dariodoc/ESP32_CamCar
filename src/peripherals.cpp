@@ -155,27 +155,45 @@ void centerServos()
     setTiltAngle(tiltCenter);
 }
 
+volatile unsigned long echoStart = 0;
+volatile float usDistanceCM = -1.0;
+
+void IRAM_ATTR echoISR()
+{
+    if (digitalRead(echoPin) == HIGH)
+    {
+        echoStart = esp_timer_get_time();
+    }
+    else
+    {
+        unsigned long duration = esp_timer_get_time() - echoStart;
+        if (duration > 100 && duration < 25000) { // Filtrar ruido y limitar al rango máximo
+            usDistanceCM = (duration * 0.0343) / 2.0;
+        } else if (duration >= 25000) {
+            usDistanceCM = -1.0;
+        }
+    }
+}
+
 void setupUltrasonic()
 {
     pinMode(trigPin, OUTPUT);
     pinMode(echoPin, INPUT);
     digitalWrite(trigPin, LOW);
+    attachInterrupt(digitalPinToInterrupt(echoPin), echoISR, CHANGE);
 }
 
 float getDistanceCM()
 {
+    float currentDistance = usDistanceCM;
+
     digitalWrite(trigPin, LOW);
     delayMicroseconds(2);
     digitalWrite(trigPin, HIGH);
     delayMicroseconds(10);
     digitalWrite(trigPin, LOW);
 
-    long duration = pulseIn(echoPin, HIGH, 25000); // Timeout de ~25ms (~4 metros)
-
-    if (duration == 0)
-        return -1.0;
-
-    return (duration * 0.0343) / 2.0;
+    return currentDistance;
 }
 
 // 🚀 Tarea unificada: Infrarrojos (PCF8574) + Ultrasónico (Trig 33 / Echo 32)

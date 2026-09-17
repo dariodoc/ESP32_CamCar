@@ -26,6 +26,7 @@ volatile bool videoFlag = false;
 TaskHandle_t cmdServerTaskHandle = NULL;
 TaskHandle_t playMelodyTaskHandle = NULL;
 TaskHandle_t obstacleAvoidanceModeTaskHandle = NULL;
+TimerHandle_t dmsTimer = NULL;
 
 // ----------------------------------------------------------------------
 // CORE 0: STREAMING TCP (EL OJO DEL ROBOT)
@@ -294,11 +295,11 @@ void cmdServerTask(void *pvParameters)
             setsockopt(clientFd, IPPROTO_TCP, TCP_KEEPINTVL, &keepInterval, sizeof(int));
             setsockopt(clientFd, IPPROTO_TCP, TCP_KEEPCNT, &keepCount, sizeof(int));
 
-            lastCmdTime = xTaskGetTickCount();
-            String rxBuffer = "";
-            rxBuffer.reserve(512);
+            char rxBuffer[512];
+            int rxIndex = 0;
             char tempChunk[128];
-            bool motorsStoppedByTimeout = false;
+
+            if (dmsTimer != NULL) xTimerStart(dmsTimer, 0);
 
             while (WiFi.status() == WL_CONNECTED)
             {
@@ -307,99 +308,110 @@ void cmdServerTask(void *pvParameters)
                 if (bytesRead > 0)
                 {
                     tempChunk[bytesRead] = '\0';
-                    rxBuffer += tempChunk;
-
-                    if (rxBuffer.length() > 512)
-                    {
-                        rxBuffer = "";
+                    
+                    // Añadir al buffer estático circular
+                    for (int i = 0; i < bytesRead; i++) {
+                        if (rxIndex < 511) {
+                            rxBuffer[rxIndex++] = tempChunk[i];
+                        } else {
+                            rxIndex = 0; // Overflow de buffer, reiniciar
+                            break;
+                        }
                     }
+                    rxBuffer[rxIndex] = '\0';
 
-                    int newLineIdx;
-                    while ((newLineIdx = rxBuffer.indexOf('\n')) >= 0)
+                    char* newlinePtr;
+                    while ((newlinePtr = strchr(rxBuffer, '\n')) != NULL)
                     {
-                        String line = rxBuffer.substring(0, newLineIdx);
-                        rxBuffer = rxBuffer.substring(newLineIdx + 1);
-                        line.trim();
+                        *newlinePtr = '\0'; // Reemplazar \n por \0
+                        
+                        char* line = rxBuffer;
+                        
+                        // Trim '\r' si existe
+                        int lineLen = strlen(line);
+                        if (lineLen > 0 && line[lineLen - 1] == '\r') {
+                            line[lineLen - 1] = '\0';
+                        }
 
-                        if (line.length() > 0)
+                        if (strlen(line) > 0)
                         {
-                            lastCmdTime = xTaskGetTickCount();
-                            motorsStoppedByTimeout = false;
+                            if (dmsTimer != NULL) xTimerReset(dmsTimer, 0);
 
-                            String localCmd[8];
+                            char* localCmd[8];
                             int localParam[8] = {0};
-                            int string_length = line.length();
-                            String temp = line;
+                            
+                            char* saveptr;
+                            char* token = strtok_r(line, "#", &saveptr);
+                            int i = 0;
+                            while (token != NULL && i < 8) {
+                                localCmd[i] = token;
+                                localParam[i] = atoi(token);
+                                token = strtok_r(NULL, "#", &saveptr);
+                                i++;
+                            }
 
-                            for (int i = 0; i < 8; i++)
+                            if (i > 0)
                             {
-                                int index = temp.indexOf('#');
-                                if (index < 0)
+                                if (strcmp(localCmd[0], "CMD_SERVO") == 0)
                                 {
-                                    if (string_length > 0)
+                                    if (localParam[1] == 0)
+                                        setPanAngle(localParam[2]);
+                                    else if (localParam[1] == 1)
+                                        setTiltAngle(localParam[2]);
+                                }
+                                else if (strcmp(localCmd[0], "CMD_CAMERA") == 0)
+                                {
+                                    if (localParam[1] == panCenter && localParam[2] == tiltCenter)
+                                        centerServos();
+                                    else
                                     {
-                                        localCmd[i] = temp;
-                                        localParam[i] = temp.toInt();
+                                        setPanAngle(localParam[1]);
+                                        setTiltAngle(localParam[2]);
                                     }
-                                    break;
                                 }
-                                else
+                                else if (strcmp(localCmd[0], "CMD_VIDEO") == 0)
                                 {
-                                    string_length -= index;
-                                    localCmd[i] = temp.substring(0, index);
-                                    localParam[i] = localCmd[i].toInt();
-                                    temp = temp.substring(index + 1);
+                                    videoFlag = (localParam[1] == 1);
+                                }
+                                else if (strcmp(localCmd[0], "CMD_BUZZER") == 0)
+                                {
+                                    if (localParam[1] == 1 && localParam[2] > 0)
+                                        toneToPlay(buzzerPin, buzzerChannel, localParam[2], 100);
+                                    else
+                                        ledcWriteTone(buzzerChannel, 0);
+                                }
+                                else if (strcmp(localCmd[0], "CMD_LIGHT") == 0)
+                                {
+                                    enableLaser = (localParam[1] == 1);
+                                    turnLaserOn(enableLaser);
+                                }
+                                else if (strcmp(localCmd[0], "CMD_LED_MOD") == 0)
+                                {
+                                    if (localParam[1] == 2)
+                                    {
+                                        enableObstacleAvoidance = true;
+                                        if (obstacleAvoidanceModeTaskHandle != NULL)
+                                            xTaskNotifyGive(obstacleAvoidanceModeTaskHandle);
+                                    }
+                                    else
+                                        enableObstacleAvoidance = false;
+                                }
+                                else if (strcmp(localCmd[0], "CMD_MOTOR") == 0)
+                                {
+                                    driveSafe(localParam[1], localParam[2], localParam[3], localParam[4]);
                                 }
                             }
+                        }
 
-                            if (localCmd[0] == "CMD_SERVO")
-                            {
-                                if (localParam[1] == 0)
-                                    setPanAngle(localParam[2]);
-                                else if (localParam[1] == 1)
-                                    setTiltAngle(localParam[2]);
-                            }
-                            else if (localCmd[0] == "CMD_CAMERA")
-                            {
-                                if (localParam[1] == panCenter && localParam[2] == tiltCenter)
-                                    centerServos();
-                                else
-                                {
-                                    setPanAngle(localParam[1]);
-                                    setTiltAngle(localParam[2]);
-                                }
-                            }
-                            else if (localCmd[0] == "CMD_VIDEO")
-                            {
-                                videoFlag = (localParam[1] == 1);
-                            }
-                            else if (localCmd[0] == "CMD_BUZZER")
-                            {
-                                if (localParam[1] == 1 && localParam[2] > 0)
-                                    toneToPlay(buzzerPin, buzzerChannel, localParam[2], 100);
-                                else
-                                    ledcWriteTone(buzzerChannel, 0);
-                            }
-                            else if (localCmd[0] == "CMD_LIGHT")
-                            {
-                                enableLaser = (localParam[1] == 1);
-                                turnLaserOn(enableLaser);
-                            }
-                            else if (localCmd[0] == "CMD_LED_MOD")
-                            {
-                                if (localParam[1] == 2)
-                                {
-                                    enableObstacleAvoidance = true;
-                                    if (obstacleAvoidanceModeTaskHandle != NULL)
-                                        xTaskNotifyGive(obstacleAvoidanceModeTaskHandle);
-                                }
-                                else
-                                    enableObstacleAvoidance = false;
-                            }
-                            else if (localCmd[0] == "CMD_MOTOR")
-                            {
-                                driveSafe(localParam[1], localParam[2], localParam[3], localParam[4]);
-                            }
+                        // Desplazar lo que quede en el buffer hacia el principio
+                        int remaining = rxIndex - (newlinePtr - rxBuffer) - 1;
+                        if (remaining > 0) {
+                            memmove(rxBuffer, newlinePtr + 1, remaining);
+                            rxIndex = remaining;
+                            rxBuffer[rxIndex] = '\0';
+                        } else {
+                            rxIndex = 0;
+                            rxBuffer[0] = '\0';
                         }
                     }
                 }
@@ -430,35 +442,15 @@ void cmdServerTask(void *pvParameters)
                     }
                 }
 
-                TickType_t timeSinceLastCmd = xTaskGetTickCount() - lastCmdTime;
-
-                if (timeSinceLastCmd > TIMEOUT_TICKS)
-                {
-                    if (!motorsStoppedByTimeout)
-                    {
-#ifdef DEBUG
-                        Serial.println("[CMD] ⏱️ Motores detenidos preventivamente.");
-#endif
-                        motorsStoppedByTimeout = true;
-                    }
-                    stopAllMotors();
-                }
-
-                if (timeSinceLastCmd > pdMS_TO_TICKS(60000))
-                {
-#ifdef DEBUG
-                    Serial.println("🚨 60s sin actividad. Reiniciando por seguridad...");
-#endif
-                    stopAllMotors();
-                    vTaskDelay(pdMS_TO_TICKS(1000));
-                    ESP.restart();
-                }
+                // El Dead Man's Switch (DMS Timer) y la Máquina de Estados WiFi 
+                // se encargan ahora de la seguridad en segundo plano de manera autónoma.
 
                 vTaskDelay(pdMS_TO_TICKS(5));
             }
 
             stopAllMotors();
             close(clientFd);
+            if (dmsTimer != NULL) xTimerStop(dmsTimer, 0);
 #ifdef DEBUG
             Serial.println("[CMD] 🔴 Puerto 4000 cerrado y libre.");
 #endif
@@ -554,14 +546,51 @@ void startCaptivePortal()
     }
 }
 
+void dmsTimerCallback(TimerHandle_t xTimer)
+{
+#ifdef DEBUG
+    Serial.println("🚨 DMS ACTIVADO: No se recibieron comandos. Apagando motores.");
+#endif
+    stopAllMotors();
+}
+
+volatile bool isWiFiConnected = false;
+
+void onWiFiEvent(WiFiEvent_t event)
+{
+    if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP) 
+    {
+        isWiFiConnected = true;
+    }
+    else if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED)
+    {
+        // Solo reiniciamos si ya estábamos conectados y se cayó la red
+        if (isWiFiConnected) 
+        {
+#ifdef DEBUG
+            Serial.println("🚨 EVENTO WIFI: Desconectado. Cortando motores inmediatamente...");
+#endif
+            stopAllMotors();
+            updateDisplayState(DISPLAY_PORTAL_ACTIVE);
+            ESP.restart(); 
+        }
+    }
+}
+
 void initWiFi()
 {
+    // Inicializar el Dead Man's Switch Timer (1000ms)
+    dmsTimer = xTimerCreate("DMSTimer", pdMS_TO_TICKS(1000), pdFALSE, (void *)0, dmsTimerCallback);
+
     ledIndicator(0);
     WiFi.persistent(false);
     WiFi.setSleep(WIFI_PS_NONE);
     WiFi.setTxPower(WIFI_POWER_19_5dBm);
     btStop();
     esp_bt_controller_disable();
+
+    // Conectar el evento de red de máxima prioridad
+    WiFi.onEvent(onWiFiEvent);
 
     preferences.begin("wifi_config", true);
     String storedSSID = preferences.getString("ssid", "");

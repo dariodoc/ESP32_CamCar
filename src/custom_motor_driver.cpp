@@ -65,12 +65,24 @@ Motor::Motor(int In1pin, int In2pin, int PWMpin, int offset, PCF8574 *pcfDev, Ad
     Offset = offset;
     pcf = pcfDev;
     pca = pcaController;
+    lastStateIn1 = -1;
+    lastStateIn2 = -1;
+    lastSpeed = -1;
 }
 
 void Motor::setMotorState(int stateIn1, int stateIn2, int speed)
 {
+    // Bypass: Si el estado no ha cambiado, no enviamos nada por I2C
+    if (stateIn1 == lastStateIn1 && stateIn2 == lastStateIn2 && speed == lastSpeed)
+    {
+        return;
+    }
+
     if (lockI2C(20))
     {
+        lastStateIn1 = stateIn1;
+        lastStateIn2 = stateIn2;
+        lastSpeed = speed;
         if (pcf == &FMCpcf8574)
         {
             // Actualización de dirección para FL y FR (Pines 4, 5, 6, 7)

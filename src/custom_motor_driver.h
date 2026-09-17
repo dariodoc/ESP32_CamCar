@@ -19,6 +19,11 @@ private:
     PCF8574 *pcf;
     Adafruit_PWMServoDriver *pca;
 
+    // Caché de estado para evitar saturar el bus I2C
+    int lastStateIn1;
+    int lastStateIn2;
+    int lastSpeed;
+
     // 🚀 Declaración requerida para corregir el error de compilación
     void setMotorState(int stateIn1, int stateIn2, int speed);
 
