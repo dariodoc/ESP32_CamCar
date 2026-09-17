@@ -68,7 +68,9 @@ void cameraStreamTaskTCP(void *pvParameters)
 
         if (clientFd >= 0)
         {
+#ifdef DEBUG
             Serial.println("\n[VIDEO] 🟢 Cliente conectado al puerto 7000 (Video).");
+#endif
 
             int nodelay = 1;
             setsockopt(clientFd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(int));
@@ -86,7 +88,9 @@ void cameraStreamTaskTCP(void *pvParameters)
                 int peekRes = recv(clientFd, peekBuf, 1, MSG_DONTWAIT);
                 if (peekRes == 0)
                 {
+#ifdef DEBUG
                     Serial.println("[VIDEO] ℹ️ Conexión de video cerrada normalmente por la app.");
+#endif
                     break;
                 }
 
@@ -94,11 +98,14 @@ void cameraStreamTaskTCP(void *pvParameters)
 
                 if (videoFlag)
                 {
+
                     if (!wasStreaming)
                     {
+#ifdef DEBUG
                         Serial.println("[VIDEO] 🎥 Transmisión de frames INICIADA.");
+#endif
+                        wasStreaming = true;
                     }
-                    wasStreaming = true;
 
                     camera_fb_t *fb = esp_camera_fb_get();
 
@@ -183,7 +190,9 @@ void cameraStreamTaskTCP(void *pvParameters)
 
                             if (socketError)
                             {
+#ifdef DEBUG
                                 Serial.println("[VIDEO] ⚠️ Saturación de red severa. Cortando conexión de video.");
+#endif
                                 esp_camera_fb_return(fb);
                                 break;
                             }
@@ -195,7 +204,9 @@ void cameraStreamTaskTCP(void *pvParameters)
                 {
                     if (wasStreaming)
                     {
+#ifdef DEBUG
                         Serial.println("[VIDEO] 🛑 CMD_VIDEO 0 detectado. Pausando stream (Modo Mute)...");
+#endif
                         wasStreaming = false;
                     }
                     vTaskDelay(pdMS_TO_TICKS(50));
@@ -217,7 +228,9 @@ void cameraStreamTaskTCP(void *pvParameters)
 
             videoFlag = false;
             close(clientFd);
+#ifdef DEBUG
             Serial.println("[VIDEO] 🔴 Puerto 7000 cerrado y libre.");
+#endif
         }
         vTaskDelay(pdMS_TO_TICKS(50));
     }
@@ -266,8 +279,9 @@ void cmdServerTask(void *pvParameters)
 
         if (clientFd >= 0)
         {
+#ifdef DEBUG
             Serial.println("\n[CMD] 🟢 Cliente conectado al puerto 4000 (Comandos).");
-
+#endif
             int nodelay = 1;
             setsockopt(clientFd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(int));
 
@@ -391,17 +405,23 @@ void cmdServerTask(void *pvParameters)
                 }
                 else if (bytesRead == 0)
                 {
+#ifdef DEBUG
                     Serial.println("[CMD] ℹ️ Conexión cerrada normalmente por la app.");
+#endif
                     break;
                 }
                 else
                 {
                     if (errno != EWOULDBLOCK && errno != EAGAIN)
                     {
+#ifdef DEBUG
                         Serial.printf("[CMD] ❌ Socket roto. errno: %d\n", errno);
+#endif
                         if (errno == 113 || errno == 104 || errno == 128)
                         {
+#ifdef DEBUG
                             Serial.println("🚨 RED MUERTA. REINICIO DE EMERGENCIA.");
+#endif
                             stopAllMotors();
                             vTaskDelay(pdMS_TO_TICKS(1000));
                             ESP.restart();
@@ -416,7 +436,9 @@ void cmdServerTask(void *pvParameters)
                 {
                     if (!motorsStoppedByTimeout)
                     {
+#ifdef DEBUG
                         Serial.println("[CMD] ⏱️ Motores detenidos preventivamente.");
+#endif
                         motorsStoppedByTimeout = true;
                     }
                     stopAllMotors();
@@ -424,7 +446,9 @@ void cmdServerTask(void *pvParameters)
 
                 if (timeSinceLastCmd > pdMS_TO_TICKS(60000))
                 {
+#ifdef DEBUG
                     Serial.println("🚨 60s sin actividad. Reiniciando por seguridad...");
+#endif
                     stopAllMotors();
                     vTaskDelay(pdMS_TO_TICKS(1000));
                     ESP.restart();
@@ -435,7 +459,9 @@ void cmdServerTask(void *pvParameters)
 
             stopAllMotors();
             close(clientFd);
+#ifdef DEBUG
             Serial.println("[CMD] 🔴 Puerto 4000 cerrado y libre.");
+#endif
         }
         vTaskDelay(pdMS_TO_TICKS(10));
     }
@@ -495,7 +521,9 @@ void startCaptivePortal()
 {
     if (!SPIFFS.begin(true))
     {
+#ifdef DEBUG
         Serial.println("❌ Fallo SPIFFS");
+#endif
     }
 
     WiFi.mode(WIFI_AP);
