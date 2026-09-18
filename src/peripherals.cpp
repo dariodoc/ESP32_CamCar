@@ -121,7 +121,8 @@ void servoSlewTask(void *pvParameters)
 
 void setPanAngle(int angle)
 {
-    int newAngle = constrain(angle, 10, 170);
+    // Limite simetrico
+    int newAngle = constrain(angle, 30, 150);
     // Filtro de "banda muerta" (Deadband). 
     // Ignora pequeños temblores del dedo en la pantalla táctil de la app.
     // Evita el "jittering" constante y su altísimo consumo eléctrico.
@@ -322,7 +323,7 @@ void obstacleAvoidanceMode(void *parameters)
         {
             if (obstacleFound)
             {
-                updateDisplayState(DISPLAY_OBSTACLE_ALERT);
+                updateDisplayState(DISPLAY_OBSTACLE_ALERT,"");
                 // 🚀 EL FRENO DE EMERGENCIA DIRECTO
                 // Al ser la tarea de mayor prioridad (3), frena los motores 
                 // instantáneamente sin esperar a que el servidor TCP reaccione.
@@ -330,7 +331,7 @@ void obstacleAvoidanceMode(void *parameters)
             }
             else
             {
-                updateDisplayState(DISPLAY_CLEAR_ALERT);
+                updateDisplayState(DISPLAY_CLEAR_ALERT,"");
             }
         }
 
