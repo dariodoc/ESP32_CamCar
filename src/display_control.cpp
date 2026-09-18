@@ -6,7 +6,7 @@
 #include <Adafruit_ST7735.h>
 #include <SPI.h>
 #include <Wire.h>
-
+#include <WiFi.h>
 #define TFT_SCLK 14
 #define TFT_MOSI 13
 #define TFT_DC 15
@@ -60,11 +60,13 @@ static void renderScreen(const DisplayMessage &msg)
     case DISPLAY_CONNECTED:
         tft.fillScreen(ST77XX_BLACK);
         tft.setTextColor(ST77XX_GREEN);
-        tft.setCursor(10, 30);
+        tft.setCursor(10, 10);
         tft.println("Wi-Fi CONECTADO");
         tft.setTextColor(ST77XX_WHITE);
-        tft.setCursor(10, 45);
+        tft.setCursor(10, 25);
         tft.printf("IP: %s", msg.textExtra);
+        tft.setCursor(10, 40);
+        tft.printf("Senal RSSI: %ld dBm", WiFi.RSSI());
         break;
 
     case DISPLAY_OBSTACLE_ALERT:
@@ -125,7 +127,7 @@ static void displayTask(void *pvParameters)
         // 🚀 La tarea se duerme aquí al 100% en FreeRTOS esperando un evento real.
         // Mientras no lleguen mensajes nuevos, la pantalla MANTIENE la imagen bonita fija
         // sin tocar la CPU ni el bus SPI.
-        if (xQueueReceive(displayQueue, &rxMsg, portMAX_DELAY) == pdTRUE)
+        if (xQueueReceive(displayQueue, &rxMsg, pdMS_TO_TICKS(2000)) == pdTRUE)
         {
             // Filtro inteligente: Si el estado recibido es el mismo que ya está dibujado, NO redibujamos
             if (rxMsg.state == currentState && rxMsg.state == DISPLAY_CONNECTED)
@@ -136,6 +138,18 @@ static void displayTask(void *pvParameters)
             // Solo si el texto/estado realmente cambió, enviamos datos por SPI
             renderScreen(rxMsg);
             currentState = rxMsg.state;
+        }
+        else
+        {
+            // Timeout de 2 segundos. Actualizar RSSI si estamos conectados o sin obstáculo
+            if (WiFi.status() == WL_CONNECTED && 
+                (currentState == DISPLAY_CONNECTED || currentState == DISPLAY_CLEAR_ALERT || currentState == DISPLAY_OBSTACLE_ALERT))
+            {
+                tft.fillRect(0, 40, 160, 15, ST77XX_BLACK);
+                tft.setTextColor(ST77XX_WHITE);
+                tft.setCursor(10, 40);
+                tft.printf("Senal RSSI: %ld dBm", WiFi.RSSI());
+            }
         }
     }
 }

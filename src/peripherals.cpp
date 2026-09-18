@@ -18,10 +18,7 @@ volatile bool melodyOn = false;
 volatile bool enableObstacleAvoidance = false;
 volatile bool obstacleFound = false;
 
-static int currentPan = panCenter;
-static int currentTilt = tiltCenter;
-
-
+// Removed duplicate servo declarations
 
 void leftRearLed(int state)
 {
@@ -43,33 +40,116 @@ void rightRearLed(int state)
     }
 }
 
-void writeServoPCA(uint8_t channel, int angle)
+static int currentPan = panCenter;
+static int currentTilt = tiltCenter;
+static int targetPan = panCenter;
+static int targetTilt = tiltCenter;
+TaskHandle_t servoTaskHandle = NULL;
+
+void writeServoPCA(uint8_t channel, int angle, uint16_t startTick = 0)
 {
     int constrainedAngle = constrain(angle, 0, 180);
     int uS = map(constrainedAngle, 0, 180, 550, 2650);
 
+    // En 50Hz, 1 ciclo = 20,000 microsegundos = 4096 ticks
+    // ticks = uS * 4096 / 20000 = uS * 0.2048
+    uint16_t pulseTicks = (uS * 4096) / 20000;
+    uint16_t endTick = (startTick + pulseTicks) % 4096;
+
     if (lockI2C(20))
     {
-        pca9685.writeMicroseconds(channel, uS);
+        pca9685.setPWM(channel, startTick, endTick);
         unlockI2C();
+    }
+}
+
+void servoSlewTask(void *pvParameters)
+{
+    while (true)
+    {
+        bool panMoved = false;
+        bool tiltMoved = false;
+
+        if (currentPan < targetPan) { 
+            currentPan += 1; 
+            panMoved = true; 
+        }
+        else if (currentPan > targetPan) { 
+            currentPan -= 1; 
+            panMoved = true; 
+        }
+
+        if (currentTilt < targetTilt) { 
+            currentTilt += 1; 
+            tiltMoved = true; 
+        }
+        else if (currentTilt > targetTilt) { 
+            currentTilt -= 1; 
+            tiltMoved = true; 
+        }
+
+        static int panIdleTime = 0;
+        static int tiltIdleTime = 0;
+
+        if (panMoved) {
+            writeServoPCA(panPin, currentPan, 0); // Empieza en tick 0 (0ms)
+            panIdleTime = 0;
+        } else {
+            panIdleTime += 20;
+            if (panIdleTime == 500) {
+                if (lockI2C(20)) { pca9685.setPWM(panPin, 0, 4096); unlockI2C(); }
+            }
+            if (panIdleTime > 1000) panIdleTime = 1000;
+        }
+
+        if (tiltMoved) {
+            writeServoPCA(tiltPin, currentTilt, 2048); // Empieza en tick 2048 (10ms después!)
+            tiltIdleTime = 0;
+        } else {
+            tiltIdleTime += 20;
+            if (tiltIdleTime == 500) {
+                if (lockI2C(20)) { pca9685.setPWM(tiltPin, 0, 4096); unlockI2C(); }
+            }
+            if (tiltIdleTime > 1000) tiltIdleTime = 1000;
+        }
+        
+        // 20ms delay (50Hz) alinea con el refresh real del servo
+        // Movimiento de 2 grados / 20ms = 100 grados por segundo (Cinemático)
+        vTaskDelay(pdMS_TO_TICKS(20));
     }
 }
 
 void setPanAngle(int angle)
 {
-    currentPan = constrain(angle, 0, 180);
-    writeServoPCA(panPin, currentPan);
+    int newAngle = constrain(angle, 10, 170);
+    // Filtro de "banda muerta" (Deadband). 
+    // Ignora pequeños temblores del dedo en la pantalla táctil de la app.
+    // Evita el "jittering" constante y su altísimo consumo eléctrico.
+    if (abs(newAngle - targetPan) > 2) {
+        targetPan = newAngle;
+    }
 }
 
 void setTiltAngle(int angle)
 {
-    int safeAngle = constrain(angle, 30, 170);
-    currentTilt = 180 - safeAngle;
-    writeServoPCA(tiltPin, currentTilt);
+    // Límite físico estricto: evita que la cámara choque con el chasis (Stall)
+    // Un motor estancado jala amperaje máximo infinito y tira el voltaje.
+    int safeAngle = constrain(angle, 50, 130); 
+    int newAngle = 180 - safeAngle;
+    if (abs(newAngle - targetTilt) > 2) {
+        targetTilt = newAngle;
+    }
 }
+
+
 
 void setupPeripherals()
 {
+    if (servoTaskHandle == NULL)
+    {
+        xTaskCreatePinnedToCore(servoSlewTask, "ServoTask", 2048, NULL, 1, &servoTaskHandle, 1);
+    }
+
     pinMode(builtinLedPin, OUTPUT);
     digitalWrite(builtinLedPin, HIGH);
     ledcDetachPin(buzzerPin);

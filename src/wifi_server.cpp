@@ -284,7 +284,7 @@ void cmdServerTask(void *pvParameters)
         if (clientFd < 0)
         {
             // No hay clientes pendientes
-            ArduinoOTA.handle(); // <-- OTA VIVE!
+            // Solo pausamos para no asfixiar a las otras tareas (el OTA se maneja en el loop principal)
             vTaskDelay(pdMS_TO_TICKS(50));
             continue;
         }
@@ -595,7 +595,7 @@ void initWiFi()
     ledIndicator(0);
     WiFi.persistent(false);
     WiFi.setSleep(WIFI_PS_NONE);
-    WiFi.setTxPower(WIFI_POWER_19_5dBm);
+    WiFi.setTxPower(WIFI_POWER_8_5dBm); // Bajado drásticamente a 8.5dBm para máxima estabilidad eléctrica
     btStop();
     esp_bt_controller_disable();
 
@@ -621,6 +621,7 @@ void initWiFi()
     }
 
     WiFi.mode(WIFI_STA);
+    WiFi.setSleep(false); // EVITAR desconexiones por ahorro de energía
     WiFi.setAutoReconnect(true);
     updateDisplayState(DISPLAY_CONNECTING_WIFI, storedSSID.c_str());
     WiFi.begin(storedSSID.c_str(), storedPASS.c_str());

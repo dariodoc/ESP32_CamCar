@@ -120,7 +120,20 @@ void Motor::setMotorState(int stateIn1, int stateIn2, int speed)
             Wire.endTransmission();
         }
 
-        pca->setPWM(PWM, 0, speed);
+        // 🚀 ANTI-BROWNOUT MAGIA: Desfasar el pulso PWM de cada motor!
+        // En lugar de arrancar todos en el tick 0 (provocando un pico eléctrico destructivo),
+        // los desfasamos uniformemente multiplicando su pin por 256.
+        uint16_t startTick = (PWM * 256) % 4096;
+        uint16_t endTick = (startTick + speed) % 4096;
+
+        if (speed == 4095) { // 100% duty cycle especial
+            pca->setPWM(PWM, 4096, 0); 
+        } else if (speed == 0) { // 0% duty cycle especial
+            pca->setPWM(PWM, 0, 4096);
+        } else {
+            pca->setPWM(PWM, startTick, endTick);
+        }
+        
         unlockI2C();
     }
 }
