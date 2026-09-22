@@ -33,12 +33,14 @@ void setupCamera()
     {
         config.fb_location = CAMERA_FB_IN_PSRAM;
         config.frame_size = FRAMESIZE_QVGA;
-        
-        // 🚀 EL ESCUDO: Compresión altísima (30). Los frames pesarán gramos, no kilos.
         config.jpeg_quality = 30; 
         
-        config.fb_count = 2;                   
-        config.grab_mode = CAMERA_GRAB_LATEST; 
+        // 🚀 MÁXIMA ESTABILIDAD: Al usar 1 solo buffer, obligamos a la cámara a 
+        // capturar el fotograma SOLO cuando lo pedimos. Esto elimina por completo 
+        // cualquier posible desbordamiento de memoria (Memory Leak) o asfixia de 
+        // los descriptores DMA del driver de la cámara en uso continuo.
+        config.fb_count = 1;                   
+        config.grab_mode = CAMERA_GRAB_WHEN_EMPTY; 
     }
     else
     {
@@ -46,7 +48,7 @@ void setupCamera()
         config.frame_size = FRAMESIZE_QVGA;
         config.jpeg_quality = 30;
         config.fb_count = 1;
-        config.grab_mode = CAMERA_GRAB_LATEST;
+        config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
     }
 
     esp_err_t err = esp_camera_init(&config);

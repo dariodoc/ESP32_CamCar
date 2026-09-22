@@ -219,15 +219,27 @@ void cameraStreamTaskTCP(void *pvParameters)
 
                 if (videoFlag)
                 {
-                    TickType_t elapsedTime = xTaskGetTickCount() - startTime;
-                    const TickType_t NEW_TARGET = pdMS_TO_TICKS(50); // ~20 FPS. Evita bufferbloat en Python (que lee a 29 FPS).
-                    if (elapsedTime < NEW_TARGET)
+                    TickType_t sendDuration = xTaskGetTickCount() - startTime;
+                    const TickType_t NEW_TARGET = pdMS_TO_TICKS(50); // ~20 FPS. 
+
+                    // 🚀 DYNAMIC PACING (Anti-Bufferbloat)
+                    // Si enviar el frame tomó más de 20ms, significa que el buffer TCP de Windows/Android 
+                    // se está llenando (congestión). Si no le damos tiempo de vaciarse, el lag crecerá a 
+                    // 2-5 FPS permanentemente. 
+                    if (sendDuration > pdMS_TO_TICKS(20))
                     {
-                        vTaskDelay(NEW_TARGET - elapsedTime);
+#ifdef DEBUG
+                        Serial.println("[VIDEO] ⚠️ Congestión detectada. Aplicando freno dinámico para vaciar buffer...");
+#endif
+                        vTaskDelay(pdMS_TO_TICKS(100)); // Frenamos drásticamente para vaciar el buffer (Cero Lag)
+                    }
+                    else if (sendDuration < NEW_TARGET)
+                    {
+                        vTaskDelay(NEW_TARGET - sendDuration);
                     }
                     else
                     {
-                        vTaskDelay(pdMS_TO_TICKS(1)); // Lo más rápido posible
+                        vTaskDelay(pdMS_TO_TICKS(1)); 
                     }
                 }
             }
