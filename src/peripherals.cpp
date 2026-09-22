@@ -275,7 +275,11 @@ void obstacleAvoidanceMode(void *parameters)
     {
         if (!enableObstacleAvoidance)
         {
-            obstacleFound = false;
+            if (obstacleFound)
+            {
+                obstacleFound = false;
+                updateDisplayState(DISPLAY_CLEAR_ALERT, "");
+            }
             ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
             lastWakeTime = xTaskGetTickCount();
         }

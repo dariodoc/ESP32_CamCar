@@ -81,12 +81,29 @@ void cameraStreamTaskTCP(void *pvParameters)
             int nodelay = 1;
             setsockopt(clientFd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(int));
             
-            // Incrementamos el buffer para compensar la desactivación de Nagle
+            // 🚀 RESTAURADO SO_SNDBUF: 
+            // Si no pedimos 32KB, el buffer por defecto de lwIP es de 5KB. Un frame JPEG pesa ~10KB-20KB.
+            // Si el frame no cabe en el buffer, send() se bloquea sincrónicamente esperando que el cliente 
+            // envíe TCP ACKs por Wi-Fi. Esto sumaba decenas de milisegundos de lag por frame.
+            // Gracias a que ahora usamos SO_LINGER = 0, podemos usar 32KB sin miedo a agotar la RAM,
+            // ya que se liberan instantáneamente al desconectar.
             int sndbuf = 32768;
             setsockopt(clientFd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
 
             struct timeval sendTimeout = {0, 200000};
             setsockopt(clientFd, SOL_SOCKET, SO_SNDTIMEO, &sendTimeout, sizeof(sendTimeout));
+
+            // 🚀 FIX CRÍTICO: Prevenir "PBUF Exhaustion" en lwIP.
+            // Cuando la red se congestiona, el socket se cierra. Pero por defecto, TCP entra en "TIME_WAIT"
+            // y retiene 32KB de RAM del ESP32 por 2 minutos. Si te reconectas inmediatamente, el ESP32 ya
+            // no tiene memoria RAM (PBUFs) para la nueva conexión, lo que causa que la red se vuelva lentísima
+            // (2-5 FPS de forma permanente).
+            // SO_LINGER con timeout 0 obliga a que al cerrar el socket, se envíe un RST (Reset)
+            // que destruye la conexión y libera el 100% de la RAM instantáneamente. ¡Cada reconexión será fresca!
+            struct linger so_linger;
+            so_linger.l_onoff = 1;
+            so_linger.l_linger = 0;
+            setsockopt(clientFd, SOL_SOCKET, SO_LINGER, &so_linger, sizeof(so_linger));
 
             bool wasStreaming = false;
 
@@ -104,11 +121,8 @@ void cameraStreamTaskTCP(void *pvParameters)
                     break;
                 }
 
-                TickType_t startTime = xTaskGetTickCount();
-
                 if (videoFlag)
                 {
-
                     if (!wasStreaming)
                     {
 #ifdef DEBUG
@@ -121,12 +135,18 @@ void cameraStreamTaskTCP(void *pvParameters)
 
                     if (fb)
                     {
+
                         bool isValid = false;
-                        if (fb->len > 1000 && fb->buf[0] == 0xFF && fb->buf[1] == 0xD8)
+                        if (fb->len > 2000 && fb->buf[0] == 0xFF && fb->buf[1] == 0xD8)
                         {
-                            // Relajar la validación: confiar en el driver para evitar dropear frames
-                            // que causan timeouts (WinError 10060) en la app de Python.
-                            isValid = true; 
+                            for (size_t i = fb->len - 16; i < fb->len - 1; i++)
+                            {
+                                if (fb->buf[i] == 0xFF && fb->buf[i + 1] == 0xD9)
+                                {
+                                    isValid = true;
+                                    break;
+                                }
+                            }
                         }
 
                         if (isValid)
@@ -137,27 +157,23 @@ void cameraStreamTaskTCP(void *pvParameters)
                             header[2] = (uint8_t)((fb->len >> 16) & 0xFF);
                             header[3] = (uint8_t)((fb->len >> 24) & 0xFF);
 
-                            bool socketError = false;
-                            int retries = 0;
-                            const int MAX_RETRIES = 10;
-
-                            // Agrupar el header de 4 bytes y el inicio de la imagen en un solo paquete
-                            // Esto evita la trampa del Delayed ACK de Windows sin necesidad de activar Nagle,
-                            // manteniendo compatibilidad total con la app de Android y Raspberry.
                             uint8_t firstPacket[1460];
                             size_t firstPayloadSize = (fb->len > 1456) ? 1456 : fb->len;
                             memcpy(firstPacket, header, 4);
                             memcpy(firstPacket + 4, fb->buf, firstPayloadSize);
-
-                            size_t bytesWrittenTotal = 0;
                             size_t packetSize = 4 + firstPayloadSize;
-                            
+
+                            bool socketError = false;
+                            int retries = 0;
+                            const int MAX_RETRIES = 50; // 50 * 20ms = 1000ms timeout
+                            size_t bytesWrittenTotal = 0;
+
                             while (bytesWrittenTotal < packetSize)
                             {
                                 int s = send(clientFd, firstPacket + bytesWrittenTotal, packetSize - bytesWrittenTotal, MSG_NOSIGNAL);
                                 if (s < 0)
                                 {
-                                    if (errno == EAGAIN || errno == EWOULDBLOCK)
+                                    if (errno == EAGAIN || errno == EWOULDBLOCK || errno == ENOMEM)
                                     {
                                         retries++;
                                         if (retries > MAX_RETRIES) { socketError = true; break; }
@@ -179,7 +195,7 @@ void cameraStreamTaskTCP(void *pvParameters)
                                     int s = send(clientFd, fb->buf + payloadWritten, fb->len - payloadWritten, MSG_NOSIGNAL);
                                     if (s < 0)
                                     {
-                                        if (errno == EAGAIN || errno == EWOULDBLOCK)
+                                        if (errno == EAGAIN || errno == EWOULDBLOCK || errno == ENOMEM)
                                         {
                                             retries++;
                                             if (retries > MAX_RETRIES) { socketError = true; break; }
@@ -202,7 +218,8 @@ void cameraStreamTaskTCP(void *pvParameters)
                                 break;
                             }
                         }
-                        esp_camera_fb_return(fb);
+                        
+                        esp_camera_fb_return(fb); 
                     }
                 }
                 else
@@ -215,32 +232,6 @@ void cameraStreamTaskTCP(void *pvParameters)
                         wasStreaming = false;
                     }
                     vTaskDelay(pdMS_TO_TICKS(50));
-                }
-
-                if (videoFlag)
-                {
-                    TickType_t sendDuration = xTaskGetTickCount() - startTime;
-                    const TickType_t NEW_TARGET = pdMS_TO_TICKS(50); // ~20 FPS. 
-
-                    // 🚀 DYNAMIC PACING (Anti-Bufferbloat)
-                    // Si enviar el frame tomó más de 20ms, significa que el buffer TCP de Windows/Android 
-                    // se está llenando (congestión). Si no le damos tiempo de vaciarse, el lag crecerá a 
-                    // 2-5 FPS permanentemente. 
-                    if (sendDuration > pdMS_TO_TICKS(20))
-                    {
-#ifdef DEBUG
-                        Serial.println("[VIDEO] ⚠️ Congestión detectada. Aplicando freno dinámico para vaciar buffer...");
-#endif
-                        vTaskDelay(pdMS_TO_TICKS(100)); // Frenamos drásticamente para vaciar el buffer (Cero Lag)
-                    }
-                    else if (sendDuration < NEW_TARGET)
-                    {
-                        vTaskDelay(NEW_TARGET - sendDuration);
-                    }
-                    else
-                    {
-                        vTaskDelay(pdMS_TO_TICKS(1)); 
-                    }
                 }
             }
 
@@ -323,11 +314,9 @@ void cmdServerTask(void *pvParameters)
             setsockopt(clientFd, IPPROTO_TCP, TCP_KEEPINTVL, &keepInterval, sizeof(int));
             setsockopt(clientFd, IPPROTO_TCP, TCP_KEEPCNT, &keepCount, sizeof(int));
 
-            char rxBuffer[512];
+            char rxBuffer[1024];
             int rxIndex = 0;
-            char tempChunk[128];
-
-            if (dmsTimer != NULL) xTimerStart(dmsTimer, 0);
+            char tempChunk[512];
 
             while (WiFi.status() == WL_CONNECTED)
             {
@@ -339,7 +328,7 @@ void cmdServerTask(void *pvParameters)
                     
                     // Añadir al buffer estático circular
                     for (int i = 0; i < bytesRead; i++) {
-                        if (rxIndex < 511) {
+                        if (rxIndex < 1023) {
                             rxBuffer[rxIndex++] = tempChunk[i];
                         } else {
                             rxIndex = 0; // Overflow de buffer, reiniciar
@@ -363,8 +352,6 @@ void cmdServerTask(void *pvParameters)
 
                         if (strlen(line) > 0)
                         {
-                            if (dmsTimer != NULL) xTimerReset(dmsTimer, 0);
-
                             char* localCmd[8];
                             int localParam[8] = {0};
                             
@@ -422,7 +409,16 @@ void cmdServerTask(void *pvParameters)
                                 }
                                 else if (strcmp(localCmd[0], "CMD_LED_MOD") == 0)
                                 {
-                                    // Comandos de LEDs de RPi (No los usamos para evasión en el ESP32)
+                                    if (localParam[1] == 2)
+                                    {
+                                        enableObstacleAvoidance = true;
+                                        if (obstacleAvoidanceModeTaskHandle != NULL)
+                                            xTaskNotifyGive(obstacleAvoidanceModeTaskHandle);
+                                    }
+                                    else
+                                    {
+                                        enableObstacleAvoidance = false;
+                                    }
                                 }
                                 else if (strcmp(localCmd[0], "CMD_MODE") == 0)
                                 {
@@ -487,13 +483,10 @@ void cmdServerTask(void *pvParameters)
 
                 // El Dead Man's Switch (DMS Timer) y la Máquina de Estados WiFi 
                 // se encargan ahora de la seguridad en segundo plano de manera autónoma.
-
-                vTaskDelay(pdMS_TO_TICKS(5));
             }
 
             stopAllMotors();
             close(clientFd);
-            if (dmsTimer != NULL) xTimerStop(dmsTimer, 0);
 #ifdef DEBUG
             Serial.println("[CMD] 🔴 Puerto 5000 cerrado y libre.");
 #endif

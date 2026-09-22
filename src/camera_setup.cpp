@@ -24,8 +24,9 @@ void setupCamera()
     config.pin_pwdn = PWDN_GPIO_NUM;
     config.pin_reset = RESET_GPIO_NUM;
 
-    // 🚀 Reducido a 10MHz para evitar sobrecalentamiento del OV2640 (Thermal Throttling)
-    // que causa caída permanente de FPS después de unos minutos de uso continuo.
+    // 🚀 Reducido a 10MHz para evitar el desbordamiento de la cola DMA I2S.
+    // A 20MHz, la cámara genera fotogramas demasiado rápido (33ms). Si el envío por Wi-Fi
+    // toma más de 33ms, el driver colapsa y congela la imagen durante 1 segundo.
     config.xclk_freq_hz = 10000000;
     config.pixel_format = PIXFORMAT_JPEG;
 
@@ -35,10 +36,6 @@ void setupCamera()
         config.frame_size = FRAMESIZE_QVGA;
         config.jpeg_quality = 30; 
         
-        // 🚀 MÁXIMA ESTABILIDAD: Al usar 1 solo buffer, obligamos a la cámara a 
-        // capturar el fotograma SOLO cuando lo pedimos. Esto elimina por completo 
-        // cualquier posible desbordamiento de memoria (Memory Leak) o asfixia de 
-        // los descriptores DMA del driver de la cámara en uso continuo.
         config.fb_count = 1;                   
         config.grab_mode = CAMERA_GRAB_WHEN_EMPTY; 
     }
@@ -48,7 +45,7 @@ void setupCamera()
         config.frame_size = FRAMESIZE_QVGA;
         config.jpeg_quality = 30;
         config.fb_count = 1;
-        config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
+        config.grab_mode = CAMERA_GRAB_LATEST;
     }
 
     esp_err_t err = esp_camera_init(&config);

@@ -76,7 +76,7 @@ void driveDirectRaw(int fl, int bl, int fr, int br)
 {
     if (fl == 0 && bl == 0 && fr == 0 && br == 0)
     {
-        stopAllMotors();
+        brakeAllMotors(); // Frenado electromagnético en lugar de fricción libre
         return;
     }
 
