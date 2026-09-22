@@ -24,8 +24,8 @@ void leftRearLed(int state)
 {
     if (lockI2C(20))
     {
-        int pwmValue = state ? 0 : 4095;
-        pca9685.setPWM(leftRearLedPin, 0, pwmValue);
+        if (state) pca9685.setPWM(leftRearLedPin, 0, 4096); // GND continuo -> Enciende
+        else pca9685.setPWM(leftRearLedPin, 4096, 0);       // 3.3V continuo -> Apaga
         unlockI2C();
     }
 }
@@ -34,8 +34,8 @@ void rightRearLed(int state)
 {
     if (lockI2C(20))
     {
-        int pwmValue = state ? 0 : 4095;
-        pca9685.setPWM(rightRearLedPin, 0, pwmValue);
+        if (state) pca9685.setPWM(rightRearLedPin, 0, 4096); // GND continuo -> Enciende
+        else pca9685.setPWM(rightRearLedPin, 4096, 0);       // 3.3V continuo -> Apaga
         unlockI2C();
     }
 }
@@ -213,8 +213,13 @@ void turnLaserOn(bool state)
 {
     if (lockI2C(20))
     {
-        int pwmValue = state ? 0 : 4095;
-        pca9685.setPWM(laserPin, 0, pwmValue);
+        if (state) {
+            pca9685.setPWM(laserPin, 0, 4096); // GND continuo -> Enciende
+            toneToPlay(buzzerPin, buzzerChannel, 2000, 100); // Beep agudo: Recibió ON
+        } else {
+            pca9685.setPWM(laserPin, 4096, 0); // 3.3V continuo -> Apaga
+            toneToPlay(buzzerPin, buzzerChannel, 500, 200);  // Beep grave: Recibió OFF
+        }
         unlockI2C();
     }
 }

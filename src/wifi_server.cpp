@@ -14,6 +14,7 @@
 #include <esp_bt.h>
 #include <ArduinoOTA.h>
 #include "Melodies.h"
+#include <esp_wifi.h>
 
 #include <lwip/sockets.h>
 #include <lwip/netdb.h>
@@ -44,7 +45,7 @@ void cameraStreamTaskTCP(void *pvParameters)
     memset(&serverAddr, 0, sizeof(serverAddr));
     serverAddr.sin_family = AF_INET;
     serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    serverAddr.sin_port = htons(7000);
+    serverAddr.sin_port = htons(8000);
 
     if (bind(serverFd, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) < 0)
     {
@@ -70,11 +71,19 @@ void cameraStreamTaskTCP(void *pvParameters)
         if (clientFd >= 0)
         {
 #ifdef DEBUG
-            Serial.println("\n[VIDEO] 🟢 Cliente conectado al puerto 7000 (Video).");
+            Serial.println("\n[VIDEO] 🟢 Cliente conectado al puerto 8000 (Video).");
 #endif
+            videoFlag = true; // Auto-start streaming for Raspberry Pi app
 
+            // 🚀 RESTAURADO TCP_NODELAY: La app de Android asume que el header de 4 bytes 
+            // llega en un paquete separado. Habilitar Nagle fusionaba los paquetes y rompía 
+            // el parser de Android (77396 fps bug).
             int nodelay = 1;
             setsockopt(clientFd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(int));
+            
+            // Incrementamos el buffer para compensar la desactivación de Nagle
+            int sndbuf = 32768;
+            setsockopt(clientFd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
 
             struct timeval sendTimeout = {0, 200000};
             setsockopt(clientFd, SOL_SOCKET, SO_SNDTIMEO, &sendTimeout, sizeof(sendTimeout));
@@ -113,16 +122,11 @@ void cameraStreamTaskTCP(void *pvParameters)
                     if (fb)
                     {
                         bool isValid = false;
-                        if (fb->len > 2000 && fb->buf[0] == 0xFF && fb->buf[1] == 0xD8)
+                        if (fb->len > 1000 && fb->buf[0] == 0xFF && fb->buf[1] == 0xD8)
                         {
-                            for (size_t i = fb->len - 16; i < fb->len - 1; i++)
-                            {
-                                if (fb->buf[i] == 0xFF && fb->buf[i + 1] == 0xD9)
-                                {
-                                    isValid = true;
-                                    break;
-                                }
-                            }
+                            // Relajar la validación: confiar en el driver para evitar dropear frames
+                            // que causan timeouts (WinError 10060) en la app de Python.
+                            isValid = true; 
                         }
 
                         if (isValid)
@@ -137,54 +141,54 @@ void cameraStreamTaskTCP(void *pvParameters)
                             int retries = 0;
                             const int MAX_RETRIES = 10;
 
-                            int hSentTotal = 0;
-                            while (hSentTotal < 4)
+                            // Agrupar el header de 4 bytes y el inicio de la imagen en un solo paquete
+                            // Esto evita la trampa del Delayed ACK de Windows sin necesidad de activar Nagle,
+                            // manteniendo compatibilidad total con la app de Android y Raspberry.
+                            uint8_t firstPacket[1460];
+                            size_t firstPayloadSize = (fb->len > 1456) ? 1456 : fb->len;
+                            memcpy(firstPacket, header, 4);
+                            memcpy(firstPacket + 4, fb->buf, firstPayloadSize);
+
+                            size_t bytesWrittenTotal = 0;
+                            size_t packetSize = 4 + firstPayloadSize;
+                            
+                            while (bytesWrittenTotal < packetSize)
                             {
-                                int s = send(clientFd, header + hSentTotal, 4 - hSentTotal, MSG_NOSIGNAL);
+                                int s = send(clientFd, firstPacket + bytesWrittenTotal, packetSize - bytesWrittenTotal, MSG_NOSIGNAL);
                                 if (s < 0)
                                 {
                                     if (errno == EAGAIN || errno == EWOULDBLOCK)
                                     {
                                         retries++;
-                                        if (retries > MAX_RETRIES)
-                                        {
-                                            socketError = true;
-                                            break;
-                                        }
+                                        if (retries > MAX_RETRIES) { socketError = true; break; }
                                         vTaskDelay(pdMS_TO_TICKS(20));
                                         continue;
                                     }
-                                    socketError = true;
-                                    break;
+                                    socketError = true; break;
                                 }
-                                hSentTotal += s;
+                                bytesWrittenTotal += s;
                                 retries = 0;
                             }
 
                             if (!socketError)
                             {
-                                size_t bytesWrittenTotal = 0;
+                                size_t payloadWritten = firstPayloadSize;
                                 retries = 0;
-                                while (bytesWrittenTotal < fb->len)
+                                while (payloadWritten < fb->len)
                                 {
-                                    int s = send(clientFd, fb->buf + bytesWrittenTotal, fb->len - bytesWrittenTotal, MSG_NOSIGNAL);
+                                    int s = send(clientFd, fb->buf + payloadWritten, fb->len - payloadWritten, MSG_NOSIGNAL);
                                     if (s < 0)
                                     {
                                         if (errno == EAGAIN || errno == EWOULDBLOCK)
                                         {
                                             retries++;
-                                            if (retries > MAX_RETRIES)
-                                            {
-                                                socketError = true;
-                                                break;
-                                            }
+                                            if (retries > MAX_RETRIES) { socketError = true; break; }
                                             vTaskDelay(pdMS_TO_TICKS(20));
                                             continue;
                                         }
-                                        socketError = true;
-                                        break;
+                                        socketError = true; break;
                                     }
-                                    bytesWrittenTotal += s;
+                                    payloadWritten += s;
                                     retries = 0;
                                 }
                             }
@@ -216,13 +220,14 @@ void cameraStreamTaskTCP(void *pvParameters)
                 if (videoFlag)
                 {
                     TickType_t elapsedTime = xTaskGetTickCount() - startTime;
-                    if (elapsedTime < FRAME_TARGET_TIME)
+                    const TickType_t NEW_TARGET = pdMS_TO_TICKS(50); // ~20 FPS. Evita bufferbloat en Python (que lee a 29 FPS).
+                    if (elapsedTime < NEW_TARGET)
                     {
-                        vTaskDelay(FRAME_TARGET_TIME - elapsedTime);
+                        vTaskDelay(NEW_TARGET - elapsedTime);
                     }
                     else
                     {
-                        vTaskDelay(pdMS_TO_TICKS(15));
+                        vTaskDelay(pdMS_TO_TICKS(1)); // Lo más rápido posible
                     }
                 }
             }
@@ -230,7 +235,7 @@ void cameraStreamTaskTCP(void *pvParameters)
             videoFlag = false;
             close(clientFd);
 #ifdef DEBUG
-            Serial.println("[VIDEO] 🔴 Puerto 7000 cerrado y libre.");
+            Serial.println("[VIDEO] 🔴 Puerto 8000 cerrado y libre.");
 #endif
         }
         vTaskDelay(pdMS_TO_TICKS(50));
@@ -253,7 +258,7 @@ void cmdServerTask(void *pvParameters)
     memset(&serverAddr, 0, sizeof(serverAddr));
     serverAddr.sin_family = AF_INET;
     serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    serverAddr.sin_port = htons(4000);
+    serverAddr.sin_port = htons(5000);
 
     if (bind(serverFd, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) < 0)
     {
@@ -292,7 +297,7 @@ void cmdServerTask(void *pvParameters)
         if (clientFd >= 0)
         {
 #ifdef DEBUG
-            Serial.println("\n[CMD] 🟢 Cliente conectado al puerto 4000 (Comandos).");
+            Serial.println("\n[CMD] 🟢 Cliente conectado al puerto 5000 (Comandos).");
 #endif
             int nodelay = 1;
             setsockopt(clientFd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(int));
@@ -366,7 +371,7 @@ void cmdServerTask(void *pvParameters)
                                 if (strcmp(localCmd[0], "CMD_SERVO") == 0)
                                 {
                                     if (localParam[1] == 0)
-                                        setPanAngle(localParam[2]);
+                                        setPanAngle(180 - localParam[2]);
                                     else if (localParam[1] == 1)
                                         setTiltAngle(localParam[2]);
                                 }
@@ -386,30 +391,47 @@ void cmdServerTask(void *pvParameters)
                                 }
                                 else if (strcmp(localCmd[0], "CMD_BUZZER") == 0)
                                 {
-                                    if (localParam[1] == 1 && localParam[2] > 0)
-                                        toneToPlay(buzzerPin, buzzerChannel, localParam[2], 100);
+                                    if (localParam[1] == 1)
+                                    {
+                                        int freq = (localParam[2] > 0) ? localParam[2] : 2000;
+                                        toneToPlay(buzzerPin, buzzerChannel, freq, 100);
+                                    }
                                     else
                                         ledcWriteTone(buzzerChannel, 0);
                                 }
                                 else if (strcmp(localCmd[0], "CMD_LIGHT") == 0)
                                 {
-                                    enableLaser = (localParam[1] == 1);
+                                    if (localParam[1] == 1) {
+                                        enableLaser = !enableLaser; // Toggle para evadir bug de la app
+                                    } else {
+                                        enableLaser = false; // Por si algún día manda el 0
+                                    }
                                     turnLaserOn(enableLaser);
                                 }
                                 else if (strcmp(localCmd[0], "CMD_LED_MOD") == 0)
                                 {
-                                    if (localParam[1] == 2)
+                                    // Comandos de LEDs de RPi (No los usamos para evasión en el ESP32)
+                                }
+                                else if (strcmp(localCmd[0], "CMD_MODE") == 0)
+                                {
+                                    if (strcmp(localCmd[1], "three") == 0)
                                     {
                                         enableObstacleAvoidance = true;
                                         if (obstacleAvoidanceModeTaskHandle != NULL)
                                             xTaskNotifyGive(obstacleAvoidanceModeTaskHandle);
                                     }
                                     else
+                                    {
                                         enableObstacleAvoidance = false;
+                                    }
                                 }
                                 else if (strcmp(localCmd[0], "CMD_MOTOR") == 0)
                                 {
                                     driveSafe(localParam[1], localParam[2], localParam[3], localParam[4]);
+                                }
+                                else if (strcmp(localCmd[0], "CMD_M_MOTOR") == 0 || strcmp(localCmd[0], "CMD_CAR_ROTATE") == 0)
+                                {
+                                    driveMecanum(localParam[1], localParam[2], localParam[3], localParam[4]);
                                 }
                             }
                         }
@@ -461,7 +483,7 @@ void cmdServerTask(void *pvParameters)
             close(clientFd);
             if (dmsTimer != NULL) xTimerStop(dmsTimer, 0);
 #ifdef DEBUG
-            Serial.println("[CMD] 🔴 Puerto 4000 cerrado y libre.");
+            Serial.println("[CMD] 🔴 Puerto 5000 cerrado y libre.");
 #endif
         }
         vTaskDelay(pdMS_TO_TICKS(10));
@@ -497,6 +519,19 @@ void handleCSS()
     {
         webServer.send(404, "text/plain", "CSS no encontrado");
     }
+}
+
+void handleScan()
+{
+    int n = WiFi.scanNetworks();
+    String json = "[";
+    for (int i = 0; i < n; ++i)
+    {
+        if (i > 0) json += ",";
+        json += "{\"ssid\":\"" + WiFi.SSID(i) + "\",\"rssi\":" + String(WiFi.RSSI(i)) + "}";
+    }
+    json += "]";
+    webServer.send(200, "application/json", json);
 }
 
 void handleSave()
@@ -535,6 +570,7 @@ void startCaptivePortal()
 
     webServer.on("/", handleRoot);
     webServer.on("/wifimanager.css", handleCSS);
+    webServer.on("/scan", HTTP_GET, handleScan);
     webServer.on("/save", HTTP_POST, handleSave);
     webServer.onNotFound(handleRoot);
     webServer.begin();
@@ -595,7 +631,7 @@ void initWiFi()
     ledIndicator(0);
     WiFi.persistent(false);
     WiFi.setSleep(WIFI_PS_NONE);
-    WiFi.setTxPower(WIFI_POWER_8_5dBm); // Bajado drásticamente a 8.5dBm para máxima estabilidad eléctrica
+    WiFi.setTxPower(WIFI_POWER_17dBm); // Aumentado a 17dBm para mejorar el rango y latencia (FPS)
     btStop();
     esp_bt_controller_disable();
 
@@ -624,7 +660,14 @@ void initWiFi()
     WiFi.setSleep(false); // EVITAR desconexiones por ahorro de energía
     WiFi.setAutoReconnect(true);
     updateDisplayState(DISPLAY_CONNECTING_WIFI, storedSSID.c_str());
+    
+    // Connect to the best AP in a mesh network
     WiFi.begin(storedSSID.c_str(), storedPASS.c_str());
+    wifi_config_t wifi_config;
+    esp_wifi_get_config(WIFI_IF_STA, &wifi_config);
+    wifi_config.sta.bssid_set = 0;
+    wifi_config.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL; // Roaming al BSSID con mejor señal
+    esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
 
     int attempts = 0;
     while (WiFi.status() != WL_CONNECTED && attempts < 12)

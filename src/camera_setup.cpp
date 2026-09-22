@@ -24,8 +24,8 @@ void setupCamera()
     config.pin_pwdn = PWDN_GPIO_NUM;
     config.pin_reset = RESET_GPIO_NUM;
 
-    // 🚀 Reducido a 10MHz para evitar tearing de hardware y enfriar el sensor
-    config.xclk_freq_hz = 10000000;
+    // 🚀 Acelerado a 20MHz para reducir el lag del sensor
+    config.xclk_freq_hz = 20000000;
     config.pixel_format = PIXFORMAT_JPEG;
 
     if (psramFound())

@@ -20,7 +20,8 @@
         <form action="/save" method="POST">
           <p>
             <label for="ssid">SSID</label>
-            <input type="text" id="ssid" name="ssid" placeholder="Nombre de la red" required><br>
+            <input type="text" id="ssid" name="ssid" placeholder="Nombre de la red" list="ssid-list" required><br>
+            <datalist id="ssid-list"></datalist>
 
             <label for="pass">Password</label>
             <input type="password" id="pass" name="pass" placeholder="Contraseña"><br>
@@ -37,6 +38,21 @@
       </div>
     </div>
   </div>
+  <script>
+    fetch('/scan')
+      .then(response => response.json())
+      .then(data => {
+        const list = document.getElementById('ssid-list');
+        data.forEach(net => {
+          if(net.ssid) {
+            const option = document.createElement('option');
+            option.value = net.ssid;
+            list.appendChild(option);
+          }
+        });
+      })
+      .catch(err => console.error("Error cargando redes", err));
+  </script>
 </body>
 
 </html>
