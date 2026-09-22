@@ -24,8 +24,9 @@ void setupCamera()
     config.pin_pwdn = PWDN_GPIO_NUM;
     config.pin_reset = RESET_GPIO_NUM;
 
-    // 🚀 Acelerado a 20MHz para reducir el lag del sensor
-    config.xclk_freq_hz = 20000000;
+    // 🚀 Reducido a 10MHz para evitar sobrecalentamiento del OV2640 (Thermal Throttling)
+    // que causa caída permanente de FPS después de unos minutos de uso continuo.
+    config.xclk_freq_hz = 10000000;
     config.pixel_format = PIXFORMAT_JPEG;
 
     if (psramFound())
