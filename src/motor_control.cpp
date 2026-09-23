@@ -57,19 +57,7 @@ void driveSafe(int p1, int p2, int p3, int p4)
     int safeFR = mapMotorValue(p3);
     int safeBR = mapMotorValue(p4);
 
-    // Permitir girar sobre su propio eje o retroceder libremente.
-    // Solo bloqueamos si el movimiento neto es frontal.
-    int forwardIntent = p1 + p2 + p3 + p4;
-    bool isTryingToGoForward = (forwardIntent > 200);
-
-    if (enableObstacleAvoidance && obstacleFound && isTryingToGoForward)
-    {
-        brakeAllMotors();
-    }
-    else
-    {
-        driveDirectRaw(safeFL, safeBL, safeFR, safeBR);
-    }
+    driveDirectRaw(safeFL, safeBL, safeFR, safeBR);
 }
 
 void driveDirectRaw(int fl, int bl, int fr, int br)
@@ -115,22 +103,11 @@ void driveMecanum(int angle, int speed, int rotation, int rotationSpeed)
         br = br / max_val * 1500;
     }
     
-    // Check if we are moving forward to trigger obstacle avoidance if needed
-    int forwardIntent = (int)(fl + bl + fr + br);
-    bool isTryingToGoForward = (forwardIntent > 200 && abs(y_trans) > abs(x_trans) && y_trans > 0);
-
-    if (enableObstacleAvoidance && obstacleFound && isTryingToGoForward)
-    {
-        brakeAllMotors();
-    }
-    else
-    {
-        // call mapMotorValue on each and pass to driveDirectRaw
-        int safeFL = mapMotorValue((int)fl);
-        int safeBL = mapMotorValue((int)bl);
-        int safeFR = mapMotorValue((int)fr);
-        int safeBR = mapMotorValue((int)br);
-        
-        driveDirectRaw(safeFL, safeBL, safeFR, safeBR);
-    }
+    // call mapMotorValue on each and pass to driveDirectRaw
+    int safeFL = mapMotorValue((int)fl);
+    int safeBL = mapMotorValue((int)bl);
+    int safeFR = mapMotorValue((int)fr);
+    int safeBR = mapMotorValue((int)br);
+    
+    driveDirectRaw(safeFL, safeBL, safeFR, safeBR);
 }

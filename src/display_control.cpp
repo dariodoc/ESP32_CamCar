@@ -72,8 +72,8 @@ static void renderScreen(const DisplayMessage &msg)
     case DISPLAY_OBSTACLE_ALERT:
         tft.fillRect(0, 60, 160, 20, ST77XX_RED);
         tft.setTextColor(ST77XX_WHITE);
-        tft.setCursor(10, 66);
-        tft.println("! OBSTACULO DETECTADO !");
+        tft.setCursor(2, 66);
+        tft.println(msg.textExtra[0] != '\0' ? msg.textExtra : "! OBSTACULO !");
         break;
 
     case DISPLAY_CLEAR_ALERT:

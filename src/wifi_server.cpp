@@ -435,11 +435,13 @@ void cmdServerTask(void *pvParameters)
                                 }
                                 else if (strcmp(localCmd[0], "CMD_MOTOR") == 0)
                                 {
-                                    driveSafe(localParam[1], localParam[2], localParam[3], localParam[4]);
+                                    if (!enableObstacleAvoidance)
+                                        driveSafe(localParam[1], localParam[2], localParam[3], localParam[4]);
                                 }
                                 else if (strcmp(localCmd[0], "CMD_M_MOTOR") == 0 || strcmp(localCmd[0], "CMD_CAR_ROTATE") == 0)
                                 {
-                                    driveMecanum(localParam[1], localParam[2], localParam[3], localParam[4]);
+                                    if (!enableObstacleAvoidance)
+                                        driveMecanum(localParam[1], localParam[2], localParam[3], localParam[4]);
                                 }
                             }
                         }

@@ -271,10 +271,19 @@ void obstacleAvoidanceMode(void *parameters)
     setupUltrasonic();
     TickType_t lastWakeTime = xTaskGetTickCount();
 
+    // Estado previo de evasión para saber cuándo mandar el freno de seguridad
+    bool wasAvoiding = false;
+
     for (;;)
     {
         if (!enableObstacleAvoidance)
         {
+            if (wasAvoiding)
+            {
+                wasAvoiding = false;
+                brakeAllMotors(); // Frena al recuperar el control manual
+                updateDisplayState(DISPLAY_CLEAR_ALERT, "");
+            }
             if (obstacleFound)
             {
                 obstacleFound = false;
@@ -283,68 +292,128 @@ void obstacleAvoidanceMode(void *parameters)
             ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
             lastWakeTime = xTaskGetTickCount();
         }
+        else
+        {
+            wasAvoiding = true;
+        }
 
-        bool irObstacle = false;
+        bool ir1 = false, ir2 = false, ir3 = false, ir4 = false;
 
-        // 1. Lectura segura del PCF8574 (0x20)
+        // 1. Lectura del PCF8574 (0x20) - Infrarrojos
         if (lockI2C(20))
         {
             Wire.requestFrom(0x20, 1);
             if (Wire.available())
             {
                 uint8_t currentData = Wire.read();
-                // Ya no sobreescribimos el PCF8574 aquí. Dejamos que cmdServerTask lo maneje.
-                
-                bool ir1 = !(currentData & (1 << obstacleDetectorPin1));
-                bool ir2 = !(currentData & (1 << obstacleDetectorPin2));
-                bool ir3 = !(currentData & (1 << obstacleDetectorPin3));
-                bool ir4 = !(currentData & (1 << obstacleDetectorPin4));
-
-                irObstacle = (ir1 || ir2 || ir3 || ir4);
+                ir1 = !(currentData & (1 << obstacleDetectorIR1)); // Back-Right
+                ir2 = !(currentData & (1 << obstacleDetectorIR2)); // Front-Right
+                ir3 = !(currentData & (1 << obstacleDetectorIR3)); // Front-Left
+                ir4 = !(currentData & (1 << obstacleDetectorIR4)); // Back-Left
             }
             unlockI2C();
         }
 
-        // 2. Lectura del Ultrasónico (Trig 33 / Echo 32)
+        // 2. Lectura del Ultrasónico con filtro anti-fantasmas (Debounce)
         float distance = getDistanceCM();
-        // Aumentado a 25 cm para tener tiempo de frenado real
-        bool usObstacle = (distance >= 2.0 && distance <= 25.0);
+        bool currentUsObstacle = (distance >= 2.0 && distance <= 25.0); 
 
-        // 3. Histeresis (Decay Timer) para evitar "tartamudeo"
-        // Activación instantánea, liberación retardada (300ms)
+        static bool lastUsObstacle = false;
+        // Solo declaramos un obstáculo real si lo vio en este ciclo Y en el anterior (doble confirmación)
+        bool usObstacle = (currentUsObstacle && lastUsObstacle);
+        lastUsObstacle = currentUsObstacle;
+
+        // 3. Histeresis de pantalla
         static int obstacleCounter = 0;
-        bool rawObstacle = (irObstacle || usObstacle);
-        
+        bool rawObstacle = (ir1 || ir2 || ir3 || ir4 || usObstacle);
         bool previousObstacleState = obstacleFound;
         
         if (rawObstacle) {
-            obstacleCounter = 5; // 5 ticks * 60ms = 300ms de retención
+            obstacleCounter = 5; 
             obstacleFound = true;
         } else {
-            if (obstacleCounter > 0) {
-                obstacleCounter--;
-            } else {
-                obstacleFound = false;
-            }
+            if (obstacleCounter > 0) obstacleCounter--;
+            else obstacleFound = false;
         }
 
         if (obstacleFound != previousObstacleState)
         {
-            if (obstacleFound)
-            {
-                updateDisplayState(DISPLAY_OBSTACLE_ALERT,"");
-                // 🚀 EL FRENO DE EMERGENCIA DIRECTO
-                // Al ser la tarea de mayor prioridad (3), frena los motores 
-                // instantáneamente sin esperar a que el servidor TCP reaccione.
-                brakeAllMotors();
+            if (obstacleFound) {
+                char debugMsg[32] = "";
+                if (usObstacle) snprintf(debugMsg, sizeof(debugMsg), "OBSTACULO: US (%.0fcm)", distance);
+                else if (ir2) snprintf(debugMsg, sizeof(debugMsg), "OBSTACULO: IR2 (Der)");
+                else if (ir3) snprintf(debugMsg, sizeof(debugMsg), "OBSTACULO: IR3 (Izq)");
+                else if (ir1) snprintf(debugMsg, sizeof(debugMsg), "OBSTACULO: IR1 (Atras)");
+                else if (ir4) snprintf(debugMsg, sizeof(debugMsg), "OBSTACULO: IR4 (Atras)");
+                else snprintf(debugMsg, sizeof(debugMsg), "OBSTACULO DETECTADO");
+                
+                updateDisplayState(DISPLAY_OBSTACLE_ALERT, debugMsg);
             }
-            else
-            {
+            else {
                 updateDisplayState(DISPLAY_CLEAR_ALERT,"");
             }
         }
 
-        // 🚀 Ajustado a 60 ms para reducir la contención del bus I2C y priorizar la cámara
+        // 4. MÁQUINA DE ESTADOS - PILOTO AUTOMÁTICO (Estilo Tanque / Roomba)
+        static int autoState = 0; // 0=Avanzar, 1=Frenando, 2=Reversa, 3=Girando
+        static int stateTimer = 0;
+        static int turnDirection = 90;
+
+        if (enableObstacleAvoidance)
+        {
+            int speed = 800; // Velocidad de crucero
+            
+            if (autoState == 0) // AVANZANDO
+            {
+                if (usObstacle || ir2 || ir3) 
+                {
+                    autoState = 1;
+                    stateTimer = 2; // Frenar por ~120ms
+                    brakeAllMotors();
+                    
+                    // Elegir hacia dónde girar: 90=Izq, -90=Der
+                    if (ir3) turnDirection = -90; // Obstáculo izq -> girar derecha
+                    else if (ir2) turnDirection = 90;  // Obstáculo der -> girar izq
+                    else turnDirection = (esp_random() % 2 == 0) ? 90 : -90; // Aleatorio
+                }
+                else
+                {
+                    driveMecanum(0, speed, 0, 0); // 0 = Adelante
+                }
+            }
+            else if (autoState == 1) // FRENANDO
+            {
+                brakeAllMotors();
+                if (stateTimer > 0) stateTimer--;
+                else {
+                    autoState = 2;
+                    stateTimer = 8; // Reversa por ~480ms
+                }
+            }
+            else if (autoState == 2) // REVERSA
+            {
+                driveMecanum(180, speed, 0, 0); // 180 = Atrás
+                if (stateTimer > 0) stateTimer--;
+                else {
+                    autoState = 3;
+                    stateTimer = 10; // Girar por ~600ms
+                }
+            }
+            else if (autoState == 3) // GIRANDO
+            {
+                driveMecanum(0, 0, turnDirection, speed);
+                if (stateTimer > 0) stateTimer--;
+                else {
+                    autoState = 0; // Volver a avanzar
+                }
+            }
+        }
+        else
+        {
+            autoState = 0;
+            stateTimer = 0;
+        }
+
         vTaskDelayUntil(&lastWakeTime, pdMS_TO_TICKS(60));
     }
 }

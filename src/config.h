@@ -47,10 +47,10 @@ const int rightRearLedPin = 14; // Pin del PCA9685 para el led trasero derecho
 const int trigPin = 33; // Disparo (Trigger) - Salida ESP32 (3.3V)
 const int echoPin = 32; // Eco (Echo) - Entrada ESP32 (Requiere divisor de voltaje a 3.3V)
 
-const int obstacleDetectorPin1 = 3; // Pin del pcf8574
-const int obstacleDetectorPin2 = 2; // Pin del pcf8574
-const int obstacleDetectorPin3 = 1; // Pin del pcf8574
-const int obstacleDetectorPin4 = 0; // Pin del pcf8574
+const int obstacleDetectorIR1 = 3; // Pin del pcf8574 Detector trasero derecho
+const int obstacleDetectorIR2 = 2; // Pin del pcf8574 Detector delantero derecho
+const int obstacleDetectorIR3 = 1; // Pin del pcf8574 Detector delantero izquierdo
+const int obstacleDetectorIR4 = 0; // Pin del pcf8574 Detector trasero izquierdo
 
 const int buzzerPin = 12; // Pin del ESP32 para el buzzer (PWM)
 const int panPin = 4;     // Pin del PCA9685 para el pan
