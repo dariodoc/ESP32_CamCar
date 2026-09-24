@@ -390,9 +390,9 @@ void obstacleAvoidanceMode(void *parameters)
         if (enableObstacleAvoidance || enableIROnlyMode)
         {
             // Velocidad dinámica: si ve algo a menos de 40cm, reduce la velocidad para no estrellarse por inercia
-            int speed = 600; 
+            int speed = 1200; 
             if (!enableIROnlyMode && distance > 18.0 && distance < 40.0) {
-                speed = 400; // Aproximación lenta
+                speed = 700; // Aproximación lenta
             }
             
             if (autoState == 0) // AVANZANDO
