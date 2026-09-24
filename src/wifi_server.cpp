@@ -412,12 +412,21 @@ void cmdServerTask(void *pvParameters)
                                     if (localParam[1] == 2)
                                     {
                                         enableObstacleAvoidance = true;
+                                        enableIROnlyMode = false;
+                                        if (obstacleAvoidanceModeTaskHandle != NULL)
+                                            xTaskNotifyGive(obstacleAvoidanceModeTaskHandle);
+                                    }
+                                    else if (localParam[1] == 3)
+                                    {
+                                        enableObstacleAvoidance = false;
+                                        enableIROnlyMode = true;
                                         if (obstacleAvoidanceModeTaskHandle != NULL)
                                             xTaskNotifyGive(obstacleAvoidanceModeTaskHandle);
                                     }
                                     else
                                     {
                                         enableObstacleAvoidance = false;
+                                        enableIROnlyMode = false;
                                     }
                                 }
                                 else if (strcmp(localCmd[0], "CMD_MODE") == 0)
@@ -435,12 +444,12 @@ void cmdServerTask(void *pvParameters)
                                 }
                                 else if (strcmp(localCmd[0], "CMD_MOTOR") == 0)
                                 {
-                                    if (!enableObstacleAvoidance)
+                                    if (!enableObstacleAvoidance && !enableIROnlyMode)
                                         driveSafe(localParam[1], localParam[2], localParam[3], localParam[4]);
                                 }
                                 else if (strcmp(localCmd[0], "CMD_M_MOTOR") == 0 || strcmp(localCmd[0], "CMD_CAR_ROTATE") == 0)
                                 {
-                                    if (!enableObstacleAvoidance)
+                                    if (!enableObstacleAvoidance && !enableIROnlyMode)
                                         driveMecanum(localParam[1], localParam[2], localParam[3], localParam[4]);
                                 }
                             }

@@ -9,6 +9,7 @@
 extern volatile bool enableLaser;
 extern volatile bool melodyOn;
 extern volatile bool enableObstacleAvoidance;
+extern volatile bool enableIROnlyMode; // 🚀 Modo sin ultrasónico
 extern volatile bool obstacleFound;
 
 void setPanAngle(int angle);

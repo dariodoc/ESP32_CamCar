@@ -16,6 +16,7 @@ Adafruit_PWMServoDriver pca9685(0x40, Wire);
 volatile bool enableLaser = false;
 volatile bool melodyOn = false;
 volatile bool enableObstacleAvoidance = false;
+volatile bool enableIROnlyMode = false;
 volatile bool obstacleFound = false;
 
 // Removed duplicate servo declarations
@@ -256,8 +257,8 @@ float getDistanceCM()
     delayMicroseconds(10);
     digitalWrite(trigPin, LOW);
 
-    // Timeout de 4ms (~68 cm max), suficiente para el radar y no bloquea el RTOS/WiFi
-    long duration = pulseIn(echoPin, HIGH, 4000); 
+    // Timeout de 30ms (~500 cm max)
+    long duration = pulseIn(echoPin, HIGH, 30000); 
 
     if (duration == 0)
         return -1.0;
@@ -276,7 +277,7 @@ void obstacleAvoidanceMode(void *parameters)
 
     for (;;)
     {
-        if (!enableObstacleAvoidance)
+        if (!enableObstacleAvoidance && !enableIROnlyMode)
         {
             if (wasAvoiding)
             {
@@ -314,14 +315,38 @@ void obstacleAvoidanceMode(void *parameters)
             unlockI2C();
         }
 
-        // 2. Lectura del Ultrasónico con filtro anti-fantasmas (Debounce)
-        float distance = getDistanceCM();
-        bool currentUsObstacle = (distance >= 2.0 && distance <= 25.0); 
+        // 2. Lectura del Ultrasónico (Filtro Mediana en el tiempo)
+        static float usHistory[3] = {100.0, 100.0, 100.0};
+        
+        float rawDist = getDistanceCM();
+        if (rawDist < 0) rawDist = 100.0; // timeout
+        
+        usHistory[0] = usHistory[1];
+        usHistory[1] = usHistory[2];
+        usHistory[2] = rawDist;
+        
+        // Ordenar copia para mediana
+        float sorted[3] = {usHistory[0], usHistory[1], usHistory[2]};
+        for (int i = 0; i < 2; i++) {
+            for (int j = 0; j < 2 - i; j++) {
+                if (sorted[j] > sorted[j + 1]) {
+                    float temp = sorted[j];
+                    sorted[j] = sorted[j + 1];
+                    sorted[j + 1] = temp;
+                }
+            }
+        }
+        float distance = sorted[1];
+        if (distance >= 100.0) distance = -1.0;
 
-        static bool lastUsObstacle = false;
-        // Solo declaramos un obstáculo real si lo vio en este ciclo Y en el anterior (doble confirmación)
-        bool usObstacle = (currentUsObstacle && lastUsObstacle);
-        lastUsObstacle = currentUsObstacle;
+        
+        // Con el filtro de mediana, la lectura es súper estable. Reacción instantánea.
+        // Incluimos desde 0.1cm hasta 22.0cm (ignoramos -1.0 que es timeout)
+        bool usObstacle = (distance > 0.0 && distance <= 22.0); 
+
+        if (enableIROnlyMode) {
+            usObstacle = false; // 🚀 Ignorar ultrasónico por completo en modo 3
+        }
 
         // 3. Histeresis de pantalla
         static int obstacleCounter = 0;
@@ -354,31 +379,52 @@ void obstacleAvoidanceMode(void *parameters)
             }
         }
 
-        // 4. MÁQUINA DE ESTADOS - PILOTO AUTOMÁTICO (Estilo Tanque / Roomba)
-        static int autoState = 0; // 0=Avanzar, 1=Frenando, 2=Reversa, 3=Girando
+        // 4. MÁQUINA DE ESTADOS - PILOTO AUTOMÁTICO (Estilo Tanque / Mecanum)
+        static int autoState = 0; // 0=Avanzar, 1=Frenando, 2=Reversa, 3=Girando, 4=Strafing
         static int stateTimer = 0;
         static int turnDirection = 90;
+        static int strafeDirection = 90;
+        static int stuckCounter = 0;
+        static int forwardCounter = 0;
 
-        if (enableObstacleAvoidance)
+        if (enableObstacleAvoidance || enableIROnlyMode)
         {
-            int speed = 800; // Velocidad de crucero
+            // Velocidad dinámica: si ve algo a menos de 40cm, reduce la velocidad para no estrellarse por inercia
+            int speed = 600; 
+            if (!enableIROnlyMode && distance > 18.0 && distance < 40.0) {
+                speed = 400; // Aproximación lenta
+            }
             
             if (autoState == 0) // AVANZANDO
             {
                 if (usObstacle || ir2 || ir3) 
                 {
+                    stuckCounter++;
+                    forwardCounter = 0;
                     autoState = 1;
                     stateTimer = 2; // Frenar por ~120ms
                     brakeAllMotors();
                     
-                    // Elegir hacia dónde girar: 90=Izq, -90=Der
-                    if (ir3) turnDirection = -90; // Obstáculo izq -> girar derecha
-                    else if (ir2) turnDirection = 90;  // Obstáculo der -> girar izq
-                    else turnDirection = (esp_random() % 2 == 0) ? 90 : -90; // Aleatorio
+                    if (stuckCounter >= 4) {
+                        turnDirection = (esp_random() % 2 == 0) ? 90 : -90;
+                    } else if (stuckCounter >= 2) {
+                        if (ir3) strafeDirection = -90; 
+                        else if (ir2) strafeDirection = 90; 
+                        else strafeDirection = (esp_random() % 2 == 0) ? 90 : -90;
+                    } else {
+                        if (ir3) turnDirection = -90; 
+                        else if (ir2) turnDirection = 90;  
+                        else turnDirection = (esp_random() % 2 == 0) ? 90 : -90; 
+                    }
                 }
                 else
                 {
                     driveMecanum(0, speed, 0, 0); // 0 = Adelante
+                    forwardCounter++;
+                    if (forwardCounter > 25) { 
+                        stuckCounter = 0;      
+                        if (forwardCounter > 100) forwardCounter = 100; 
+                    }
                 }
             }
             else if (autoState == 1) // FRENANDO
@@ -386,8 +432,13 @@ void obstacleAvoidanceMode(void *parameters)
                 brakeAllMotors();
                 if (stateTimer > 0) stateTimer--;
                 else {
-                    autoState = 2;
-                    stateTimer = 8; // Reversa por ~480ms
+                    if (stuckCounter >= 2 && stuckCounter < 4) {
+                        autoState = 4; // Strafing
+                        stateTimer = 15; 
+                    } else {
+                        autoState = 2;
+                        stateTimer = (stuckCounter >= 4) ? 14 : 7; 
+                    }
                 }
             }
             else if (autoState == 2) // REVERSA
@@ -396,12 +447,20 @@ void obstacleAvoidanceMode(void *parameters)
                 if (stateTimer > 0) stateTimer--;
                 else {
                     autoState = 3;
-                    stateTimer = 10; // Girar por ~600ms
+                    stateTimer = (stuckCounter >= 4) ? 18 : 9; 
                 }
             }
             else if (autoState == 3) // GIRANDO
             {
                 driveMecanum(0, 0, turnDirection, speed);
+                if (stateTimer > 0) stateTimer--;
+                else {
+                    autoState = 0; // Volver a avanzar
+                }
+            }
+            else if (autoState == 4) // STRAFING LATERAL (MECANUM)
+            {
+                driveMecanum(strafeDirection, speed, 0, 0);
                 if (stateTimer > 0) stateTimer--;
                 else {
                     autoState = 0; // Volver a avanzar
