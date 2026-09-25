@@ -19,6 +19,10 @@ void stopAllMotors()
 {
     // Desactivar Standby para apagar los transistores y ahorrar energía
     setStandbyPin(false);
+    
+    // Apagar pilotos automáticos para que no vuelvan a arrancar los motores
+    enableObstacleAvoidance = false;
+    enableIROnlyMode = false;
 
     leftRearLed(HIGH);
     rightRearLed(HIGH);
