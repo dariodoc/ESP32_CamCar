@@ -390,13 +390,19 @@ void cmdServerTask(void *pvParameters)
                                 }
                                 else if (strcmp(localCmd[0], "CMD_BUZZER") == 0)
                                 {
-                                    if (localParam[1] == 1)
+                                    if (localParam[1] == 1) // Botón presionado en la app
                                     {
-                                        int freq = (localParam[2] > 0) ? localParam[2] : 2000;
-                                        toneToPlay(buzzerPin, buzzerChannel, freq, 100);
+                                        if (melodyOn) {
+                                            // Si ya estaba sonando, apagarla
+                                            melodyOn = false;
+                                            ledcWriteTone(buzzerChannel, 0);
+                                        } else {
+                                            // Si no estaba sonando, iniciarla
+                                            melodyOn = true;
+                                            if (playMelodyTaskHandle != NULL)
+                                                xTaskNotifyGive(playMelodyTaskHandle);
+                                        }
                                     }
-                                    else
-                                        ledcWriteTone(buzzerChannel, 0);
                                 }
                                 else if (strcmp(localCmd[0], "CMD_LIGHT") == 0)
                                 {
@@ -619,6 +625,8 @@ void dmsTimerCallback(TimerHandle_t xTimer)
     Serial.println("🚨 DMS ACTIVADO: No se recibieron comandos. Apagando motores.");
 #endif
     stopAllMotors();
+    melodyOn = false;
+    ledcWriteTone(buzzerChannel, 0);
 }
 
 volatile bool isWiFiConnected = false;
@@ -638,6 +646,8 @@ void onWiFiEvent(WiFiEvent_t event)
             Serial.println("🚨 EVENTO WIFI: Desconectado. Cortando motores e intentando reconexión...");
 #endif
             stopAllMotors();
+            melodyOn = false;
+            ledcWriteTone(buzzerChannel, 0);
             isWiFiConnected = false;
             updateDisplayState(DISPLAY_CONNECTING_WIFI, "Reconectando...");
             WiFi.reconnect();

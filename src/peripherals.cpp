@@ -151,6 +151,10 @@ void setupPeripherals()
     {
         xTaskCreatePinnedToCore(servoSlewTask, "ServoTask", 2048, NULL, 1, &servoTaskHandle, 1);
     }
+    if (playMelodyTaskHandle == NULL)
+    {
+        xTaskCreatePinnedToCore(playMelody, "playMelody", 2048, NULL, 1, &playMelodyTaskHandle, 1);
+    }
 
     pinMode(builtinLedPin, OUTPUT);
     digitalWrite(builtinLedPin, HIGH);
