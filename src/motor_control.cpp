@@ -18,6 +18,7 @@ Motor motorBR(motorBRIn1pin, motorBRIn2pin, motorBRPWMPin, motorBRoffset, &BMCpc
 static int targetFL = 0, targetBL = 0, targetFR = 0, targetBR = 0;
 static int currentFL = 0, currentBL = 0, currentFR = 0, currentBR = 0;
 static bool immediateBrake = false;
+static bool immediateStop = false;
 static TaskHandle_t motorTaskHandle = NULL;
 
 void motorSlewTask(void *pvParameters)
@@ -25,21 +26,30 @@ void motorSlewTask(void *pvParameters)
     const int SLEW_STEP = 300; // Incremento máximo por ciclo (Rampa de aceleración)
     for (;;)
     {
-        if (immediateBrake)
+        if (immediateBrake || immediateStop)
         {
             currentFL = 0; currentBL = 0; currentFR = 0; currentBR = 0;
             targetFL = 0; targetBL = 0; targetFR = 0; targetBR = 0;
             
-            setStandbyPin(true);
-            motorFL.brake();
-            motorBL.brake();
-            motorFR.brake();
-            motorBR.brake();
+            if (immediateStop) {
+                setStandbyPin(false); // Pin Standby LOW: Desconecta fisicamente los motores (Coast)
+                motorFL.drive(0);
+                motorBL.drive(0);
+                motorFR.drive(0);
+                motorBR.drive(0);
+            } else {
+                setStandbyPin(true); // Pin Standby HIGH: Habilita el puente H para freno electrnico
+                motorFL.brake();
+                motorBL.brake();
+                motorFR.brake();
+                motorBR.brake();
+            }
             leftRearLed(HIGH);
             rightRearLed(HIGH);
             
             syncMotorsI2C();
             immediateBrake = false;
+            immediateStop = false;
         }
         else
         {
@@ -106,10 +116,9 @@ void setupMotors()
 
 void stopAllMotors()
 {
-    setStandbyPin(false);
     enableObstacleAvoidance = false;
     enableIROnlyMode = false;
-    immediateBrake = true;
+    immediateStop = true;
 }
 
 void brakeAllMotors()
