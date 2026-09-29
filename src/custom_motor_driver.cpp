@@ -98,6 +98,7 @@ void Motor::setMotorState(int stateIn1, int stateIn2, int speed)
         lastStateIn1 = stateIn1;
         lastStateIn2 = stateIn2;
         lastSpeed = speed;
+
         if (pcf == &FMCpcf8574)
         {
             if (stateIn1 == HIGH)
@@ -113,7 +114,7 @@ void Motor::setMotorState(int stateIn1, int stateIn2, int speed)
             // ?? MASCARA ATOMICA DE ENTRADAS: Forzar los pines 0, 1, 2 y 3 siempre a 1 (HIGH)
             fmcPcfShadow |= 0x0F;
         }
-        else if (pcf == &BMCpcf8574)
+        else
         {
             if (stateIn1 == HIGH)
                 bmcPcfShadow |= (1 << In1);
@@ -124,20 +125,24 @@ void Motor::setMotorState(int stateIn1, int stateIn2, int speed)
                 bmcPcfShadow |= (1 << In2);
             else
                 bmcPcfShadow &= ~(1 << In2);
+
+            // ?? Respetar pin 5 del BMC
+            bmcPcfShadow |= (1 << 5);
         }
 
-        // ?? ANTI-BROWNOUT MAGIA: Desfasar el pulso PWM de cada motor!
-        uint16_t startTick = (PWM * 1024) % 4096;
-        uint16_t endTick = (startTick + speed) % 4096;
+        uint16_t duty = (speed >= 4095) ? 4095 : speed;
+        // Desfase perfecto basado en el pin del PWM (0, 1, 2 o 3)
+        // Separa los 4 motores por 1024 ticks exactos para evitar superposicion de picos
+        uint16_t startTick = (PWM * 1024) % 4096; 
 
-        if (speed == 4095) { // 100% duty cycle especial
-            pca->setPWM(PWM, 4096, 0); 
-        } else if (speed == 0) { // 0% duty cycle especial
-            pca->setPWM(PWM, 0, 4096);
+        if (duty >= 4095) {
+            pca->setPWM(PWM, 4096, 0); // FULLY ON
+        } else if (duty == 0) {
+            pca->setPWM(PWM, 0, 4096); // FULLY OFF
         } else {
-            pca->setPWM(PWM, startTick, endTick);
+            pca->setPWM(PWM, startTick, (startTick + duty) % 4096);
         }
-        
+
         unlockI2C();
     }
 }

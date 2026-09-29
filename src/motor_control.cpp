@@ -38,11 +38,23 @@ void motorSlewTask(void *pvParameters)
                 motorFR.drive(0);
                 motorBR.drive(0);
             } else {
-                setStandbyPin(true); // Pin Standby HIGH: Habilita el puente H para freno electrnico
+                // Freno electrónico activo (Short-circuit brake)
+                setStandbyPin(true);
                 motorFL.brake();
                 motorBL.brake();
                 motorFR.brake();
                 motorBR.brake();
+                syncMotorsI2C();
+                
+                // Aplicar freno solo por 150ms para evitar sobrecorriente (Brownout)
+                vTaskDelay(pdMS_TO_TICKS(150));
+                
+                // Luego pasar a estado libre (Coast)
+                setStandbyPin(false);
+                motorFL.drive(0);
+                motorBL.drive(0);
+                motorFR.drive(0);
+                motorBR.drive(0);
             }
             leftRearLed(HIGH);
             rightRearLed(HIGH);
@@ -130,7 +142,7 @@ int mapMotorValue(int rawValue)
 {
     if (rawValue == 0)
         return 0;
-    const int MIN_PWM = 819, MAX_PWM = 4095;
+    const int MIN_PWM = 0, MAX_PWM = 4095;
     int sign = (rawValue > 0) ? 1 : -1;
     int absVal = constrain(abs(rawValue), 210, 1500);
 

@@ -263,7 +263,7 @@ void setupUltrasonic()
     rmt_rx.rmt_mode = RMT_MODE_RX;
     rmt_rx.rx_config.filter_en = true;
     rmt_rx.rx_config.filter_ticks_thresh = 100; // Filtrar ruidos menores a 100us
-    rmt_rx.rx_config.idle_threshold = 30000;    // Timeout de 30ms (30,000 us)
+    rmt_rx.rx_config.idle_threshold = 5000;    // Timeout de 30ms (30,000 us)
 
     rmt_config(&rmt_rx);
     rmt_driver_install(rmt_rx.channel, 1000, 0); // Instalar driver RMT
