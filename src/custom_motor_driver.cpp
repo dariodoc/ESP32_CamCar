@@ -127,7 +127,7 @@ void Motor::setMotorState(int stateIn1, int stateIn2, int speed)
         }
 
         // ?? ANTI-BROWNOUT MAGIA: Desfasar el pulso PWM de cada motor!
-        uint16_t startTick = (PWM * 256) % 4096;
+        uint16_t startTick = (PWM * 1024) % 4096;
         uint16_t endTick = (startTick + speed) % 4096;
 
         if (speed == 4095) { // 100% duty cycle especial

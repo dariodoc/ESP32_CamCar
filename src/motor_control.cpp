@@ -110,7 +110,7 @@ void setupMotors()
 {
     if (motorTaskHandle == NULL)
     {
-        xTaskCreatePinnedToCore(motorSlewTask, "MotorTask", 2048, NULL, 1, &motorTaskHandle, 1);
+        xTaskCreatePinnedToCore(motorSlewTask, "MotorTask", 4096, NULL, 1, &motorTaskHandle, 1);
     }
 }
 

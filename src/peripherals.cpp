@@ -157,6 +157,8 @@ void setupPeripherals()
     ledcDetachPin(buzzerPin);
 
     Wire.begin(SIOD_GPIO_NUM, SIOC_GPIO_NUM);
+    Wire.setTimeOut(20); // Prevent I2C deadlock from motor EMI
+    Wire.setClock(100000); // Lower I2C speed to 100kHz for robustness
     vTaskDelay(pdMS_TO_TICKS(100));
 
     Wire.setClock(100000);
