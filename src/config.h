@@ -80,6 +80,12 @@ const int STBYpin = 4; // Pin de PCF8574 para Standby
 const int tftResetPcfPin = 5; // Pin P5 del PCF8574 Trasero (0x24) para Reset del ST7735
 
 // --- CONFIGURACIÓN DE FREERTOS ---
-#define STACK_SIZE (1024 * 4)
+// --- CONFIGURACION DEL ACCESS POINT (Portal Cautivo) ---
+#define AP_SSID "ESP-CAMERA-CAR"
+#define AP_PASSWORD "carbondioxide"
+
+// --- CONFIGURACION DE CAMARA ---
+#define CAMERA_XCLK_FREQ 10000000   // 10MHz: Evita desbordamiento DMA I2S
+#define CAMERA_JPEG_QUALITY 30      // Calidad JPEG (menor = mejor calidad)
 
 #endif // CONFIG_H

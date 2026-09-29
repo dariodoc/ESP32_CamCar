@@ -12,6 +12,8 @@ extern void unlockI2C();
 static uint8_t fmcPcfShadow = 0xFF; // Expansor Frontal (0x20): Bits 0-3 en 1 (Entradas IR)
 static uint8_t bmcPcfShadow = 0xFF; // Expansor Trasero  (0x24): Motores BL, BR, STBY y Reset TFT
 static bool currentStandbyState = false;
+static uint8_t lastWrittenFmc = 0x00; // Forzar primera escritura I2C
+static uint8_t lastWrittenBmc = 0x00; // Forzar primera escritura I2C
 
 uint8_t getBmcPcfShadow()
 {
@@ -69,6 +71,10 @@ Motor::Motor(int In1pin, int In2pin, int PWMpin, int offset, PCF8574 *pcfDev, Ad
 
 void syncMotorsI2C()
 {
+    // Dirty check: Si los shadows no cambiaron desde la ultima escritura, no spammear I2C
+    if (fmcPcfShadow == lastWrittenFmc && bmcPcfShadow == lastWrittenBmc)
+        return;
+
     if (lockI2C(20))
     {
         // 1. Enviar estado de motores delanteros (FMC)
@@ -80,6 +86,9 @@ void syncMotorsI2C()
         Wire.beginTransmission(0x24);
         Wire.write(bmcPcfShadow);
         Wire.endTransmission();
+
+        lastWrittenFmc = fmcPcfShadow;
+        lastWrittenBmc = bmcPcfShadow;
 
         unlockI2C();
     }

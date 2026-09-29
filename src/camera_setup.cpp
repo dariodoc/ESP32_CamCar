@@ -27,14 +27,14 @@ void setupCamera()
     // 🚀 Reducido a 10MHz para evitar el desbordamiento de la cola DMA I2S.
     // A 20MHz, la cámara genera fotogramas demasiado rápido (33ms). Si el envío por Wi-Fi
     // toma más de 33ms, el driver colapsa y congela la imagen durante 1 segundo.
-    config.xclk_freq_hz = 10000000;
+    config.xclk_freq_hz = CAMERA_XCLK_FREQ;
     config.pixel_format = PIXFORMAT_JPEG;
 
     if (psramFound())
     {
         config.fb_location = CAMERA_FB_IN_PSRAM;
         config.frame_size = FRAMESIZE_QVGA;
-        config.jpeg_quality = 30; 
+        config.jpeg_quality = CAMERA_JPEG_QUALITY; 
         
         config.fb_count = 1;                   
         config.grab_mode = CAMERA_GRAB_WHEN_EMPTY; 
@@ -43,7 +43,7 @@ void setupCamera()
     {
         config.fb_location = CAMERA_FB_IN_DRAM;
         config.frame_size = FRAMESIZE_QVGA;
-        config.jpeg_quality = 30;
+        config.jpeg_quality = CAMERA_JPEG_QUALITY;
         config.fb_count = 1;
         config.grab_mode = CAMERA_GRAB_LATEST;
     }

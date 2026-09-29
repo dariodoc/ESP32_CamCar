@@ -569,31 +569,11 @@ void handleSave()
     ESP.restart();
 }
 
-void startCaptivePortal()
+void captivePortalTask(void *pvParameters)
 {
-    if (!SPIFFS.begin(true))
-    {
-#ifdef DEBUG
-        Serial.println("❌ Fallo SPIFFS");
-#endif
-    }
-
-    WiFi.mode(WIFI_AP);
-    WiFi.softAP("ESP-CAMERA-CAR", "carbondioxide");
-    IPAddress apIP(192, 168, 4, 1);
-    WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
-    dnsServer.start(53, "*", apIP);
-
-    webServer.on("/", handleRoot);
-    webServer.on("/wifimanager.css", handleCSS);
-    webServer.on("/scan", HTTP_GET, handleScan);
-    webServer.on("/save", HTTP_POST, handleSave);
-    webServer.onNotFound(handleRoot);
-    webServer.begin();
-
     int currentLedState = 0;
     TickType_t lastBlink = xTaskGetTickCount();
-    while (true)
+    for (;;)
     {
         dnsServer.processNextRequest();
         webServer.handleClient();
@@ -605,6 +585,32 @@ void startCaptivePortal()
         }
         vTaskDelay(pdMS_TO_TICKS(10));
     }
+}
+
+void startCaptivePortal()
+{
+    if (!SPIFFS.begin(true))
+    {
+#ifdef DEBUG
+        Serial.println("❌ Fallo SPIFFS");
+#endif
+    }
+
+    WiFi.mode(WIFI_AP);
+    WiFi.softAP(AP_SSID, AP_PASSWORD);
+    IPAddress apIP(192, 168, 4, 1);
+    WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
+    dnsServer.start(53, "*", apIP);
+
+    webServer.on("/", handleRoot);
+    webServer.on("/wifimanager.css", handleCSS);
+    webServer.on("/scan", HTTP_GET, handleScan);
+    webServer.on("/save", HTTP_POST, handleSave);
+    webServer.onNotFound(handleRoot);
+    webServer.begin();
+
+    // Lanzar como tarea FreeRTOS para que setup() termine y OTA funcione
+    xTaskCreatePinnedToCore(captivePortalTask, "CaptivePortal", 4096, NULL, 1, NULL, 0);
 }
 
 void dmsTimerCallback(TimerHandle_t xTimer)

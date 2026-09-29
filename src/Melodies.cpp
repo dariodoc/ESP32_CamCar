@@ -15,6 +15,22 @@
 // Declaración externa: enlaza esta librería con la variable global de tu programa principal
 extern volatile bool melodyOn;
 
+// Cache del TaskHandle para evitar strcmp() en cada nota (O(1) vs O(n))
+static TaskHandle_t cachedMelodyTaskHandle = NULL;
+
+static inline bool isMelodyTaskAndOff()
+{
+    TaskHandle_t current = xTaskGetCurrentTaskHandle();
+    if (cachedMelodyTaskHandle == NULL)
+    {
+        if (strcmp(pcTaskGetName(current), "playMelody") == 0)
+            cachedMelodyTaskHandle = current;
+        else
+            return false; // No es la tarea de melodia
+    }
+    return (current == cachedMelodyTaskHandle && !melodyOn);
+}
+
 const static int buzzFrequency = 5000;
 const static int buzzResolution = 12;
 
@@ -22,7 +38,7 @@ void toneToPlay(uint32_t buzzPin, uint8_t buzzChannel, uint32_t buzzNote, uint32
 {
     // Magia de FreeRTOS: ¿Quién está llamando a esta función?
     // Si es la tarea "playMelody" y el usuario la apagó, abortamos al instante.
-    if (strcmp(pcTaskGetName(NULL), "playMelody") == 0 && !melodyOn)
+    if (isMelodyTaskAndOff())
         return;
 
     ledcSetup(buzzChannel, buzzFrequency, buzzResolution);
@@ -35,13 +51,13 @@ void toneToPlay(uint32_t buzzPin, uint8_t buzzChannel, uint32_t buzzNote, uint32
 void toneToPlay(uint32_t buzzPin, uint8_t buzzChannel, uint32_t buzzNote, uint32_t buzzDuration, uint32_t buzzBips)
 {
     // Verificamos antes de entrar al bucle
-    if (strcmp(pcTaskGetName(NULL), "playMelody") == 0 && !melodyOn)
+    if (isMelodyTaskAndOff())
         return;
 
     for (int i = 0; i < buzzBips; i++)
     {
         // Verificamos también dentro del bucle por si se apaga a la mitad de los pitidos
-        if (strcmp(pcTaskGetName(NULL), "playMelody") == 0 && !melodyOn)
+        if (isMelodyTaskAndOff())
             return;
 
         ledcSetup(buzzChannel, buzzFrequency, buzzResolution);
