@@ -596,7 +596,7 @@ void startCaptivePortal()
 #endif
     }
 
-    WiFi.mode(WIFI_AP);
+    WiFi.mode(WIFI_AP_STA);
     WiFi.softAP(AP_SSID, AP_PASSWORD);
     IPAddress apIP(192, 168, 4, 1);
     WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
@@ -668,7 +668,11 @@ void initWiFi()
     preferences.end();
 
     if (storedSSID.length() == 0)
+    {
+        updateDisplayState(DISPLAY_PORTAL_ACTIVE);
         startCaptivePortal();
+        return; // Detener la inicialización de WiFi STA
+    }
 
     IPAddress staticIP, gateway, subnet(255, 255, 255, 0), dns(8, 8, 8, 8);
     if (storedIP.length() > 0 && storedGW.length() > 0)
@@ -703,6 +707,7 @@ void initWiFi()
     {
         updateDisplayState(DISPLAY_PORTAL_ACTIVE);
         startCaptivePortal();
+        return;
     }
 
     updateDisplayState(DISPLAY_CONNECTED, WiFi.localIP().toString().c_str());
