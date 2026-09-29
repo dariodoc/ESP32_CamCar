@@ -15,37 +15,113 @@ Motor motorBL(motorBLIn1pin, motorBLIn2pin, motorBLPWMPin, motorBLoffset, &BMCpc
 Motor motorFR(motorFRIn1pin, motorFRIn2pin, motorFRPWMPin, motorFRoffset, &FMCpcf8574, &pca9685);
 Motor motorBR(motorBRIn1pin, motorBRIn2pin, motorBRPWMPin, motorBRoffset, &BMCpcf8574, &pca9685);
 
+static int targetFL = 0, targetBL = 0, targetFR = 0, targetBR = 0;
+static int currentFL = 0, currentBL = 0, currentFR = 0, currentBR = 0;
+static bool immediateBrake = false;
+static TaskHandle_t motorTaskHandle = NULL;
+
+void motorSlewTask(void *pvParameters)
+{
+    const int SLEW_STEP = 300; // Incremento máximo por ciclo (Rampa de aceleración)
+    for (;;)
+    {
+        if (immediateBrake)
+        {
+            currentFL = 0; currentBL = 0; currentFR = 0; currentBR = 0;
+            targetFL = 0; targetBL = 0; targetFR = 0; targetBR = 0;
+            
+            setStandbyPin(true);
+            motorFL.brake();
+            motorBL.brake();
+            motorFR.brake();
+            motorBR.brake();
+            leftRearLed(HIGH);
+            rightRearLed(HIGH);
+            
+            syncMotorsI2C();
+            immediateBrake = false;
+        }
+        else
+        {
+            bool changed = false;
+
+            auto applyRamp = [](int &current, int target) {
+                const int SLEW_STEP = 300;
+                const int MIN_PWM = 819;
+                
+                if (current < target) {
+                    if (current == 0) current = MIN_PWM;
+                    else current = min(current + SLEW_STEP, target);
+                }
+                else if (current > target) {
+                    if (current == 0) current = -MIN_PWM;
+                    else current = max(current - SLEW_STEP, target);
+                }
+                
+                // Cut-off a 0 si caemos en la zona muerta
+                if (abs(current) < MIN_PWM) current = 0;
+            };
+
+            if (currentFL != targetFL) { applyRamp(currentFL, targetFL); changed = true; }
+            if (currentBL != targetBL) { applyRamp(currentBL, targetBL); changed = true; }
+            if (currentFR != targetFR) { applyRamp(currentFR, targetFR); changed = true; }
+            if (currentBR != targetBR) { applyRamp(currentBR, targetBR); changed = true; }
+
+            if (changed)
+            {
+                if (currentFL == 0 && currentBL == 0 && currentFR == 0 && currentBR == 0)
+                {
+                    setStandbyPin(true);
+                    motorFL.brake();
+                    motorBL.brake();
+                    motorFR.brake();
+                    motorBR.brake();
+                    leftRearLed(HIGH);
+                    rightRearLed(HIGH);
+                }
+                else
+                {
+                    setStandbyPin(true);
+                    motorFL.drive(currentFL);
+                    motorBL.drive(currentBL);
+                    motorFR.drive(currentFR);
+                    motorBR.drive(currentBR);
+                    leftRearLed(LOW);
+                    rightRearLed(LOW);
+                }
+                syncMotorsI2C();
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(20)); // 50Hz Update rate
+    }
+}
+
+void setupMotors()
+{
+    if (motorTaskHandle == NULL)
+    {
+        xTaskCreatePinnedToCore(motorSlewTask, "MotorTask", 2048, NULL, 1, &motorTaskHandle, 1);
+    }
+}
+
 void stopAllMotors()
 {
-    // Desactivar Standby para apagar los transistores y ahorrar energía
     setStandbyPin(false);
-    
-    // Apagar pilotos automáticos para que no vuelvan a arrancar los motores
     enableObstacleAvoidance = false;
     enableIROnlyMode = false;
-
-    leftRearLed(HIGH);
-    rightRearLed(HIGH);
+    immediateBrake = true;
 }
 
 void brakeAllMotors()
 {
-    setStandbyPin(true);
-    
-    motorFL.brake();
-    motorBL.brake();
-    motorFR.brake();
-    motorBR.brake();
-
-    leftRearLed(HIGH);
-    rightRearLed(HIGH);
+    immediateBrake = true;
 }
 
 int mapMotorValue(int rawValue)
 {
     if (rawValue == 0)
         return 0;
-    const int MIN_PWM = 800, MAX_PWM = 4095;
+    const int MIN_PWM = 819, MAX_PWM = 4095;
     int sign = (rawValue > 0) ? 1 : -1;
     int absVal = constrain(abs(rawValue), 210, 1500);
 
@@ -68,19 +144,14 @@ void driveDirectRaw(int fl, int bl, int fr, int br)
 {
     if (fl == 0 && bl == 0 && fr == 0 && br == 0)
     {
-        brakeAllMotors(); // Frenado electromagnético en lugar de fricción libre
+        immediateBrake = true;
         return;
     }
 
-    setStandbyPin(true);
-
-    motorFL.drive(fl);
-    motorBL.drive(bl);
-    motorFR.drive(fr);
-    motorBR.drive(br);
-
-    leftRearLed(LOW);
-    rightRearLed(LOW);
+    targetFL = fl;
+    targetBL = bl;
+    targetFR = fr;
+    targetBR = br;
 }
 
 void driveMecanum(int angle, int speed, int rotation, int rotationSpeed)

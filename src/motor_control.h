@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 
+void setupMotors();
 void brakeAllMotors();
 void stopAllMotors();
 void driveDirectRaw(int fl, int bl, int fr, int br);

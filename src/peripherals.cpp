@@ -242,28 +242,73 @@ void centerServos()
     setTiltAngle(tiltCenter);
 }
 
+#include "driver/rmt.h"
+
+// RMT configuracin para el pin ECHO
+#define RMT_RX_CHANNEL RMT_CHANNEL_0
+
 void setupUltrasonic()
 {
     pinMode(trigPin, OUTPUT);
-    pinMode(echoPin, INPUT);
     digitalWrite(trigPin, LOW);
+
+    // Configurar RMT (Remote Control) para leer el ECHO en hardware (sin bloquear CPU ni usar interrupciones)
+    rmt_config_t rmt_rx;
+    rmt_rx.channel = RMT_RX_CHANNEL;
+    rmt_rx.gpio_num = (gpio_num_t)echoPin;
+    rmt_rx.clk_div = 80; // Divisor 80: reloj de 80MHz -> 1 tick = 1 microsegundo
+    rmt_rx.mem_block_num = 1;
+    rmt_rx.rmt_mode = RMT_MODE_RX;
+    rmt_rx.rx_config.filter_en = true;
+    rmt_rx.rx_config.filter_ticks_thresh = 100; // Filtrar ruidos menores a 100us
+    rmt_rx.rx_config.idle_threshold = 30000;    // Timeout de 30ms (30,000 us)
+
+    rmt_config(&rmt_rx);
+    rmt_driver_install(rmt_rx.channel, 1000, 0); // Instalar driver RMT
 }
 
 float getDistanceCM()
 {
+    // Limpiar el buffer circular (Ring Buffer) de lecturas anteriores
+    RingbufHandle_t rb = NULL;
+    rmt_get_ringbuf_handle(RMT_RX_CHANNEL, &rb);
+    if (rb) {
+        size_t rx_size = 0;
+        rmt_item32_t* dummy = (rmt_item32_t*) xRingbufferReceive(rb, &rx_size, 0);
+        if (dummy) vRingbufferReturnItem(rb, (void*) dummy);
+    }
+
+    // Iniciar captura en hardware RMT
+    rmt_rx_start(RMT_RX_CHANNEL, true);
+
+    // Mandar el pulso de 10us por TRIG
     digitalWrite(trigPin, LOW);
     delayMicroseconds(2);
     digitalWrite(trigPin, HIGH);
     delayMicroseconds(10);
     digitalWrite(trigPin, LOW);
 
-    // Timeout de 30ms (~500 cm max)
-    long duration = pulseIn(echoPin, HIGH, 30000); 
+    // Esperar a que el RMT capture el eco de regreso (Max 30ms en hardware)
+    // Aqu s usamos vTaskDelay, as que cedemos el procesador por ~30ms en lugar de bloquearlo.
+    // Tambin evitamos colapsar el sistema.
+    size_t rx_size = 0;
+    rmt_item32_t* item = (rmt_item32_t*) xRingbufferReceive(rb, &rx_size, pdMS_TO_TICKS(40));
 
-    if (duration == 0)
-        return -1.0;
+    if (item) {
+        // En RMT, item[0].duration0 es cunto dur el primer nivel lgico (normalmente HIGH para el eco)
+        uint32_t duration = item[0].duration0; 
+        vRingbufferReturnItem(rb, (void*) item);
+        rmt_rx_stop(RMT_RX_CHANNEL);
 
-    return (duration * 0.0343) / 2.0;
+        // Validar si el pulso fue HIGH y su duracin tiene sentido
+        if (item[0].level0 == 1 && duration > 100 && duration < 30000) {
+            return (duration * 0.0343) / 2.0;
+        }
+    } else {
+        rmt_rx_stop(RMT_RX_CHANNEL);
+    }
+
+    return -1.0;
 }
 
 // 🚀 Tarea unificada: Infrarrojos (PCF8574) + Ultrasónico (Trig 33 / Echo 32)

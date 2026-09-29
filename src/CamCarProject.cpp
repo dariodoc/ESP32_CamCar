@@ -17,6 +17,7 @@ void setup()
 
     initI2CManager();   // 1. Hardware I2C
     setupPeripherals(); // 2. Expansores PCF y PCA
+    setupMotors();      // 2.5. Motors Ramp Task
 
     initDisplayTask(); // 3. Iniciar tarea del display (ejecuta el reset por P5)
 

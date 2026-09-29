@@ -8,6 +8,7 @@
 void setStandbyPin(bool enable);
 void setPcfDisplayResetPin(bool state);
 uint8_t getBmcPcfShadow();
+void syncMotorsI2C();
 
 class Motor
 {

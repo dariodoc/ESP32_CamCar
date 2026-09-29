@@ -1,73 +1,10 @@
-#include "custom_motor_driver.h"
-#include "config.h"
-#include <freertos/FreeRTOS.h>
-#include <freertos/semphr.h>
-#include <Wire.h>
+import os
 
-extern PCF8574 FMCpcf8574;
-extern PCF8574 BMCpcf8574;
-extern bool lockI2C(TickType_t timeoutMs = 20);
-extern void unlockI2C();
+content = open('src/custom_motor_driver.cpp', 'r', encoding='utf-8').read()
+start_idx = content.find('void Motor::setMotorState(int stateIn1, int stateIn2, int speed)')
+end_idx = content.find('void Motor::fwd(int speed)')
 
-static uint8_t fmcPcfShadow = 0xFF; // Expansor Frontal (0x20): Bits 0-3 en 1 (Entradas IR)
-static uint8_t bmcPcfShadow = 0xFF; // Expansor Trasero  (0x24): Motores BL, BR, STBY y Reset TFT
-static bool currentStandbyState = false;
-
-uint8_t getBmcPcfShadow()
-{
-    return bmcPcfShadow;
-}
-
-void setPcfDisplayResetPin(bool state)
-{
-    if (lockI2C(50))
-    {
-        if (state)
-            bmcPcfShadow |= (1 << tftResetPcfPin);
-        else
-            bmcPcfShadow &= ~(1 << tftResetPcfPin);
-
-        Wire.beginTransmission(0x24);
-        Wire.write(bmcPcfShadow);
-        Wire.endTransmission();
-
-        unlockI2C();
-    }
-}
-
-void setStandbyPin(bool enable)
-{
-    if (currentStandbyState == enable)
-        return;
-
-    if (lockI2C(20))
-    {
-        currentStandbyState = enable;
-
-        if (enable)
-            bmcPcfShadow |= (1 << STBYpin);
-        else
-            bmcPcfShadow &= ~(1 << STBYpin);
-
-
-        unlockI2C();
-    }
-}
-
-Motor::Motor(int In1pin, int In2pin, int PWMpin, int offset, PCF8574 *pcfDev, Adafruit_PWMServoDriver *pcaController)
-{
-    In1 = In1pin;
-    In2 = In2pin;
-    PWM = PWMpin;
-    Offset = offset;
-    pcf = pcfDev;
-    pca = pcaController;
-    lastStateIn1 = -1;
-    lastStateIn2 = -1;
-    lastSpeed = -1;
-}
-
-void syncMotorsI2C()
+new_content = content[:start_idx] + '''void syncMotorsI2C()
 {
     if (lockI2C(20))
     {
@@ -142,21 +79,17 @@ void Motor::setMotorState(int stateIn1, int stateIn2, int speed)
     }
 }
 
-void Motor::fwd(int speed) { setMotorState(HIGH, LOW, speed); }
-void Motor::rev(int speed) { setMotorState(LOW, HIGH, speed); }
-void Motor::brake() { setMotorState(HIGH, HIGH, 4095); }
+''' + content[end_idx:]
 
-void Motor::drive(int speed)
-{
-    speed = speed * Offset;
-    if (speed >= 0)
-        fwd(speed);
-    else
-        rev(-speed);
-}
+# Remove transmission from setStandbyPin
+start_stby = new_content.find('void setStandbyPin(bool enable)')
+end_stby = new_content.find('Motor::Motor(int In1pin')
 
-void Motor::drive(int speed, int duration)
-{
-    drive(speed);
-    vTaskDelay(pdMS_TO_TICKS(duration));
-}
+stby_content = new_content[start_stby:end_stby]
+stby_content = stby_content.replace('        Wire.beginTransmission(0x24);\n', '')
+stby_content = stby_content.replace('        Wire.write(bmcPcfShadow);\n', '')
+stby_content = stby_content.replace('        Wire.endTransmission();\n', '')
+
+new_content = new_content[:start_stby] + stby_content + new_content[end_stby:]
+
+open('src/custom_motor_driver.cpp', 'w', encoding='utf-8').write(new_content)
