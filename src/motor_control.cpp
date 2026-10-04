@@ -68,8 +68,8 @@ void motorSlewTask(void *pvParameters)
             bool changed = false;
 
             auto applyRamp = [](int &current, int target) {
-                const int SLEW_STEP = 300;
-                const int MIN_PWM = 819;
+                const int SLEW_STEP = 150;
+                const int MIN_PWM = 400;
                 
                 if (current < target) {
                     if (current == 0) current = MIN_PWM;

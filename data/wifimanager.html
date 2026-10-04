@@ -20,8 +20,9 @@
         <form action="/save" method="POST">
           <p>
             <label for="ssid">SSID</label>
-            <input type="text" id="ssid" name="ssid" placeholder="Nombre de la red" list="ssid-list" required><br>
-            <datalist id="ssid-list"></datalist>
+            <select id="ssid" name="ssid" required>
+              <option value="" disabled selected>Buscando redes...</option>
+            </select><br>
 
             <label for="pass">Password</label>
             <input type="password" id="pass" name="pass" placeholder="Contraseña"><br>
@@ -42,12 +43,19 @@
     fetch('/scan')
       .then(response => response.json())
       .then(data => {
-        const list = document.getElementById('ssid-list');
+        const select = document.getElementById('ssid');
+        select.innerHTML = ''; // Limpiar opcion de busqueda
+        if (data.length === 0) {
+          select.innerHTML = '<option value="" disabled selected>No se encontraron redes</option>';
+          return;
+        }
+        select.innerHTML = '<option value="" disabled selected>Selecciona tu red...</option>';
         data.forEach(net => {
           if(net.ssid) {
             const option = document.createElement('option');
             option.value = net.ssid;
-            list.appendChild(option);
+            option.textContent = net.ssid + " (" + net.rssi + " dBm)";
+            select.appendChild(option);
           }
         });
       })

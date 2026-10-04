@@ -614,6 +614,7 @@ void startCaptivePortal()
     webServer.on("/save", HTTP_POST, handleSave);
     webServer.onNotFound(handleRoot);
     webServer.begin();
+    ArduinoOTA.begin();
 
     // Lanzar como tarea FreeRTOS para que setup() termine y OTA funcione
     xTaskCreatePinnedToCore(captivePortalTask, "CaptivePortal", 4096, NULL, 1, NULL, 0);
@@ -715,6 +716,7 @@ void initWiFi()
 
     if (WiFi.status() != WL_CONNECTED)
     {
+        WiFi.disconnect(); // Detener intentos de conexión en segundo plano
         updateDisplayState(DISPLAY_PORTAL_ACTIVE);
         startCaptivePortal();
         return;

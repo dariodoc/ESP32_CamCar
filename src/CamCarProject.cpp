@@ -6,9 +6,12 @@
 #include "wifi_server.h"
 #include "display_control.h"
 #include <ArduinoOTA.h>
+#include "soc/soc.h"
+#include "soc/rtc_cntl_reg.h"
 
 void setup()
 {
+    WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); // Disable brownout detector
     setCpuFrequencyMhz(240);
 
 #ifdef DEBUG
