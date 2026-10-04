@@ -38,23 +38,12 @@ void motorSlewTask(void *pvParameters)
                 motorFR.drive(0);
                 motorBR.drive(0);
             } else {
-                // Freno electrónico activo (Short-circuit brake)
+                // Freno electrónico activo continuo
                 setStandbyPin(true);
                 motorFL.brake();
                 motorBL.brake();
                 motorFR.brake();
                 motorBR.brake();
-                syncMotorsI2C();
-                
-                // Aplicar freno solo por 150ms para evitar sobrecorriente (Brownout)
-                vTaskDelay(pdMS_TO_TICKS(150));
-                
-                // Luego pasar a estado libre (Coast)
-                setStandbyPin(false);
-                motorFL.drive(0);
-                motorBL.drive(0);
-                motorFR.drive(0);
-                motorBR.drive(0);
             }
             leftRearLed(HIGH);
             rightRearLed(HIGH);

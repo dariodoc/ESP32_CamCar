@@ -503,6 +503,7 @@ void cmdServerTask(void *pvParameters)
             }
 
             stopAllMotors();
+            xTimerStop(dmsTimer, 0); // Stop DMS timer
             close(clientFd);
 #ifdef DEBUG
             Serial.println("[CMD] 🔴 Puerto 5000 cerrado y libre.");

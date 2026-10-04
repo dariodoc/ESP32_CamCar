@@ -33,16 +33,16 @@ void setupCamera()
     if (psramFound())
     {
         config.fb_location = CAMERA_FB_IN_PSRAM;
-        config.frame_size = FRAMESIZE_QVGA;
+        config.frame_size = FRAMESIZE_HQVGA;
         config.jpeg_quality = CAMERA_JPEG_QUALITY; 
         
-        config.fb_count = 1;                   
-        config.grab_mode = CAMERA_GRAB_WHEN_EMPTY; 
+        config.fb_count = 2;                   
+        config.grab_mode = CAMERA_GRAB_LATEST; 
     }
     else
     {
         config.fb_location = CAMERA_FB_IN_DRAM;
-        config.frame_size = FRAMESIZE_QVGA;
+        config.frame_size = FRAMESIZE_HQVGA;
         config.jpeg_quality = CAMERA_JPEG_QUALITY;
         config.fb_count = 1;
         config.grab_mode = CAMERA_GRAB_LATEST;
