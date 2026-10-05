@@ -30,7 +30,7 @@ TaskHandle_t obstacleAvoidanceModeTaskHandle = NULL;
 TimerHandle_t dmsTimer = NULL;
 
 // ----------------------------------------------------------------------
-// CORE 0: STREAMING TCP (EL OJO DEL ROBOT)
+// CORE 1: STREAMING UDP (EL OJO DEL ROBOT)
 // ----------------------------------------------------------------------
 void cameraStreamTaskUDP(void *pvParameters)
 {
