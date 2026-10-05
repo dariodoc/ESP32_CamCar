@@ -32,14 +32,19 @@ TimerHandle_t dmsTimer = NULL;
 // ----------------------------------------------------------------------
 // CORE 0: STREAMING TCP (EL OJO DEL ROBOT)
 // ----------------------------------------------------------------------
-void cameraStreamTaskTCP(void *pvParameters)
+void cameraStreamTaskUDP(void *pvParameters)
 {
-    int serverFd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    int serverFd = socket(AF_INET, SOCK_DGRAM, 0); // UDP
     if (serverFd < 0)
+    {
+#ifdef DEBUG
+        Serial.println("[VIDEO] ❌ Error creando socket UDP");
+#endif
         vTaskDelete(NULL);
+    }
 
-    int enable = 1;
-    setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int));
+    // Configurar non-blocking para leer el handshake sin frenar la cámara
+    fcntl(serverFd, F_SETFL, O_NONBLOCK);
 
     struct sockaddr_in serverAddr;
     memset(&serverAddr, 0, sizeof(serverAddr));
@@ -52,196 +57,101 @@ void cameraStreamTaskTCP(void *pvParameters)
         close(serverFd);
         vTaskDelete(NULL);
     }
-    listen(serverFd, 1);
 
-    const TickType_t FRAME_TARGET_TIME = pdMS_TO_TICKS(66); // ~15 FPS
+    struct sockaddr_in clientAddr;
+    socklen_t clientAddrLen = sizeof(clientAddr);
+    bool hasClient = false;
+    uint32_t frameId = 0;
 
     for (;;)
     {
         if (WiFi.status() != WL_CONNECTED)
         {
+            hasClient = false;
             vTaskDelay(pdMS_TO_TICKS(500));
             continue;
         }
 
-        struct sockaddr_in clientAddr;
-        socklen_t clientAddrLen = sizeof(clientAddr);
-        int clientFd = accept(serverFd, (struct sockaddr *)&clientAddr, &clientAddrLen);
-
-        if (clientFd >= 0)
+        // Revisar si hay un paquete entrante (handshake "START" o heartbeat)
+        char recvBuf[16];
+        int n = recvfrom(serverFd, recvBuf, sizeof(recvBuf)-1, 0, (struct sockaddr *)&clientAddr, &clientAddrLen);
+        if (n > 0)
         {
-#ifdef DEBUG
-            Serial.println("\n[VIDEO] 🟢 Cliente conectado al puerto 8000 (Video).");
-#endif
-            videoFlag = true; // Auto-start streaming for Raspberry Pi app
-
-            // 🚀 RESTAURADO TCP_NODELAY: La app de Android asume que el header de 4 bytes 
-            // llega en un paquete separado. Habilitar Nagle fusionaba los paquetes y rompía 
-            // el parser de Android (77396 fps bug).
-            int nodelay = 1;
-            setsockopt(clientFd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(int));
-            
-            // 🚀 RESTAURADO SO_SNDBUF: 
-            // Si no pedimos 32KB, el buffer por defecto de lwIP es de 5KB. Un frame JPEG pesa ~10KB-20KB.
-            // Si el frame no cabe en el buffer, send() se bloquea sincrónicamente esperando que el cliente 
-            // envíe TCP ACKs por Wi-Fi. Esto sumaba decenas de milisegundos de lag por frame.
-            // Gracias a que ahora usamos SO_LINGER = 0, podemos usar 32KB sin miedo a agotar la RAM,
-            // ya que se liberan instantáneamente al desconectar.
-            int sndbuf = 32768;
-            setsockopt(clientFd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
-
-            struct timeval sendTimeout = {0, 200000};
-            setsockopt(clientFd, SOL_SOCKET, SO_SNDTIMEO, &sendTimeout, sizeof(sendTimeout));
-
-            // 🚀 FIX CRÍTICO: Prevenir "PBUF Exhaustion" en lwIP.
-            // Cuando la red se congestiona, el socket se cierra. Pero por defecto, TCP entra en "TIME_WAIT"
-            // y retiene 32KB de RAM del ESP32 por 2 minutos. Si te reconectas inmediatamente, el ESP32 ya
-            // no tiene memoria RAM (PBUFs) para la nueva conexión, lo que causa que la red se vuelva lentísima
-            // (2-5 FPS de forma permanente).
-            // SO_LINGER con timeout 0 obliga a que al cerrar el socket, se envíe un RST (Reset)
-            // que destruye la conexión y libera el 100% de la RAM instantáneamente. ¡Cada reconexión será fresca!
-            struct linger so_linger;
-            so_linger.l_onoff = 1;
-            so_linger.l_linger = 0;
-            setsockopt(clientFd, SOL_SOCKET, SO_LINGER, &so_linger, sizeof(so_linger));
-
-            bool wasStreaming = false;
-
-            while (WiFi.status() == WL_CONNECTED)
+            recvBuf[n] = '\0';
+            if (strncmp(recvBuf, "START", 5) == 0)
             {
-                // 🚀 DETECTOR DE DESCONEXIÓN:
-                // Revisa instantáneamente si la app colgó el teléfono, incluso estando en Mute.
-                char peekBuf[1];
-                int peekRes = recv(clientFd, peekBuf, 1, MSG_DONTWAIT);
-                if (peekRes == 0)
-                {
+                if (!hasClient) {
 #ifdef DEBUG
-                    Serial.println("[VIDEO] ℹ️ Conexión de video cerrada normalmente por la app.");
+                    Serial.println("[VIDEO] 🟢 Cliente UDP registrado en el puerto 8000.");
 #endif
-                    break;
                 }
-
-                if (videoFlag)
-                {
-                    if (!wasStreaming)
-                    {
-#ifdef DEBUG
-                        Serial.println("[VIDEO] 🎥 Transmisión de frames INICIADA.");
-#endif
-                        wasStreaming = true;
-                    }
-
-                    camera_fb_t *fb = esp_camera_fb_get();
-
-                    if (fb)
-                    {
-
-                        bool isValid = false;
-                        if (fb->len > 2000 && fb->buf[0] == 0xFF && fb->buf[1] == 0xD8)
-                        {
-                            for (size_t i = fb->len - 16; i < fb->len - 1; i++)
-                            {
-                                if (fb->buf[i] == 0xFF && fb->buf[i + 1] == 0xD9)
-                                {
-                                    isValid = true;
-                                    break;
-                                }
-                            }
-                        }
-
-                        if (isValid)
-                        {
-                            uint8_t header[4];
-                            header[0] = (uint8_t)(fb->len & 0xFF);
-                            header[1] = (uint8_t)((fb->len >> 8) & 0xFF);
-                            header[2] = (uint8_t)((fb->len >> 16) & 0xFF);
-                            header[3] = (uint8_t)((fb->len >> 24) & 0xFF);
-
-                            uint8_t firstPacket[1460];
-                            size_t firstPayloadSize = (fb->len > 1456) ? 1456 : fb->len;
-                            memcpy(firstPacket, header, 4);
-                            memcpy(firstPacket + 4, fb->buf, firstPayloadSize);
-                            size_t packetSize = 4 + firstPayloadSize;
-
-                            bool socketError = false;
-                            int retries = 0;
-                            const int MAX_RETRIES = 50; // 50 * 20ms = 1000ms timeout
-                            size_t bytesWrittenTotal = 0;
-
-                            while (bytesWrittenTotal < packetSize)
-                            {
-                                int s = send(clientFd, firstPacket + bytesWrittenTotal, packetSize - bytesWrittenTotal, MSG_NOSIGNAL);
-                                if (s < 0)
-                                {
-                                    if (errno == EAGAIN || errno == EWOULDBLOCK || errno == ENOMEM)
-                                    {
-                                        retries++;
-                                        if (retries > MAX_RETRIES) { socketError = true; break; }
-                                        vTaskDelay(pdMS_TO_TICKS(20));
-                                        continue;
-                                    }
-                                    socketError = true; break;
-                                }
-                                bytesWrittenTotal += s;
-                                retries = 0;
-                            }
-
-                            if (!socketError)
-                            {
-                                size_t payloadWritten = firstPayloadSize;
-                                retries = 0;
-                                while (payloadWritten < fb->len)
-                                {
-                                    int s = send(clientFd, fb->buf + payloadWritten, fb->len - payloadWritten, MSG_NOSIGNAL);
-                                    if (s < 0)
-                                    {
-                                        if (errno == EAGAIN || errno == EWOULDBLOCK || errno == ENOMEM)
-                                        {
-                                            retries++;
-                                            if (retries > MAX_RETRIES) { socketError = true; break; }
-                                            vTaskDelay(pdMS_TO_TICKS(20));
-                                            continue;
-                                        }
-                                        socketError = true; break;
-                                    }
-                                    payloadWritten += s;
-                                    retries = 0;
-                                }
-                            }
-
-                            if (socketError)
-                            {
-#ifdef DEBUG
-                                Serial.println("[VIDEO] ⚠️ Saturación de red severa. Cortando conexión de video.");
-#endif
-                                esp_camera_fb_return(fb);
-                                break;
-                            }
-                        }
-                        
-                        esp_camera_fb_return(fb); 
-                    }
-                }
-                else
-                {
-                    if (wasStreaming)
-                    {
-#ifdef DEBUG
-                        Serial.println("[VIDEO] 🛑 CMD_VIDEO 0 detectado. Pausando stream (Modo Mute)...");
-#endif
-                        wasStreaming = false;
-                    }
-                    vTaskDelay(pdMS_TO_TICKS(50));
-                }
+                hasClient = true;
+                videoFlag = true; // IMPORTANT: Force stream to start!
             }
-
-            videoFlag = false;
-            close(clientFd);
+            else if (strncmp(recvBuf, "STOP", 4) == 0)
+            {
+                hasClient = false;
 #ifdef DEBUG
-            Serial.println("[VIDEO] 🔴 Puerto 8000 cerrado y libre.");
+                Serial.println("[VIDEO] 🔴 Cliente UDP desconectado.");
 #endif
+            }
         }
-        vTaskDelay(pdMS_TO_TICKS(50));
+
+        if (videoFlag && hasClient)
+        {
+            camera_fb_t *fb = esp_camera_fb_get();
+
+            if (fb)
+            {
+                bool isValid = false;
+                if (fb->len > 2000 && fb->buf[0] == 0xFF && fb->buf[1] == 0xD8)
+                {
+                    isValid = true;
+                }
+
+                if (isValid)
+                {
+                    uint16_t chunkSize = 1400;
+                    uint16_t totalChunks = (fb->len + chunkSize - 1) / chunkSize;
+                    uint32_t magic = 0x5649444F; // "VIDO"
+
+                    for (uint16_t chunkId = 0; chunkId < totalChunks; chunkId++)
+                    {
+                        uint16_t currentChunkLen = chunkSize;
+                        if (chunkId == totalChunks - 1) {
+                            currentChunkLen = fb->len - (chunkId * chunkSize);
+                        }
+
+                        uint8_t packet[1414];
+                        // Header (14 bytes)
+                        memcpy(packet, &magic, 4);
+                        memcpy(packet + 4, &frameId, 4);
+                        memcpy(packet + 8, &chunkId, 2);
+                        memcpy(packet + 10, &totalChunks, 2);
+                        memcpy(packet + 12, &currentChunkLen, 2);
+
+                        // Payload
+                        memcpy(packet + 14, fb->buf + (chunkId * chunkSize), currentChunkLen);
+
+                        sendto(serverFd, packet, 14 + currentChunkLen, 0, (struct sockaddr *)&clientAddr, clientAddrLen);
+                        
+                        // Pequeño respiro entre fragmentos para NO desbordar la cola Wi-Fi del ESP32
+                        // taskYIELD() permite que otras tareas de igual o mayor prioridad (como TCP) procesen
+                        delayMicroseconds(200); 
+                        if (chunkId % 4 == 0) taskYIELD();
+                    }
+                    frameId++;
+                }
+                
+                esp_camera_fb_return(fb); 
+            }
+            // Pequeña pausa para no ahogar la red UDP y darle respiro al micro
+            vTaskDelay(pdMS_TO_TICKS(15)); 
+        }
+        else
+        {
+            vTaskDelay(pdMS_TO_TICKS(50));
+        }
     }
 }
 
@@ -726,7 +636,7 @@ void initWiFi()
     updateDisplayState(DISPLAY_CONNECTED, WiFi.localIP().toString().c_str());
     ledIndicator(2, 60);
 
-    xTaskCreatePinnedToCore(cameraStreamTaskTCP, "CamTCPStream", 1024 * 4, NULL, 1, NULL, 0);
+    xTaskCreatePinnedToCore(cameraStreamTaskUDP, "CamUDPStream", 1024 * 4, NULL, 1, NULL, 1);
 
     if (obstacleAvoidanceModeTaskHandle == NULL)
     {
