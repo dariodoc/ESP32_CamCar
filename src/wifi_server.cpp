@@ -135,18 +135,16 @@ void cameraStreamTaskUDP(void *pvParameters)
 
                         sendto(serverFd, packet, 14 + currentChunkLen, 0, (struct sockaddr *)&clientAddr, clientAddrLen);
                         
-                        // Pequeño respiro entre fragmentos para NO desbordar la cola Wi-Fi del ESP32
-                        // taskYIELD() permite que otras tareas de igual o mayor prioridad (como TCP) procesen
-                        delayMicroseconds(200); 
-                        if (chunkId % 4 == 0) taskYIELD();
+                        // Pausa de 1ms exacta sin ceder el tick de FreeRTOS (que podria durar 10ms)
+                        delayMicroseconds(1000);
                     }
                     frameId++;
                 }
                 
                 esp_camera_fb_return(fb); 
             }
-            // Pequeña pausa para no ahogar la red UDP y darle respiro al micro
-            vTaskDelay(pdMS_TO_TICKS(15)); 
+            // taskYIELD() cede el procesador brevemente para evitar que el Watchdog se queje
+            taskYIELD();
         }
         else
         {

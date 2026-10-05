@@ -85,7 +85,7 @@ const int tftResetPcfPin = 5; // Pin P5 del PCF8574 Trasero (0x24) para Reset de
 #define AP_PASSWORD "carbondioxide"
 
 // --- CONFIGURACION DE CAMARA ---
-#define CAMERA_XCLK_FREQ 10000000   // 10MHz: Evita desbordamiento DMA I2S
+#define CAMERA_XCLK_FREQ 20000000   // 20MHz: Restaurado para maxima velocidad
 #define CAMERA_JPEG_QUALITY 30      // Calidad JPEG (menor = mejor calidad)
 
 #endif // CONFIG_H

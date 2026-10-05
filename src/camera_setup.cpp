@@ -24,9 +24,7 @@ void setupCamera()
     config.pin_pwdn = PWDN_GPIO_NUM;
     config.pin_reset = RESET_GPIO_NUM;
 
-    // 🚀 Reducido a 10MHz para evitar el desbordamiento de la cola DMA I2S.
-    // A 20MHz, la cámara genera fotogramas demasiado rápido (33ms). Si el envío por Wi-Fi
-    // toma más de 33ms, el driver colapsa y congela la imagen durante 1 segundo.
+    // 🚀 Restaurado a 20MHz para máxima velocidad de fotogramas.
     config.xclk_freq_hz = CAMERA_XCLK_FREQ;
     config.pixel_format = PIXFORMAT_JPEG;
 
