@@ -79,6 +79,11 @@ const int STBYpin = 4; // Pin de PCF8574 para Standby
 // --- PINES DEL PCF8574 Y PCA9685 PARA LOS MOTORES Y PANTALLA ---
 const int tftResetPcfPin = 5; // Pin P5 del PCF8574 Trasero (0x24) para Reset del ST7735
 
+// --- DIRECCIONES I2C ---
+#define PCF_FMC_ADDR 0x20
+#define PCF_BMC_ADDR 0x24
+#define PCA9685_ADDR 0x40
+
 // --- CONFIGURACIÓN DE FREERTOS ---
 // --- CONFIGURACION DEL ACCESS POINT (Portal Cautivo) ---
 #define AP_SSID "ESP-CAMERA-CAR"

@@ -24,10 +24,10 @@ DNSServer dnsServer;
 Preferences preferences;
 
 volatile bool videoFlag = false;
+static volatile bool otaInProgress = false;
 TaskHandle_t cmdServerTaskHandle = NULL;
 TaskHandle_t playMelodyTaskHandle = NULL;
 TaskHandle_t obstacleAvoidanceModeTaskHandle = NULL;
-TimerHandle_t dmsTimer = NULL;
 
 // ----------------------------------------------------------------------
 // CORE 1: STREAMING UDP (EL OJO DEL ROBOT)
@@ -60,11 +60,20 @@ void cameraStreamTaskUDP(void *pvParameters)
 
     struct sockaddr_in clientAddr;
     socklen_t clientAddrLen = sizeof(clientAddr);
+    memset(&clientAddr, 0, sizeof(clientAddr));
     bool hasClient = false;
     uint32_t frameId = 0;
+    TickType_t lastHeartbeatTick = 0;
+    static uint8_t packet[1414];
 
     for (;;)
     {
+        if (otaInProgress)
+        {
+            vTaskDelay(pdMS_TO_TICKS(200));
+            continue;
+        }
+
         if (WiFi.status() != WL_CONNECTED)
         {
             hasClient = false;
@@ -72,9 +81,11 @@ void cameraStreamTaskUDP(void *pvParameters)
             continue;
         }
 
-        // Revisar si hay un paquete entrante (handshake "START" o heartbeat)
+        // Revisar si hay un paquete entrante (handshake "START" o heartbeat) sin sobrescribir clientAddr a ciegas
         char recvBuf[16];
-        int n = recvfrom(serverFd, recvBuf, sizeof(recvBuf)-1, 0, (struct sockaddr *)&clientAddr, &clientAddrLen);
+        struct sockaddr_in tempAddr;
+        socklen_t tempLen = sizeof(tempAddr);
+        int n = recvfrom(serverFd, recvBuf, sizeof(recvBuf) - 1, 0, (struct sockaddr *)&tempAddr, &tempLen);
         if (n > 0)
         {
             recvBuf[n] = '\0';
@@ -85,8 +96,11 @@ void cameraStreamTaskUDP(void *pvParameters)
                     Serial.println("[VIDEO] 🟢 Cliente UDP registrado en el puerto 8000.");
 #endif
                 }
+                clientAddr = tempAddr;
+                clientAddrLen = tempLen;
                 hasClient = true;
-                videoFlag = true; // IMPORTANT: Force stream to start!
+                videoFlag = true;
+                lastHeartbeatTick = xTaskGetTickCount();
             }
             else if (strncmp(recvBuf, "STOP", 4) == 0)
             {
@@ -97,17 +111,21 @@ void cameraStreamTaskUDP(void *pvParameters)
             }
         }
 
+        // Expirar cliente si no manda heartbeat START en 8 segundos
+        if (hasClient && (xTaskGetTickCount() - lastHeartbeatTick) > pdMS_TO_TICKS(8000))
+        {
+            hasClient = false;
+        }
+
         if (videoFlag && hasClient)
         {
             camera_fb_t *fb = esp_camera_fb_get();
 
             if (fb)
             {
-                bool isValid = false;
-                if (fb->len > 2000 && fb->buf[0] == 0xFF && fb->buf[1] == 0xD8)
-                {
-                    isValid = true;
-                }
+                bool isValid = (fb->len > 100 &&
+                                fb->buf[0] == 0xFF && fb->buf[1] == 0xD8 &&
+                                fb->buf[fb->len - 2] == 0xFF && fb->buf[fb->len - 1] == 0xD9);
 
                 if (isValid)
                 {
@@ -122,7 +140,6 @@ void cameraStreamTaskUDP(void *pvParameters)
                             currentChunkLen = fb->len - (chunkId * chunkSize);
                         }
 
-                        uint8_t packet[1414];
                         // Header (14 bytes)
                         memcpy(packet, &magic, 4);
                         memcpy(packet + 4, &frameId, 4);
@@ -133,15 +150,21 @@ void cameraStreamTaskUDP(void *pvParameters)
                         // Payload
                         memcpy(packet + 14, fb->buf + (chunkId * chunkSize), currentChunkLen);
 
-                        sendto(serverFd, packet, 14 + currentChunkLen, 0, (struct sockaddr *)&clientAddr, clientAddrLen);
-                        
-                        // Pausa de 1ms exacta sin ceder el tick de FreeRTOS (que podria durar 10ms)
-                        delayMicroseconds(1000);
+                        int sent = sendto(serverFd, packet, 14 + currentChunkLen, 0, (struct sockaddr *)&clientAddr, clientAddrLen);
+                        if (sent < 0 && (errno == ENOMEM || errno == EAGAIN)) {
+                            vTaskDelay(1);
+                            sendto(serverFd, packet, 14 + currentChunkLen, 0, (struct sockaddr *)&clientAddr, clientAddrLen);
+                        }
+
+                        // Ceder 1ms cooperativamente cada 2 fragmentos (CONFIG_FREERTOS_HZ = 1000 -> 1 tick = 1ms)
+                        if ((chunkId & 1) == 1) {
+                            vTaskDelay(1);
+                        }
                     }
                     frameId++;
                 }
-                
-                esp_camera_fb_return(fb); 
+
+                esp_camera_fb_return(fb);
             }
             // taskYIELD() cede el procesador brevemente para evitar que el Watchdog se queje
             taskYIELD();
@@ -153,8 +176,23 @@ void cameraStreamTaskUDP(void *pvParameters)
     }
 }
 
+static void configureClientSocket(int clientFd)
+{
+    int nodelay = 1;
+    setsockopt(clientFd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(int));
+
+    struct timeval recvTimeout = {0, 100000};
+    setsockopt(clientFd, SOL_SOCKET, SO_RCVTIMEO, &recvTimeout, sizeof(recvTimeout));
+
+    int keepAlive = 1, keepIdle = 2, keepInterval = 1, keepCount = 3;
+    setsockopt(clientFd, SOL_SOCKET, SO_KEEPALIVE, &keepAlive, sizeof(int));
+    setsockopt(clientFd, IPPROTO_TCP, TCP_KEEPIDLE, &keepIdle, sizeof(int));
+    setsockopt(clientFd, IPPROTO_TCP, TCP_KEEPINTVL, &keepInterval, sizeof(int));
+    setsockopt(clientFd, IPPROTO_TCP, TCP_KEEPCNT, &keepCount, sizeof(int));
+}
+
 // ----------------------------------------------------------------------
-// CORE 1: SERVIDOR TCP DE COMANDOS Y CEREBRO MOTRIZ (Puerto 4000)
+// CORE 1: SERVIDOR TCP DE COMANDOS Y CEREBRO MOTRIZ (Puerto 5000)
 // ----------------------------------------------------------------------
 void cmdServerTask(void *pvParameters)
 {
@@ -181,8 +219,8 @@ void cmdServerTask(void *pvParameters)
     int flags = fcntl(serverFd, F_GETFL, 0);
     fcntl(serverFd, F_SETFL, flags | O_NONBLOCK);
 
-    TickType_t lastCmdTime = xTaskGetTickCount();
-    const TickType_t TIMEOUT_TICKS = pdMS_TO_TICKS(1500);
+    static char rxBuffer[1024];
+    static char tempChunk[512];
 
     for (;;)
     {
@@ -199,8 +237,6 @@ void cmdServerTask(void *pvParameters)
 
         if (clientFd < 0)
         {
-            // No hay clientes pendientes
-            // Solo pausamos para no asfixiar a las otras tareas (el OTA se maneja en el loop principal)
             vTaskDelay(pdMS_TO_TICKS(50));
             continue;
         }
@@ -210,38 +246,34 @@ void cmdServerTask(void *pvParameters)
 #ifdef DEBUG
             Serial.println("\n[CMD] 🟢 Cliente conectado al puerto 5000 (Comandos).");
 #endif
-            int nodelay = 1;
-            setsockopt(clientFd, IPPROTO_TCP, TCP_NODELAY, &nodelay, sizeof(int));
+            configureClientSocket(clientFd);
 
-            struct timeval recvTimeout = {0, 100000};
-            setsockopt(clientFd, SOL_SOCKET, SO_RCVTIMEO, &recvTimeout, sizeof(recvTimeout));
-
-            int keepAlive = 1, keepIdle = 2, keepInterval = 1, keepCount = 3;
-            setsockopt(clientFd, SOL_SOCKET, SO_KEEPALIVE, &keepAlive, sizeof(int));
-            setsockopt(clientFd, IPPROTO_TCP, TCP_KEEPIDLE, &keepIdle, sizeof(int));
-            setsockopt(clientFd, IPPROTO_TCP, TCP_KEEPINTVL, &keepInterval, sizeof(int));
-            setsockopt(clientFd, IPPROTO_TCP, TCP_KEEPCNT, &keepCount, sizeof(int));
-
-            char rxBuffer[1024];
             int rxIndex = 0;
-            char tempChunk[512];
+            TickType_t lastSonicTick = 0;
 
             while (WiFi.status() == WL_CONNECTED)
             {
+                if (enableSonicTelemetry && (xTaskGetTickCount() - lastSonicTick) >= pdMS_TO_TICKS(150))
+                {
+                    lastSonicTick = xTaskGetTickCount();
+                    float dist = latestSonicDistanceCM;
+                    char sonicMsg[32];
+                    int sLen = snprintf(sonicMsg, sizeof(sonicMsg), "CMD_SONIC#%.1f\n", (dist > 0.0f) ? dist : 200.0f);
+                    if (sLen > 0)
+                    {
+                        send(clientFd, sonicMsg, sLen, MSG_DONTWAIT);
+                    }
+                }
+
                 int bytesRead = recv(clientFd, tempChunk, sizeof(tempChunk) - 1, 0);
 
                 if (bytesRead > 0)
                 {
-                    tempChunk[bytesRead] = '\0';
-                    
-                    // Añadir al buffer estático circular
-                    for (int i = 0; i < bytesRead; i++) {
-                        if (rxIndex < 1023) {
-                            rxBuffer[rxIndex++] = tempChunk[i];
-                        } else {
-                            rxIndex = 0; // Overflow de buffer, reiniciar
-                            break;
-                        }
+                    if (rxIndex + bytesRead < (int)sizeof(rxBuffer)) {
+                        memcpy(rxBuffer + rxIndex, tempChunk, bytesRead);
+                        rxIndex += bytesRead;
+                    } else {
+                        rxIndex = 0; // Overflow de buffer, reiniciar
                     }
                     rxBuffer[rxIndex] = '\0';
 
@@ -249,9 +281,9 @@ void cmdServerTask(void *pvParameters)
                     while ((newlinePtr = strchr(rxBuffer, '\n')) != NULL)
                     {
                         *newlinePtr = '\0'; // Reemplazar \n por \0
-                        
+
                         char* line = rxBuffer;
-                        
+
                         // Trim '\r' si existe
                         int lineLen = strlen(line);
                         if (lineLen > 0 && line[lineLen - 1] == '\r') {
@@ -260,9 +292,9 @@ void cmdServerTask(void *pvParameters)
 
                         if (strlen(line) > 0)
                         {
-                            char* localCmd[8];
+                            char* localCmd[8] = {NULL};
                             int localParam[8] = {0};
-                            
+
                             char* saveptr;
                             char* token = strtok_r(line, "#", &saveptr);
                             int i = 0;
@@ -277,33 +309,42 @@ void cmdServerTask(void *pvParameters)
                             {
                                 if (strcmp(localCmd[0], "CMD_SERVO") == 0)
                                 {
-                                    if (localParam[1] == 0)
-                                        setPanAngle(180 - localParam[2]);
-                                    else if (localParam[1] == 1)
-                                        setTiltAngle(localParam[2]);
+                                    if (i >= 3)
+                                    {
+                                        if (localParam[1] == 0)
+                                            setPanAngle(180 - localParam[2]);
+                                        else if (localParam[1] == 1)
+                                            setTiltAngle(localParam[2]);
+                                    }
                                 }
                                 else if (strcmp(localCmd[0], "CMD_CAMERA") == 0)
                                 {
-                                    if (localParam[1] == panCenter && localParam[2] == tiltCenter)
-                                        centerServos();
-                                    else
+                                    if (i >= 3)
                                     {
-                                        setPanAngle(localParam[1]);
-                                        setTiltAngle(localParam[2]);
+                                        if (localParam[1] == panCenter && localParam[2] == tiltCenter)
+                                            centerServos();
+                                        else
+                                        {
+                                            setPanAngle(localParam[1]);
+                                            setTiltAngle(localParam[2]);
+                                        }
                                     }
                                 }
                                 else if (strcmp(localCmd[0], "CMD_VIDEO") == 0)
                                 {
-                                    videoFlag = (localParam[1] == 1);
+                                    if (i >= 2)
+                                        videoFlag = (localParam[1] == 1);
                                 }
                                 else if (strcmp(localCmd[0], "CMD_BUZZER") == 0)
                                 {
-                                    if (localParam[1] == 1) // Botón presionado en la app
+                                    if (i >= 2 && localParam[1] == 1) // Botón presionado en la app
                                     {
                                         if (melodyOn) {
-                                            // Si ya estaba sonando, apagarla
+                                            // Si ya estaba sonando, apagarla al instante
                                             melodyOn = false;
                                             ledcWriteTone(buzzerChannel, 0);
+                                            if (playMelodyTaskHandle != NULL)
+                                                xTaskNotifyGive(playMelodyTaskHandle);
                                         } else {
                                             // Si no estaba sonando, iniciarla
                                             melodyOn = true;
@@ -314,57 +355,73 @@ void cmdServerTask(void *pvParameters)
                                 }
                                 else if (strcmp(localCmd[0], "CMD_LIGHT") == 0)
                                 {
-                                    if (localParam[1] == 1) {
-                                        enableLaser = !enableLaser; // Toggle para evadir bug de la app
-                                    } else {
-                                        enableLaser = false; // Por si algún día manda el 0
+                                    if (i >= 2)
+                                    {
+                                        if (localParam[1] == 1) {
+                                            enableLaser = !enableLaser; // Toggle para evadir bug de la app
+                                        } else {
+                                            enableLaser = false;
+                                        }
+                                        turnLaserOn(enableLaser);
                                     }
-                                    turnLaserOn(enableLaser);
                                 }
                                 else if (strcmp(localCmd[0], "CMD_LED_MOD") == 0)
                                 {
-                                    if (localParam[1] == 2)
+                                    if (i >= 2)
                                     {
-                                        enableObstacleAvoidance = true;
-                                        enableIROnlyMode = false;
-                                        if (obstacleAvoidanceModeTaskHandle != NULL)
-                                            xTaskNotifyGive(obstacleAvoidanceModeTaskHandle);
-                                    }
-                                    else if (localParam[1] == 3)
-                                    {
-                                        enableObstacleAvoidance = false;
-                                        enableIROnlyMode = true;
-                                        if (obstacleAvoidanceModeTaskHandle != NULL)
-                                            xTaskNotifyGive(obstacleAvoidanceModeTaskHandle);
-                                    }
-                                    else
-                                    {
-                                        enableObstacleAvoidance = false;
-                                        enableIROnlyMode = false;
+                                        if (localParam[1] == 2)
+                                        {
+                                            enableObstacleAvoidance = true;
+                                            enableIROnlyMode = false;
+                                            if (obstacleAvoidanceModeTaskHandle != NULL)
+                                                xTaskNotifyGive(obstacleAvoidanceModeTaskHandle);
+                                        }
+                                        else if (localParam[1] == 3)
+                                        {
+                                            enableObstacleAvoidance = false;
+                                            enableIROnlyMode = true;
+                                            if (obstacleAvoidanceModeTaskHandle != NULL)
+                                                xTaskNotifyGive(obstacleAvoidanceModeTaskHandle);
+                                        }
+                                        else
+                                        {
+                                            enableObstacleAvoidance = false;
+                                            enableIROnlyMode = false;
+                                            brakeAllMotors();
+                                        }
                                     }
                                 }
                                 else if (strcmp(localCmd[0], "CMD_MODE") == 0)
                                 {
-                                    if (strcmp(localCmd[1], "three") == 0)
+                                    if (i >= 2 && strcmp(localCmd[1], "three") == 0)
                                     {
                                         enableObstacleAvoidance = true;
+                                        enableIROnlyMode = false;
                                         if (obstacleAvoidanceModeTaskHandle != NULL)
                                             xTaskNotifyGive(obstacleAvoidanceModeTaskHandle);
                                     }
                                     else
                                     {
                                         enableObstacleAvoidance = false;
+                                        enableIROnlyMode = false;
+                                        brakeAllMotors();
                                     }
                                 }
                                 else if (strcmp(localCmd[0], "CMD_MOTOR") == 0)
                                 {
-                                    if (!enableObstacleAvoidance && !enableIROnlyMode)
+                                    if (i >= 5 && !enableObstacleAvoidance && !enableIROnlyMode)
                                         driveSafe(localParam[1], localParam[2], localParam[3], localParam[4]);
                                 }
-                                else if (strcmp(localCmd[0], "CMD_M_MOTOR") == 0 || strcmp(localCmd[0], "CMD_CAR_ROTATE") == 0)
+                                else if (strcmp(localCmd[0], "CMD_CAR_ROTATE") == 0 || strcmp(localCmd[0], "CMD_M_MOTOR") == 0)
                                 {
-                                    if (!enableObstacleAvoidance && !enableIROnlyMode)
+                                    if (i >= 5 && !enableObstacleAvoidance && !enableIROnlyMode)
                                         driveMecanum(localParam[1], localParam[2], localParam[3], localParam[4]);
+                                }
+                                else if (strcmp(localCmd[0], "CMD_SONIC") == 0)
+                                {
+                                    enableSonicTelemetry = (i >= 2) ? (localParam[1] == 1) : true;
+                                    if (enableSonicTelemetry && obstacleAvoidanceModeTaskHandle != NULL)
+                                        xTaskNotifyGive(obstacleAvoidanceModeTaskHandle);
                                 }
                             }
                         }
@@ -404,14 +461,31 @@ void cmdServerTask(void *pvParameters)
                         }
                         break;
                     }
-                }
 
-                // El Dead Man's Switch (DMS Timer) y la Máquina de Estados WiFi 
-                // se encargan ahora de la seguridad en segundo plano de manera autónoma.
+                    // Relevo rápido (<100 ms): si Main.py abrió una nueva conexión tras un microcorte Wi-Fi, aceptar de inmediato
+                    struct sockaddr_in newAddr;
+                    socklen_t newLen = sizeof(newAddr);
+                    int newFd = accept(serverFd, (struct sockaddr *)&newAddr, &newLen);
+                    if (newFd >= 0)
+                    {
+                        stopAllMotors();
+                        enableSonicTelemetry = false;
+                        close(clientFd);
+                        clientFd = newFd;
+                        configureClientSocket(clientFd);
+                        rxIndex = 0;
+                        rxBuffer[0] = '\0';
+                        lastSonicTick = 0;
+#ifdef DEBUG
+                        Serial.println("\n[CMD] 🔄 Relevo rápido de cliente TCP en puerto 5000.");
+#endif
+                        continue;
+                    }
+                }
             }
 
             stopAllMotors();
-            xTimerStop(dmsTimer, 0); // Stop DMS timer
+            enableSonicTelemetry = false;
             close(clientFd);
 #ifdef DEBUG
             Serial.println("[CMD] 🔴 Puerto 5000 cerrado y libre.");
@@ -459,7 +533,10 @@ void handleScan()
     for (int i = 0; i < n; ++i)
     {
         if (i > 0) json += ",";
-        json += "{\"ssid\":\"" + WiFi.SSID(i) + "\",\"rssi\":" + String(WiFi.RSSI(i)) + "}";
+        String ssid = WiFi.SSID(i);
+        ssid.replace("\\", "\\\\");
+        ssid.replace("\"", "\\\"");
+        json += "{\"ssid\":\"" + ssid + "\",\"rssi\":" + String(WiFi.RSSI(i)) + "}";
     }
     json += "]";
     webServer.send(200, "application/json", json);
@@ -480,8 +557,24 @@ void handleSave()
     preferences.end();
 
     webServer.send(200, "text/html", "<html><body><h1>Guardado!</h1></body></html>");
-    delay(2000);
+    vTaskDelay(pdMS_TO_TICKS(2000));
     ESP.restart();
+}
+
+static void setupOTA()
+{
+    ArduinoOTA.setTimeout(5000);
+    ArduinoOTA.onStart([]() {
+        otaInProgress = true;
+        videoFlag = false;
+        enableSonicTelemetry = false;
+        melodyOn = false;
+        stopAllMotors();
+    });
+    ArduinoOTA.onError([](ota_error_t) {
+        otaInProgress = false;
+    });
+    ArduinoOTA.begin();
 }
 
 void captivePortalTask(void *pvParameters)
@@ -512,6 +605,8 @@ void startCaptivePortal()
     }
 
     WiFi.mode(WIFI_AP_STA);
+    WiFi.setSleep(false);
+    WiFi.setTxPower(WIFI_POWER_17dBm);
     WiFi.softAP(AP_SSID, AP_PASSWORD);
     IPAddress apIP(192, 168, 4, 1);
     WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
@@ -523,34 +618,24 @@ void startCaptivePortal()
     webServer.on("/save", HTTP_POST, handleSave);
     webServer.onNotFound(handleRoot);
     webServer.begin();
-    ArduinoOTA.begin();
+    setupOTA();
 
     // Lanzar como tarea FreeRTOS para que setup() termine y OTA funcione
     xTaskCreatePinnedToCore(captivePortalTask, "CaptivePortal", 4096, NULL, 1, NULL, 0);
-}
-
-void dmsTimerCallback(TimerHandle_t xTimer)
-{
-#ifdef DEBUG
-    Serial.println("🚨 DMS ACTIVADO: No se recibieron comandos. Apagando motores.");
-#endif
-    stopAllMotors();
-    melodyOn = false;
-    ledcWriteTone(buzzerChannel, 0);
 }
 
 volatile bool isWiFiConnected = false;
 
 void onWiFiEvent(WiFiEvent_t event)
 {
-    if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP) 
+    if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP)
     {
         isWiFiConnected = true;
         updateDisplayState(DISPLAY_CONNECTED, WiFi.localIP().toString().c_str());
     }
     else if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED)
     {
-        if (isWiFiConnected) 
+        if (isWiFiConnected)
         {
 #ifdef DEBUG
             Serial.println("🚨 EVENTO WIFI: Desconectado. Cortando motores e intentando reconexión...");
@@ -567,13 +652,8 @@ void onWiFiEvent(WiFiEvent_t event)
 
 void initWiFi()
 {
-    // Inicializar el Dead Man's Switch Timer (1000ms)
-    dmsTimer = xTimerCreate("DMSTimer", pdMS_TO_TICKS(1000), pdFALSE, (void *)0, dmsTimerCallback);
-
     ledIndicator(0);
     WiFi.persistent(false);
-    WiFi.setSleep(WIFI_PS_NONE);
-    WiFi.setTxPower(WIFI_POWER_17dBm); // Aumentado a 17dBm para mejorar el rango y latencia (FPS)
     btStop();
     esp_bt_controller_disable();
 
@@ -594,19 +674,20 @@ void initWiFi()
         return; // Detener la inicialización de WiFi STA
     }
 
+    WiFi.mode(WIFI_STA);
+    WiFi.setSleep(false); // Evitar desconexiones por ahorro de energía
+    WiFi.setTxPower(WIFI_POWER_17dBm); // Aplicado tras WiFi.mode() para limitar picos RF
+    WiFi.setAutoReconnect(true);
+
     IPAddress staticIP, gateway, subnet(255, 255, 255, 0), dns(8, 8, 8, 8);
-    if (storedIP.length() > 0 && storedGW.length() > 0)
+    if (storedIP.length() > 0 && storedGW.length() > 0 &&
+        staticIP.fromString(storedIP) && gateway.fromString(storedGW))
     {
-        staticIP.fromString(storedIP);
-        gateway.fromString(storedGW);
         WiFi.config(staticIP, gateway, subnet, dns);
     }
 
-    WiFi.mode(WIFI_STA);
-    WiFi.setSleep(false); // EVITAR desconexiones por ahorro de energía
-    WiFi.setAutoReconnect(true);
     updateDisplayState(DISPLAY_CONNECTING_WIFI, storedSSID.c_str());
-    
+
     // Connect to the best AP in a mesh network
     WiFi.begin(storedSSID.c_str(), storedPASS.c_str());
     wifi_config_t wifi_config;
@@ -642,6 +723,6 @@ void initWiFi()
     }
 
     xTaskCreatePinnedToCore(cmdServerTask, "CmdServerTask", 1024 * 4, NULL, 2, &cmdServerTaskHandle, 1);
-    ArduinoOTA.begin();
+    setupOTA();
     ledIndicator(1);
 }

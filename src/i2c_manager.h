@@ -8,5 +8,6 @@
 void initI2CManager();
 bool lockI2C(TickType_t timeoutMs = 20);
 void unlockI2C();
+bool recoverI2CBus();
 
 #endif // I2C_MANAGER_H

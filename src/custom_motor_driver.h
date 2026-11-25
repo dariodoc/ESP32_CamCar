@@ -2,13 +2,13 @@
 #define CUSTOM_MOTOR_DRIVER_H
 
 #include <Arduino.h>
-#include <PCF8574.h>
 #include "Adafruit_PWMServoDriver.h"
 
-void setStandbyPin(bool enable);
+bool setStandbyPin(bool enable);
 void setPcfDisplayResetPin(bool state);
 uint8_t getBmcPcfShadow();
-void syncMotorsI2C();
+bool syncMotorsI2C();
+void forceSyncMotorsI2C();
 
 class Motor
 {
@@ -17,7 +17,7 @@ private:
     int In2;
     int PWM;
     int Offset;
-    PCF8574 *pcf;
+    uint8_t pcfAddr;
     Adafruit_PWMServoDriver *pca;
 
     // Caché de estado para evitar saturar el bus I2C
@@ -25,16 +25,16 @@ private:
     int lastStateIn2;
     int lastSpeed;
 
-    // 🚀 Declaración requerida para corregir el error de compilación
-    void setMotorState(int stateIn1, int stateIn2, int speed);
+    bool setMotorState(int stateIn1, int stateIn2, int speed);
 
 public:
-    Motor(int In1pin, int In2pin, int PWMpin, int offset, PCF8574 *pcfDev, Adafruit_PWMServoDriver *pcaController);
-    void fwd(int speed);
-    void rev(int speed);
-    void brake();
-    void drive(int speed);
+    Motor(int In1pin, int In2pin, int PWMpin, int offset, uint8_t pcfAddress, Adafruit_PWMServoDriver *pcaController);
+    bool fwd(int speed);
+    bool rev(int speed);
+    bool brake();
+    bool drive(int speed);
     void drive(int speed, int duration);
+    void invalidateCache();
 };
 
 #endif

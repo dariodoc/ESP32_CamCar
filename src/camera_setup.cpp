@@ -4,7 +4,7 @@
 
 void setupCamera()
 {
-    camera_config_t config;
+    camera_config_t config = {};
     config.ledc_channel = LEDC_CHANNEL_4;
     config.ledc_timer = LEDC_TIMER_2;
     config.pin_d0 = Y2_GPIO_NUM;
@@ -19,8 +19,10 @@ void setupCamera()
     config.pin_pclk = PCLK_GPIO_NUM;
     config.pin_vsync = VSYNC_GPIO_NUM;
     config.pin_href = HREF_GPIO_NUM;
-    config.pin_sccb_sda = SIOD_GPIO_NUM;
-    config.pin_sccb_scl = SIOC_GPIO_NUM;
+    // Compartir el bus I2C_NUM_0 (Wire) ya inicializado en GPIO 26/27
+    config.pin_sccb_sda = -1;
+    config.pin_sccb_scl = -1;
+    config.sccb_i2c_port = 0;
     config.pin_pwdn = PWDN_GPIO_NUM;
     config.pin_reset = RESET_GPIO_NUM;
 

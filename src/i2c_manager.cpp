@@ -1,16 +1,16 @@
 #include "config.h"
 #include "i2c_manager.h"
-#include <Wire.h>
-#include <PCF8574.h>
-#include <Adafruit_PWMServoDriver.h>
+#include "custom_motor_driver.h"
+#include "motor_control.h"
 #include "peripherals.h"
+#include <Wire.h>
+#include <Adafruit_PWMServoDriver.h>
 
-extern PCF8574 FMCpcf8574;
-extern PCF8574 BMCpcf8574;
 extern Adafruit_PWMServoDriver pca9685;
 
 static SemaphoreHandle_t i2cMutex = NULL;
-static int i2cFailCounter = 0;
+static volatile int i2cFailCounter = 0;
+static portMUX_TYPE i2cFailMux = portMUX_INITIALIZER_UNLOCKED;
 
 void initI2CManager()
 {
@@ -20,74 +20,89 @@ void initI2CManager()
     }
 }
 
+// Ejecutar solo mientras el llamador posee i2cMutex
+static void resetI2CHardwareLocked()
+{
+    Wire.end();
+    vTaskDelay(pdMS_TO_TICKS(10));
+
+    // Recuperación física del bus (I2C Bus Clear): 9 pulsos SCL para liberar SDA
+    pinMode(SIOD_GPIO_NUM, INPUT_PULLUP);
+    pinMode(SIOC_GPIO_NUM, OUTPUT);
+    for (int i = 0; i < 9; i++)
+    {
+        digitalWrite(SIOC_GPIO_NUM, LOW);
+        delayMicroseconds(5);
+        digitalWrite(SIOC_GPIO_NUM, HIGH);
+        delayMicroseconds(5);
+        if (digitalRead(SIOD_GPIO_NUM) == HIGH)
+        {
+            break;
+        }
+    }
+    pinMode(SIOC_GPIO_NUM, INPUT);
+
+    Wire.begin(SIOD_GPIO_NUM, SIOC_GPIO_NUM);
+    vTaskDelay(pdMS_TO_TICKS(50));
+
+    Wire.setClock(100000);
+    Wire.setTimeOut(50);
+
+    pca9685.begin();
+    pca9685.setPWMFreq(50);
+
+    // Restaurar salidas PCA9685 (láser y LEDs traseros), invalidar cachés de motores
+    // y resincronizar las sombras reales de los PCF8574 (todo ya bajo i2cMutex)
+    restorePeripheralsAfterI2CResetLocked();
+    notifyMotorsI2CResetLocked();
+    forceSyncMotorsI2C();
+}
+
+bool recoverI2CBus()
+{
+    if (i2cMutex == NULL)
+        return false;
+
+    if (xSemaphoreTake(i2cMutex, pdMS_TO_TICKS(200)) == pdTRUE)
+    {
+        resetI2CHardwareLocked();
+        taskENTER_CRITICAL(&i2cFailMux);
+        i2cFailCounter = 0;
+        taskEXIT_CRITICAL(&i2cFailMux);
+        xSemaphoreGive(i2cMutex);
+        return true;
+    }
+    return false;
+}
+
 bool lockI2C(TickType_t timeoutMs)
 {
     if (i2cMutex == NULL)
         return false;
 
-    // Intentamos tomar el mutex normalmente
     if (xSemaphoreTake(i2cMutex, pdMS_TO_TICKS(timeoutMs)) == pdTRUE)
     {
+        taskENTER_CRITICAL(&i2cFailMux);
         i2cFailCounter = 0;
+        taskEXIT_CRITICAL(&i2cFailMux);
         return true;
     }
 
-    i2cFailCounter++;
-#ifdef DEBUG
-   // Serial.printf("⚠️ Fallo de acceso a I2C (%d/3)\n", i2cFailCounter);
-#endif
+    taskENTER_CRITICAL(&i2cFailMux);
+    int fails = ++i2cFailCounter;
+    taskEXIT_CRITICAL(&i2cFailMux);
 
-    if (i2cFailCounter >= 3)
+    if (fails >= 5)
     {
-#ifdef DEBUG
-      //  Serial.println("🔄 Reseteando hardware I2C por congelamiento de bus...");
-#endif
-        // Liberación de seguridad por si una tarea colgada se quedó con el mutex
-        xSemaphoreGive(i2cMutex);
-
-        Wire.end();
-        vTaskDelay(pdMS_TO_TICKS(10));
-
-        // 🚀 RECUPERACIÓN FÍSICA DEL BUS (I2C Bus Clear)
-        // Mandamos 9 pulsos de reloj para obligar a los esclavos a soltar SDA
-        pinMode(SIOD_GPIO_NUM, INPUT_PULLUP);
-        pinMode(SIOC_GPIO_NUM, OUTPUT);
-        for (int i = 0; i < 9; i++) {
-            digitalWrite(SIOC_GPIO_NUM, LOW);
-            delayMicroseconds(5);
-            digitalWrite(SIOC_GPIO_NUM, HIGH);
-            delayMicroseconds(5);
-            if (digitalRead(SIOD_GPIO_NUM) == HIGH) {
-                break; // El esclavo ya soltó la línea
-            }
+        // Solo recuperar el bus si esta tarea logra adquirir legalmente el mutex
+        if (xSemaphoreTake(i2cMutex, pdMS_TO_TICKS(250)) == pdTRUE)
+        {
+            resetI2CHardwareLocked();
+            taskENTER_CRITICAL(&i2cFailMux);
+            i2cFailCounter = 0;
+            taskEXIT_CRITICAL(&i2cFailMux);
+            return true;
         }
-        pinMode(SIOC_GPIO_NUM, INPUT);
-
-        Wire.begin(SIOD_GPIO_NUM, SIOC_GPIO_NUM);
-        vTaskDelay(pdMS_TO_TICKS(50));
-
-        // 🚀 Mantener reloj en 100 kHz para evitar ruina de señal por interferencia
-        Wire.setClock(100000);
-        Wire.setTimeOut(100);
-
-        FMCpcf8574.begin();
-        BMCpcf8574.begin();
-        pca9685.begin();
-        pca9685.setPWMFreq(50);
-
-        // 🚀 Sincronizar en frío el bus en HIGH (0xFF) tras el reinicio del bus
-        Wire.beginTransmission(0x20);
-        Wire.write(0xFF);
-        Wire.endTransmission();
-
-        Wire.beginTransmission(0x24);
-        Wire.write(0xFF);
-        Wire.endTransmission();
-
-        i2cFailCounter = 0;
-
-        // Intentamos tomar el mutex inmediatamente tras la recuperación
-        return (xSemaphoreTake(i2cMutex, pdMS_TO_TICKS(timeoutMs)) == pdTRUE);
     }
 
     return false;

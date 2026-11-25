@@ -12,58 +12,83 @@
 //
 ////////////////////////////////////////////////////////////////////////
 
-// Declaración externa: enlaza esta librería con la variable global de tu programa principal
+// Declaración externa: enlaza esta librería con el programa principal
 extern volatile bool melodyOn;
-
-// Cache del TaskHandle para evitar strcmp() en cada nota (O(1) vs O(n))
-static TaskHandle_t cachedMelodyTaskHandle = NULL;
-
-static inline bool isMelodyTaskAndOff()
-{
-    TaskHandle_t current = xTaskGetCurrentTaskHandle();
-    if (cachedMelodyTaskHandle == NULL)
-    {
-        if (strcmp(pcTaskGetName(current), "playMelody") == 0)
-            cachedMelodyTaskHandle = current;
-        else
-            return false; // No es la tarea de melodia
-    }
-    return (current == cachedMelodyTaskHandle && !melodyOn);
-}
+extern TaskHandle_t playMelodyTaskHandle;
 
 const static int buzzFrequency = 5000;
 const static int buzzResolution = 12;
 
+static inline bool isMelodyTask()
+{
+    return (playMelodyTaskHandle != NULL && xTaskGetCurrentTaskHandle() == playMelodyTaskHandle);
+}
+
+static inline bool isMelodyTaskAndOff()
+{
+    return (isMelodyTask() && !melodyOn);
+}
+
+void reattachBuzzer(uint32_t buzzPin, uint8_t buzzChannel)
+{
+    ledcSetup(buzzChannel, buzzFrequency, buzzResolution);
+    ledcAttachPin(buzzPin, buzzChannel);
+    ledcWriteTone(buzzChannel, 0);
+}
+
 void toneToPlay(uint32_t buzzPin, uint8_t buzzChannel, uint32_t buzzNote, uint32_t buzzDuration)
 {
-    // Magia de FreeRTOS: ¿Quién está llamando a esta función?
-    // Si es la tarea "playMelody" y el usuario la apagó, abortamos al instante.
     if (isMelodyTaskAndOff())
         return;
 
     ledcSetup(buzzChannel, buzzFrequency, buzzResolution);
     ledcAttachPin(buzzPin, buzzChannel);
     ledcWriteTone(buzzChannel, buzzNote);
-    vTaskDelay(pdMS_TO_TICKS(buzzDuration));
+
+    if (isMelodyTask())
+    {
+        // Espera interrumpible al instante al apagar la melodía
+        if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(buzzDuration)) > 0 || !melodyOn)
+        {
+            ledcWriteTone(buzzChannel, 0);
+            return;
+        }
+    }
+    else
+    {
+        vTaskDelay(pdMS_TO_TICKS(buzzDuration));
+    }
+
     ledcWriteTone(buzzChannel, 0); // Silenciamos sin destruir el timer
 }
 
 void toneToPlay(uint32_t buzzPin, uint8_t buzzChannel, uint32_t buzzNote, uint32_t buzzDuration, uint32_t buzzBips)
 {
-    // Verificamos antes de entrar al bucle
     if (isMelodyTaskAndOff())
         return;
 
-    for (int i = 0; i < buzzBips; i++)
+    for (uint32_t i = 0; i < buzzBips; i++)
     {
-        // Verificamos también dentro del bucle por si se apaga a la mitad de los pitidos
         if (isMelodyTaskAndOff())
             return;
 
         ledcSetup(buzzChannel, buzzFrequency, buzzResolution);
         ledcAttachPin(buzzPin, buzzChannel);
         ledcWriteTone(buzzChannel, buzzNote);
-        vTaskDelay(pdMS_TO_TICKS(buzzDuration));
+
+        if (isMelodyTask())
+        {
+            if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(buzzDuration)) > 0 || !melodyOn)
+            {
+                ledcWriteTone(buzzChannel, 0);
+                return;
+            }
+        }
+        else
+        {
+            vTaskDelay(pdMS_TO_TICKS(buzzDuration));
+        }
+
         ledcWriteTone(buzzChannel, 0);
     }
 }

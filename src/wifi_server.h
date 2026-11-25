@@ -4,6 +4,5 @@
 #include <Arduino.h>
 
 void initWiFi();
-void loopCmdServer();
 
 #endif // WIFI_SERVER_H

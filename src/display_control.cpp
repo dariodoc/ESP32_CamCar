@@ -2,6 +2,8 @@
 #include "config.h"
 #include "i2c_manager.h"
 #include "custom_motor_driver.h"
+#include "Melodies.h"
+#include "esp32-hal-spi.h"
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7735.h>
 #include <SPI.h>
@@ -13,7 +15,8 @@
 #define TFT_CS -1
 #define TFT_RST -1
 
-static Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_MOSI, TFT_SCLK, TFT_RST);
+static SPIClass tftSPI(HSPI);
+static Adafruit_ST7735 tft = Adafruit_ST7735(&tftSPI, TFT_CS, TFT_DC, TFT_RST);
 static QueueHandle_t displayQueue = NULL;
 
 // Función de renderizado de pantallas
@@ -52,7 +55,7 @@ static void renderScreen(const DisplayMessage &msg)
         tft.println("MODO CONFIG (AP)");
         tft.setTextColor(ST77XX_WHITE);
         tft.setCursor(10, 30);
-        tft.println("SSID: ESP-CAMERA-CAR");
+        tft.printf("SSID: %s\n", AP_SSID);
         tft.setCursor(10, 45);
         tft.println("IP: 192.168.4.1");
         break;
@@ -102,14 +105,14 @@ static void displayTask(void *pvParameters)
     // 1. Reset físico por I2C
     hardResetDisplayViaPCF();
 
-    // 2. Reiniciar bus SPI e inicializar ST7735
-    SPI.end();
+    // 2. Inicializar bus HSPI por hardware y driver ST7735
+    tftSPI.begin(TFT_SCLK, -1, TFT_MOSI, TFT_CS);
+    // Liberar GPIO 12 (miso=-1 en HSPI lo asigna por defecto a MISO y silencia al buzzer)
+    spiDetachMISO(tftSPI.bus(), -1);
+    reattachBuzzer(buzzerPin, buzzerChannel);
     vTaskDelay(pdMS_TO_TICKS(20));
-    SPI.begin(TFT_SCLK, -1, TFT_MOSI, TFT_CS);
 
     tft.initR(INITR_MINI160x80_PLUGIN);
-    tft.setSPISpeed(4000000); // 4 MHz para arranque seguro
-
     tft.setRotation(3);
     tft.invertDisplay(false);
     tft.fillScreen(ST77XX_BLACK);
@@ -163,7 +166,7 @@ void initDisplayTask()
         xTaskCreatePinnedToCore(
             displayTask,
             "DisplayTask",
-            2048,
+            3072,
             NULL,
             1,
             NULL,

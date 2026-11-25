@@ -2,64 +2,142 @@
 #include "motor_control.h"
 #include "peripherals.h"
 #include "i2c_manager.h"
-#include <PCF8574.h>
 #include <Adafruit_PWMServoDriver.h>
 #include "custom_motor_driver.h"
 
-extern PCF8574 FMCpcf8574;
-extern PCF8574 BMCpcf8574;
 extern Adafruit_PWMServoDriver pca9685;
 
-Motor motorFL(motorFLIn1pin, motorFLIn2pin, motorFLPWMPin, motorFLoffset, &FMCpcf8574, &pca9685);
-Motor motorBL(motorBLIn1pin, motorBLIn2pin, motorBLPWMPin, motorBLoffset, &BMCpcf8574, &pca9685);
-Motor motorFR(motorFRIn1pin, motorFRIn2pin, motorFRPWMPin, motorFRoffset, &FMCpcf8574, &pca9685);
-Motor motorBR(motorBRIn1pin, motorBRIn2pin, motorBRPWMPin, motorBRoffset, &BMCpcf8574, &pca9685);
+Motor motorFL(motorFLIn1pin, motorFLIn2pin, motorFLPWMPin, motorFLoffset, PCF_FMC_ADDR, &pca9685);
+Motor motorBL(motorBLIn1pin, motorBLIn2pin, motorBLPWMPin, motorBLoffset, PCF_BMC_ADDR, &pca9685);
+Motor motorFR(motorFRIn1pin, motorFRIn2pin, motorFRPWMPin, motorFRoffset, PCF_FMC_ADDR, &pca9685);
+Motor motorBR(motorBRIn1pin, motorBRIn2pin, motorBRPWMPin, motorBRoffset, PCF_BMC_ADDR, &pca9685);
 
-static int targetFL = 0, targetBL = 0, targetFR = 0, targetBR = 0;
+static portMUX_TYPE motorMux = portMUX_INITIALIZER_UNLOCKED;
+static volatile int targetFL = 0, targetBL = 0, targetFR = 0, targetBR = 0;
 static int currentFL = 0, currentBL = 0, currentFR = 0, currentBR = 0;
-static bool immediateBrake = false;
-static bool immediateStop = false;
+static volatile bool immediateBrake = false;
+static volatile bool immediateStop = false;
+static volatile bool forceMotorHwResync = false;
+static volatile TickType_t lastManualDriveTick = 0;
 static TaskHandle_t motorTaskHandle = NULL;
+
+void notifyMotorsI2CResetLocked()
+{
+    motorFL.invalidateCache();
+    motorBL.invalidateCache();
+    motorFR.invalidateCache();
+    motorBR.invalidateCache();
+    forceMotorHwResync = true;
+}
 
 void motorSlewTask(void *pvParameters)
 {
-    const int SLEW_STEP = 300; // Incremento máximo por ciclo (Rampa de aceleración)
+    bool pendingBrake = false;
+    bool pendingStop = false;
+    bool lastTickHwOk = true;
+    int i2cRetryCount = 0;
+    int idleRefreshTicks = 0;
+
     for (;;)
     {
-        if (immediateBrake || immediateStop)
+        int tFL, tBL, tFR, tBR;
+        bool doBrake, doStop;
+        TickType_t lastTick;
+
+        taskENTER_CRITICAL(&motorMux);
+        tFL = targetFL;
+        tBL = targetBL;
+        tFR = targetFR;
+        tBR = targetBR;
+        doBrake = immediateBrake;
+        doStop = immediateStop;
+        lastTick = lastManualDriveTick;
+        immediateBrake = false;
+        immediateStop = false;
+        taskEXIT_CRITICAL(&motorMux);
+
+        if (doStop) {
+            pendingStop = true;
+            pendingBrake = false;
+        } else if (doBrake) {
+            pendingBrake = true;
+        } else if (tFL != 0 || tBL != 0 || tFR != 0 || tBR != 0) {
+            pendingBrake = false;
+            pendingStop = false;
+        }
+
+        // Watchdog de movimiento manual: si pasan >800ms sin keep-alive mientras gira, frenar
+        if (!enableObstacleAvoidance && !enableIROnlyMode &&
+            (tFL != 0 || tBL != 0 || tFR != 0 || tBR != 0 ||
+             currentFL != 0 || currentBL != 0 || currentFR != 0 || currentBR != 0))
+        {
+            if ((xTaskGetTickCount() - lastTick) > pdMS_TO_TICKS(800))
+            {
+                taskENTER_CRITICAL(&motorMux);
+                targetFL = 0; targetBL = 0; targetFR = 0; targetBR = 0;
+                taskEXIT_CRITICAL(&motorMux);
+                tFL = 0; tBL = 0; tFR = 0; tBR = 0;
+                pendingBrake = true;
+            }
+        }
+
+        if (pendingBrake || pendingStop)
         {
             currentFL = 0; currentBL = 0; currentFR = 0; currentBR = 0;
-            targetFL = 0; targetBL = 0; targetFR = 0; targetBR = 0;
-            
-            if (immediateStop) {
-                setStandbyPin(false); // Pin Standby LOW: Desconecta fisicamente los motores (Coast)
-                motorFL.drive(0);
-                motorBL.drive(0);
-                motorFR.drive(0);
-                motorBR.drive(0);
+
+            bool s0, s1, s2, s3, s4, s5;
+            if (pendingStop) {
+                s0 = setStandbyPin(false); // Pin Standby LOW: Desconecta fisicamente los motores (Coast)
+                s1 = motorFL.drive(0);
+                s2 = motorBL.drive(0);
+                s3 = motorFR.drive(0);
+                s4 = motorBR.drive(0);
             } else {
                 // Freno electrónico activo continuo
-                setStandbyPin(true);
-                motorFL.brake();
-                motorBL.brake();
-                motorFR.brake();
-                motorBR.brake();
+                s0 = setStandbyPin(true);
+                s1 = motorFL.brake();
+                s2 = motorBL.brake();
+                s3 = motorFR.brake();
+                s4 = motorBR.brake();
             }
             leftRearLed(HIGH);
             rightRearLed(HIGH);
-            
-            syncMotorsI2C();
-            immediateBrake = false;
-            immediateStop = false;
+            s5 = syncMotorsI2C();
+
+            if (s0 && s1 && s2 && s3 && s4 && s5)
+            {
+                pendingBrake = false;
+                pendingStop = false;
+                lastTickHwOk = true;
+                i2cRetryCount = 0;
+            }
+            else
+            {
+                lastTickHwOk = false;
+                if (++i2cRetryCount >= 3)
+                {
+                    if (recoverI2CBus())
+                    {
+                        notifyMotorsI2CResetLocked();
+                    }
+                    i2cRetryCount = 0;
+                }
+            }
+            idleRefreshTicks = 0;
         }
         else
         {
             bool changed = false;
+            bool needResync = forceMotorHwResync;
+            if (needResync) forceMotorHwResync = false;
 
             auto applyRamp = [](int &current, int target) {
                 const int SLEW_STEP = 150;
                 const int MIN_PWM = 400;
-                
+
+                if (target > 0 && target < MIN_PWM) target = MIN_PWM;
+                else if (target < 0 && target > -MIN_PWM) target = -MIN_PWM;
+
                 if (current < target) {
                     if (current == 0) current = MIN_PWM;
                     else current = min(current + SLEW_STEP, target);
@@ -68,39 +146,71 @@ void motorSlewTask(void *pvParameters)
                     if (current == 0) current = -MIN_PWM;
                     else current = max(current - SLEW_STEP, target);
                 }
-                
-                // Cut-off a 0 si caemos en la zona muerta
-                if (abs(current) < MIN_PWM) current = 0;
+
+                // Cut-off a 0 solo al detener o cruzar de signo
+                if (abs(current) < MIN_PWM &&
+                    (target == 0 || (current > 0 && target < 0) || (current < 0 && target > 0))) {
+                    current = 0;
+                }
             };
 
-            if (currentFL != targetFL) { applyRamp(currentFL, targetFL); changed = true; }
-            if (currentBL != targetBL) { applyRamp(currentBL, targetBL); changed = true; }
-            if (currentFR != targetFR) { applyRamp(currentFR, targetFR); changed = true; }
-            if (currentBR != targetBR) { applyRamp(currentBR, targetBR); changed = true; }
+            if (currentFL != tFL) { applyRamp(currentFL, tFL); changed = true; }
+            if (currentBL != tBL) { applyRamp(currentBL, tBL); changed = true; }
+            if (currentFR != tFR) { applyRamp(currentFR, tFR); changed = true; }
+            if (currentBR != tBR) { applyRamp(currentBR, tBR); changed = true; }
 
-            if (changed)
+            if (changed || !lastTickHwOk || needResync)
             {
+                bool s0, s1, s2, s3, s4, s5;
                 if (currentFL == 0 && currentBL == 0 && currentFR == 0 && currentBR == 0)
                 {
-                    setStandbyPin(true);
-                    motorFL.brake();
-                    motorBL.brake();
-                    motorFR.brake();
-                    motorBR.brake();
+                    s0 = setStandbyPin(true);
+                    s1 = motorFL.brake();
+                    s2 = motorBL.brake();
+                    s3 = motorFR.brake();
+                    s4 = motorBR.brake();
                     leftRearLed(HIGH);
                     rightRearLed(HIGH);
                 }
                 else
                 {
-                    setStandbyPin(true);
-                    motorFL.drive(currentFL);
-                    motorBL.drive(currentBL);
-                    motorFR.drive(currentFR);
-                    motorBR.drive(currentBR);
+                    s0 = setStandbyPin(true);
+                    s1 = motorFL.drive(currentFL);
+                    s2 = motorBL.drive(currentBL);
+                    s3 = motorFR.drive(currentFR);
+                    s4 = motorBR.drive(currentBR);
                     leftRearLed(LOW);
                     rightRearLed(LOW);
                 }
-                syncMotorsI2C();
+                s5 = syncMotorsI2C();
+
+                if (s0 && s1 && s2 && s3 && s4 && s5)
+                {
+                    lastTickHwOk = true;
+                    i2cRetryCount = 0;
+                }
+                else
+                {
+                    lastTickHwOk = false;
+                    if (++i2cRetryCount >= 3)
+                    {
+                        if (recoverI2CBus())
+                        {
+                            notifyMotorsI2CResetLocked();
+                        }
+                        i2cRetryCount = 0;
+                    }
+                }
+                idleRefreshTicks = 0;
+            }
+            else if (tFL == 0 && tBL == 0 && tFR == 0 && tBR == 0 &&
+                     currentFL == 0 && currentBL == 0 && currentFR == 0 && currentBR == 0)
+            {
+                if (++idleRefreshTicks >= 50)
+                {
+                    syncMotorsI2C();
+                    idleRefreshTicks = 0;
+                }
             }
         }
         vTaskDelay(pdMS_TO_TICKS(20)); // 50Hz Update rate
@@ -111,7 +221,7 @@ void setupMotors()
 {
     if (motorTaskHandle == NULL)
     {
-        xTaskCreatePinnedToCore(motorSlewTask, "MotorTask", 4096, NULL, 1, &motorTaskHandle, 1);
+        xTaskCreatePinnedToCore(motorSlewTask, "MotorTask", 4096, NULL, 2, &motorTaskHandle, 1);
     }
 }
 
@@ -119,24 +229,35 @@ void stopAllMotors()
 {
     enableObstacleAvoidance = false;
     enableIROnlyMode = false;
+    taskENTER_CRITICAL(&motorMux);
+    targetFL = 0;
+    targetBL = 0;
+    targetFR = 0;
+    targetBR = 0;
     immediateStop = true;
+    immediateBrake = false;
+    taskEXIT_CRITICAL(&motorMux);
 }
 
 void brakeAllMotors()
 {
+    taskENTER_CRITICAL(&motorMux);
+    targetFL = 0;
+    targetBL = 0;
+    targetFR = 0;
+    targetBR = 0;
     immediateBrake = true;
+    taskEXIT_CRITICAL(&motorMux);
 }
 
 int mapMotorValue(int rawValue)
 {
-    if (rawValue == 0)
+    int absRaw = abs(rawValue);
+    if (absRaw <= 210)
         return 0;
-    const int MIN_PWM = 0, MAX_PWM = 4095;
+    const int MIN_PWM = 400, MAX_PWM = 4095;
     int sign = (rawValue > 0) ? 1 : -1;
-    int absVal = constrain(abs(rawValue), 210, 1500);
-
-    if (absVal <= 210)
-        return MIN_PWM * sign;
+    int absVal = constrain(absRaw, 210, 1500);
     return map(absVal, 210, 1500, MIN_PWM, MAX_PWM) * sign;
 }
 
@@ -152,16 +273,27 @@ void driveSafe(int p1, int p2, int p3, int p4)
 
 void driveDirectRaw(int fl, int bl, int fr, int br)
 {
+    taskENTER_CRITICAL(&motorMux);
     if (fl == 0 && bl == 0 && fr == 0 && br == 0)
     {
+        targetFL = 0;
+        targetBL = 0;
+        targetFR = 0;
+        targetBR = 0;
         immediateBrake = true;
-        return;
+        immediateStop = false;
     }
-
-    targetFL = fl;
-    targetBL = bl;
-    targetFR = fr;
-    targetBR = br;
+    else
+    {
+        targetFL = fl;
+        targetBL = bl;
+        targetFR = fr;
+        targetBR = br;
+        immediateBrake = false;
+        immediateStop = false;
+        lastManualDriveTick = xTaskGetTickCount();
+    }
+    taskEXIT_CRITICAL(&motorMux);
 }
 
 void driveMecanum(int angle, int speed, int rotation, int rotationSpeed)
